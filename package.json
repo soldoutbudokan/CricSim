@@ -1,0 +1,13 @@
+{
+  "name": "cricsim",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "First-person cricket nets practice simulator",
+  "scripts": {
+    "dev": "python3 -m http.server 8000 --directory dist",
+    "test": "node --test tests/physics.test.mjs",
+    "check": "node --check dist/game.js && node --check dist/scene.js && node --check dist/physics.js"
+  },
+  "engines": { "node": ">=20" }
+}

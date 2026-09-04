@@ -57,7 +57,7 @@ A production fidelity pass should add scanned PBR ground/equipment assets, a rig
 node --test tests/physics.test.mjs
 ```
 
-The `.openai/hosting.json` file identifies the private Sites deployment; `dist` is also portable to another static host. The game's source is maintained in the CricSim GitHub repository. No browser QA has been performed unless explicitly recorded in a later change.
+The `.openai/hosting.json` file configures static output. A private deployment adds its own project identifier only in its private source repository; the public manifest contains no deployment identifier. `dist` is also portable to another static host. The game's source is maintained in the CricSim GitHub repository. No browser QA has been performed unless explicitly recorded in a later change.
 
 ## References
 
