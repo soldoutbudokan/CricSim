@@ -24,7 +24,7 @@ export function airAcceleration(v, config, delivery) {
   const wind = config.wind / 3.6;
   const rx = v.x - wind, ry = v.y, rz = v.z;
   const speed = Math.hypot(rx, ry, rz);
-  // Lumped drag and calibrated side-force model, not CFD.
+  // Lumped drag and tunable side-force model. Coefficients need measured calibration.
   const rho = config.weather === 'overcast' ? 1.24 : config.weather === 'evening' ? 1.23 : 1.19;
   const k = 0.5 * rho * Math.PI * BALL.radius ** 2 / BALL.mass;
   const drag = k * (0.45 + config.age * 0.0011) * speed;
@@ -52,19 +52,20 @@ function initialVertical(vz, targetZ, config, delivery) {
   }
   return (hi + lo) / 2;
 }
-export function createDelivery(config, seed = Date.now()) {
+export function createDelivery(config, seed = Date.now(), release = null) {
   const rng = random(seed), b = BOWLERS[config.bowler], arm = config.arm === 'left' ? -1 : 1;
   const length = config.length === 'mixed' ? Object.values(lengths)[Math.floor(rng() * 4)] : lengths[config.length];
   const hand = config.hand === 'left' ? -1 : 1;
   const targetLine = (config.line === 'mixed' ? (rng() - 0.35) * 1.0 : lines[config.line]) * hand;
   const delivery = { seed, swing: b.swing * arm, turn: b.turn * arm, spin: b.spin, seam: (rng() - 0.5) * b.seam, releaseY: b.turn ? 2.13 : 2.18, releaseZ: -17.7, speed: config.speed + (rng() - 0.5) * 3, length: length + (rng() - 0.5) * 0.22, targetLine, hit: false, bounces: 0, time: 0, resolved: false, seamNoise: rng(), bounceNoise: rng(), path: [] };
+  if(release){delivery.releaseY=release.y;delivery.releaseZ=release.z;}
   const vz = delivery.speed / 3.6;
   const vy = initialVertical(vz, delivery.length, config, delivery);
   // Preserve the selected release speed after accounting for the downward angle.
   const adjustedZ = Math.sqrt(Math.max(16, vz * vz - vy * vy));
   const adjustedY = initialVertical(adjustedZ, delivery.length, config, delivery);
-  const releaseX = -0.42 * arm;
-  const flightEstimate = 17.7 / adjustedZ * 1.08;
+  const releaseX = release?.x ?? -0.42 * arm;
+  const flightEstimate = -delivery.releaseZ / adjustedZ * 1.08;
   const vx = (targetLine - releaseX) / flightEstimate;
   delivery.p = { x: releaseX, y: delivery.releaseY, z: delivery.releaseZ };
   delivery.v = { x: vx, y: adjustedY, z: adjustedZ };
@@ -74,19 +75,24 @@ export function createDelivery(config, seed = Date.now()) {
 }
 export function batBasis(bat) {
   const sy = Math.sin(bat.yaw), cy = Math.cos(bat.yaw), sl = Math.sin(bat.loft), cl = Math.cos(bat.loft);
-  return { n: { x: sy * cl, y: sl, z: -cy * cl }, w: { x: cy, y: 0, z: sy }, u: { x: -sy * sl, y: cl, z: cy * sl } };
+  const w = { x: cy, y: 0, z: sy }, u = { x: -sy * sl, y: cl, z: cy * sl };
+  const cr = Math.cos(bat.roll || 0), sr = Math.sin(bat.roll || 0);
+  return { n: { x: sy * cl, y: sl, z: -cy * cl },
+    w: { x:w.x*cr+u.x*sr,y:w.y*cr+u.y*sr,z:w.z*cr+u.z*sr },
+    u: { x:u.x*cr-w.x*sr,y:u.y*cr-w.y*sr,z:u.z*cr-w.z*sr } };
 }
 const dot = (a, b) => a.x*b.x+a.y*b.y+a.z*b.z;
 const subtract = (a,b) => ({x:a.x-b.x,y:a.y-b.y,z:a.z-b.z});
 // Swept sphere against a moving, oriented finite bat face. No frame tunnelling.
 export function batContact(from, to, bat, oldBat = bat) {
   const { n, w, u } = batBasis(bat);
+  const oldBasis=batBasis(oldBat);
   const oldRel = subtract(from, oldBat), rel = subtract(to, bat);
-  const d0 = dot(oldRel,n), d1 = dot(rel,n), radius = BALL.radius + 0.018;
+  const d0 = dot(oldRel,oldBasis.n), d1 = dot(rel,n), radius = BALL.radius + 0.018;
   if (d0 < -radius || d1 > radius || d1 >= d0) return null;
   const t = clamp((d0 - radius) / (d0 - d1), 0, 1);
-  const contact = { x: oldRel.x+(rel.x-oldRel.x)*t, y: oldRel.y+(rel.y-oldRel.y)*t, z: oldRel.z+(rel.z-oldRel.z)*t };
-  const x = dot(contact,w), y = dot(contact,u);
+  const x=dot(oldRel,oldBasis.w)+(dot(rel,w)-dot(oldRel,oldBasis.w))*t;
+  const y=dot(oldRel,oldBasis.u)+(dot(rel,u)-dot(oldRel,oldBasis.u))*t;
   if (Math.abs(x) > 0.054+BALL.radius || Math.abs(y) > 0.31+BALL.radius) return null;
   return { x, y, t, normal: n, edge: Math.abs(x) > 0.047, quality: clamp(1-Math.abs(x)/0.11-Math.abs(y+0.035)/0.55,0.05,1) };
 }
@@ -101,9 +107,15 @@ export function stepDelivery(d, config, dt = DT, bat = null, oldBat = bat) {
     if (contact) {
       const incoming = Math.hypot(d.v.x,d.v.y,d.v.z);
       const n = contact.normal;
-      const batVelocity = { x: (bat.x-oldBat.x)/dt, y: (bat.y-oldBat.y)/dt, z: (bat.z-oldBat.z)/dt };
+      const currentBasis=batBasis(bat),previousBasis=batBasis(oldBat);
+      const batVelocity={};
+      for(const axis of ['x','y','z']){
+        const now=bat[axis]+currentBasis.w[axis]*contact.x+currentBasis.u[axis]*contact.y;
+        const before=oldBat[axis]+previousBasis.w[axis]*contact.x+previousBasis.u[axis]*contact.y;
+        batVelocity[axis]=(now-before)/dt;
+      }
       const relV = subtract(d.v,batVelocity), vn = dot(relV,n);
-      const cor = contact.edge ? 0.32 : 0.45+contact.quality*0.17;
+      const cor = bat.defending ? 0.13 : contact.edge ? 0.32 : 0.45+contact.quality*0.17;
       d.v.x -= (1+cor)*vn*n.x; d.v.y -= (1+cor)*vn*n.y; d.v.z -= (1+cor)*vn*n.z;
       if (contact.edge) d.v.x += (contact.x>0?1:-1)*incoming*0.30;
       d.p.x += n.x*0.065; d.p.y += n.y*0.065; d.p.z += n.z*0.065;
