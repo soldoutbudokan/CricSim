@@ -2,6 +2,14 @@
 
 A first-person cricket nets simulator. Move a regulation-width bat with the mouse, face pace or spin, and change the pitch and conditions. Practice only: no teams, innings, runs, or match modes.
 
+## Play
+
+[Play CricSim](https://cricsim-nets.soldoutbudokan.chatgpt.site) (owner account sign-in).
+
+Public GitHub Pages target: https://soldoutbudokan.github.io/CricSim/
+
+The `Deploy Production` workflow publishes `dist` to `gh-pages` after tests pass, matching the racer2 setup. For first-time activation, select **Settings → Pages → Deploy from a branch → gh-pages → / (root)**. Subsequent pushes to `main` publish automatically.
+
 ## Run
 
 Serve `dist` with any static HTTP server. For example:
