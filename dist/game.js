@@ -13,13 +13,13 @@ if(!['leg','middle','off','wide','mixed'].includes(config.line))config.line='off
 if(![1,.75,.5].includes(config.timeScale))config.timeScale=1;
 config.speed=clamp(config.speed,BOWLERS[config.bowler].min,BOWLERS[config.bowler].max);config.age=clamp(config.age,0,80);config.wind=clamp(config.wind,-25,25);
 let view,phase='intro',paused=false,phaseTime=0,delivery=null,deliveryConfig={...config},accumulator=0,lastTime=0,sessionSeconds=0,ready=false;
-let resultRealTime=0,resultCounted=false,contactCount=0,cleanCount=0,ballsFaced=0,lastExit=null,ballSerial=0;
+let resultRealTime=0,resultCounted=false,contactCount=0,cleanCount=0,ballsFaced=0,lastExit=null,ballSerial=0,strideIndex=0;
 const batControl=createBatControl(config.hand),bat=batControl.pose,target=batControl.target;
 const input={held:false,defend:false,keys:new Set()};
 const audio=new NetsAudio();audio.setEnabled(config.audio);
 function savePreferences(){try{localStorage.setItem('cricsim-preferences',JSON.stringify(config));}catch{}}
 function unlockAudio(){audio.setEnabled(config.audio);audio.unlock();}
-function sound(type,position=delivery?.p,strength=1){audio.play(type,position,strength);}
+function sound(type,position=delivery?.p,strength=1,detail={}){audio.play(type,position,strength,detail);}
 function syncControls(){
   for(const key of ['bowler','arm','hand','length','line','weather','timeScale'])$(key).value=String(config[key]);
   for(const key of ['auto','guide'])$(key).checked=config[key];
@@ -31,7 +31,7 @@ function syncControls(){
   $('clock-label').textContent=(config.timeScale===1?'REAL TIME':'SLOW PRACTICE')+' · '+config.timeScale+'×';
   $('reticle').style.visibility=config.guide?'visible':'hidden';
 }
-function applyEnvironment(){view?.setEnvironment(config);audio.setWind(config.wind);$('scene-weather').textContent=$('weather').selectedOptions[0].text.toUpperCase();$('scene-pitch').textContent=PITCHES[config.pitch].name.toUpperCase();$('delivery-speed').textContent=Math.round(config.speed);$('delivery-style').textContent=`${config.arm==='left'?'Left':'Right'}-arm ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
+function applyEnvironment(){view?.setEnvironment(config);audio.setWind(config.wind);audio.setSurface(config.pitch);$('scene-weather').textContent=$('weather').selectedOptions[0].text.toUpperCase();$('scene-pitch').textContent=PITCHES[config.pitch].name.toUpperCase();$('delivery-speed').textContent=Math.round(config.speed);$('delivery-style').textContent=`${config.arm==='left'?'Left':'Right'}-arm ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
 for(const key of ['bowler','arm','hand','length','line','weather','timeScale','speed','age','wind','auto','guide']){
   $(key).addEventListener(['speed','age','wind'].includes(key)?'input':'change',event=>{
     config[key]=['auto','guide'].includes(key)?event.target.checked:['timeScale','speed','age','wind'].includes(key)?Number(event.target.value):event.target.value;
@@ -46,7 +46,7 @@ function updateStats(){$('stat-balls').textContent=ballsFaced;$('stat-contact').
 function nextBall(){
   if(!ready||paused||phase==='runup'||phase==='flight'||(phase==='result'&&resultRealTime<.8))return;
   if(phase==='intro'){$('intro').classList.add('hidden');$('viewport').classList.add('playing');document.body.classList.add('panel-collapsed');document.body.classList.remove('setup-open');}
-  phase='runup';phaseTime=0;delivery=null;deliveryConfig={...config};resultRealTime=0;resultCounted=false;ballSerial++;
+  phase='runup';phaseTime=0;delivery=null;deliveryConfig={...config};resultRealTime=0;resultCounted=false;ballSerial++;strideIndex=-1;
   $('shot-feedback').classList.add('hidden');$('next-button').disabled=true;$('delivery-state').textContent='BOWLER APPROACHING';clearInput();view.resetWicket();applyEnvironment();unlockAudio();$('game').focus({preventScroll:true});
 }
 function pause(force){if(phase==='intro'||!ready)return;paused=typeof force==='boolean'?force:!paused;clearInput();$('pause-overlay').classList.toggle('hidden',!paused);$('pause-button').innerHTML=paused?'▶ <span>Resume</span>':'Ⅱ <span>Pause</span>';if(!paused)$('game').focus({preventScroll:true});}
@@ -62,10 +62,13 @@ function tick(dt){
   const previous=stepBat(batControl,dt,input.keys);
   if(phase==='runup'){
     phaseTime+=dt;
+    // Footfalls follow the run-up cycle in scene.js (stride = sin(t*17)); the bound at 1.78 s lands harder.
+    const stride=phaseTime<1.78?Math.floor(phaseTime*17/Math.PI):phaseTime<2.2?12:13;
+    if(stride!==strideIndex){strideIndex=stride;const arm=deliveryConfig.arm==='left'?-1:1;sound('step',{x:-.195*arm,z:-25+Math.min(phaseTime/2.2,1)*7.3},stride>=12?1.7:.8);}
     if(phaseTime>=2.2){view.animateBowler('runup',2.2,deliveryConfig);delivery=createDelivery(deliveryConfig,(Date.now()+ballSerial*4723)>>>0,view.getReleasePosition());phase='flight';phaseTime=0;$('delivery-state').textContent='BALL IN FLIGHT';$('delivery-speed').textContent=Math.round(delivery.speed);}
   }else if((phase==='flight'||phase==='result')&&delivery&&delivery.time<5){
     phaseTime+=dt;
-    for(const event of stepDelivery(delivery,deliveryConfig,dt,bat,previous)){if(event.type==='bounce'&&event.impactSpeed>.8)sound('bounce',event,event.impactSpeed/9);if(event.type==='contact')sound('contact');if(event.type==='result')onResult(event);if(event.type==='net'&&delivery.time<2)sound('net');}
+    for(const event of stepDelivery(delivery,deliveryConfig,dt,bat,previous)){if(event.type==='bounce'&&event.impactSpeed>.8)sound('bounce',event,event.impactSpeed/9);if(event.type==='contact')sound('contact',delivery.p,1,{quality:event.quality,edge:event.edge,exitSpeed:event.exitSpeed,defending:bat.defending});if(event.type==='result')onResult(event);if(event.type==='net'&&delivery.time<2.5)sound('net',delivery.p,Math.hypot(delivery.v.x,delivery.v.y,delivery.v.z)/22);}
     if(delivery.time>3&&!resultCounted)onResult({result:delivery.hit?'Bat contact':'Missed'});
   }
 }
