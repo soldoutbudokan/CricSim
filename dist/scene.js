@@ -115,9 +115,9 @@ function gloveGeometry(thumbUp, mirror) {
   const ty = thumbUp ? 1 : -1;
   a.set(0.036, ty * 0.03, 0.03); b.set(-0.014, ty * 0.05, 0.024);
   add(new THREE.CapsuleGeometry(0.0125, 0.04, 3, 8), betweenMat(a, b), cream);
-  add(new THREE.CylinderGeometry(0.058, 0.05, 0.05, 14, 1, true), mat4(0.034, 0, 0.082, Math.PI / 2), green);
-  add(new THREE.CylinderGeometry(0.05, 0.05, 0.012, 14), mat4(0.034, 0, 0.056, Math.PI / 2), cream); // padded wrist roll
-  add(new THREE.BoxGeometry(0.03, 0.014, 0.006), mat4(0.089, 0, 0.082), cream); // strap tab
+  add(new THREE.CylinderGeometry(0.05, 0.044, 0.05, 14, 1, false), mat4(0.034, 0, 0.078, Math.PI / 2), green);
+  add(new THREE.TorusGeometry(0.046, 0.009, 6, 18), mat4(0.034, 0, 0.055, 0, 0, 0), cream); // padded wrist roll
+  add(new THREE.BoxGeometry(0.028, 0.012, 0.006), mat4(0.082, 0, 0.078), cream); // strap tab
   return mergeGeometries(parts);
 }
 
@@ -227,7 +227,7 @@ export async function createScene(canvas, onProgress = () => {}) {
     if (pitchTextures.has(kind)) return pitchTextures.get(kind);
     const c = makeCanvas(1024, 1024), x = c.getContext('2d');
     const py = z => 1024 * (z + 21) / 24, px = xx => 512 + xx * 1024 / 3.05;
-    x.fillStyle = kind === 'soft' ? 'rgba(128,112,86,0.6)' : kind === 'dry' ? 'rgba(200,180,140,0.55)' : kind === 'green' ? 'rgba(168,164,118,0.5)' : 'rgba(190,170,126,0.55)'; x.fillRect(0, 0, 1024, 1024);
+    x.fillStyle = kind === 'soft' ? 'rgba(110,96,74,0.55)' : kind === 'dry' ? 'rgba(184,164,124,0.5)' : kind === 'green' ? 'rgba(150,148,104,0.45)' : 'rgba(172,152,110,0.5)'; x.fillRect(0, 0, 1024, 1024);
     if (kind === 'green') { x.globalAlpha = .38; for (let ty = 0; ty < 1024; ty += 85) for (let tx = 0; tx < 1024; tx += 671) x.drawImage(turfColor.image, tx, ty, 671, 85); x.globalAlpha = 1; }
     for (let i = 0; i < 10; i++) { x.fillStyle = i % 2 ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.025)'; x.fillRect(i * 100.7, 0, 100.7, 1024); }
     const soft = (cx, cy, rx, ry, rot, col, a) => { const g = x.createRadialGradient(0, 0, 0, 0, 0, 1); g.addColorStop(0, col.replace('A', a)); g.addColorStop(1, col.replace('A', 0)); x.save(); x.translate(cx, cy); x.rotate(rot); x.scale(rx, ry); x.fillStyle = g; x.fillRect(-1, -1, 2, 2); x.restore(); };
@@ -315,19 +315,6 @@ export async function createScene(canvas, onProgress = () => {}) {
     x.lineWidth = 4; x.beginPath(); x.moveTo(64, 64); x.lineTo(64 + 28, 64 - 14); x.stroke(); x.beginPath(); x.moveTo(64, 64); x.lineTo(64 - 6, 64 - 38); x.stroke();
     return texOf(c, { srgb: true, clampEdge: true });
   }
-  // Tree silhouettes: broad oak and tall narrow poplar-style canopies made of overlapping leaf clumps.
-  function treeTexture(kind) {
-    const clumps = [], n = kind ? 150 : 220;
-    for (let i = 0; i < n; i++) { const t = rng(); const cy = kind ? 30 + t * 170 : 40 + rng() * 120; const spread = kind ? 22 + (cy - 30) * .28 : 92 - Math.abs(cy - 100) * .5; clumps.push({ x: 128 + (rng() - .5) * spread * 2, y: cy, r: kind ? 9 + rng() * 14 : 12 + rng() * 22, tone: rng() }); }
-    const draw = (x, colored) => {
-      x.fillStyle = colored ? '#3a2d21' : '#fff'; x.fillRect(120, kind ? 190 : 160, 16, 70); if (!kind) { x.fillStyle = colored ? '#3a2d21' : '#fff'; x.beginPath(); x.moveTo(126, 180); x.lineTo(84, 130); x.lineTo(90, 128); x.lineTo(130, 176); x.closePath(); x.fill(); x.beginPath(); x.moveTo(132, 175); x.lineTo(174, 120); x.lineTo(180, 124); x.lineTo(136, 180); x.closePath(); x.fill(); }
-      for (const c of clumps) { x.fillStyle = colored ? `rgb(${38 + c.tone * 45},${66 + c.tone * 54},${28 + c.tone * 24})` : '#fff'; x.beginPath(); x.arc(c.x, c.y, c.r, 0, TAU); x.fill(); }
-      if (colored) for (const c of clumps) { if (c.tone < .5) continue; x.fillStyle = 'rgba(140,175,90,0.18)'; x.beginPath(); x.arc(c.x - c.r * .3, c.y - c.r * .3, c.r * .5, 0, TAU); x.fill(); }
-    };
-    const col = makeCanvas(256, 256), msk = makeCanvas(256, 256); const cx = col.getContext('2d'); cx.fillStyle = '#35502c'; cx.fillRect(0, 0, 256, 256); draw(cx, true); draw(msk.getContext('2d'), false);
-    return maskedTexture(col, msk, { clampEdge: true });
-  }
-
   // ---------------------------------------------------------------- lawn
   const mottle = mottleTexture();
   for (const tex of [turfColor, turfNormal, turfRoughness]) tex.repeat.set(100, 100);
@@ -342,7 +329,7 @@ export async function createScene(canvas, onProgress = () => {}) {
   // ---------------------------------------------------------------- pitch strips, chalk
   for (const tex of [earthColor, earthNormal, earthRoughness]) tex.repeat.set(1.525, 12);
   const wearUniform = { value: pitchTexture('hard') };
-  const pitchMat = new THREE.MeshPhysicalMaterial({ map: earthColor, normalMap: earthNormal, normalScale: new THREE.Vector2(.12, .12), roughnessMap: earthRoughness, color: '#bfb08c', roughness: 1, clearcoat: 0, clearcoatRoughness: .5 });
+  const pitchMat = new THREE.MeshPhysicalMaterial({ map: earthColor, normalMap: earthNormal, normalScale: new THREE.Vector2(.12, .12), roughnessMap: earthRoughness, color: '#a3946e', roughness: 1, clearcoat: 0, clearcoatRoughness: .5 });
   pitchMat.onBeforeCompile = shader => {
     shader.uniforms.wearMap = wearUniform;
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWear;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvWear = uv;');
@@ -466,17 +453,7 @@ export async function createScene(canvas, onProgress = () => {}) {
   scene.add(lamps); addMerged(poles, steelMat);
   const glowTex = radialTexture(128, [[0, 'rgba(255,240,200,1)'], [.25, 'rgba(255,225,170,0.5)'], [1, 'rgba(255,220,160,0)']]);
   const glows = lightPositions.map(([x, z]) => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 })); s.position.set(x, 13.7, z); s.scale.setScalar(4); scene.add(s); return s; });
-  // Tree line, perimeter fence: cover the 12 degrees of blurry HDR horizon with real geometry.
-  const treeMats = [treeTexture(0), treeTexture(1)].map(map => new THREE.MeshStandardMaterial({ map, roughness: 1, side: THREE.DoubleSide, alphaTest: .5 }));
-  const treeSets = [new THREE.InstancedMesh(new THREE.PlaneGeometry(17, 18), treeMats[0], 44), new THREE.InstancedMesh(new THREE.PlaneGeometry(9, 14), treeMats[1], 30)];
-  const treeCount = [0, 0];
-  for (let i = 0; i < 74; i++) {
-    const kind = i < 44 ? 0 : 1, a = -Math.PI * (.08 + rng() * .84), r = (kind ? 78 : 84) + rng() * 40 + (i % 2) * 10;
-    const x = Math.cos(a) * r, z = Math.sin(a) * r; if (Math.abs(x) < 14 && z > -95) continue;
-    dummy.position.set(x, (kind ? 6.8 : 8.8) - .3, z); dummy.rotation.set(0, Math.atan2(-x, -z), 0); const s = .8 + rng() * .5; dummy.scale.set(s * (rng() < .5 ? -1 : 1), s, 1); dummy.updateMatrix();
-    treeSets[kind].setMatrixAt(treeCount[kind], dummy.matrix); treeSets[kind].setColorAt(treeCount[kind], _c1.set('#3b5a34').lerp(_c1.clone().set('#7a9a4e'), rng())); treeCount[kind]++;
-  }
-  for (let k = 0; k < 2; k++) { treeSets[k].count = treeCount[k]; scene.add(treeSets[k]); }
+  // Perimeter fence; the photographed HDR tree line stays as the horizon.
   const fenceMat = new THREE.MeshStandardMaterial({ color: '#d9d5c6', roughness: .85 });
   const fencePosts = new THREE.InstancedMesh(new THREE.BoxGeometry(.11, 1.2, .11), fenceMat, 40), rails = []; n = 0;
   for (let i = 0; i < 40; i++) { const a0 = -Math.PI * (.12 + i / 40 * .76), a1 = -Math.PI * (.12 + (i + 1) / 40 * .76); dummy.position.set(Math.cos(a0) * 46, .6, Math.sin(a0) * 46); dummy.rotation.set(0, -a0, 0); dummy.scale.setScalar(1); dummy.updateMatrix(); fencePosts.setMatrixAt(n++, dummy.matrix); const p0 = new THREE.Vector3(Math.cos(a0) * 46, 0, Math.sin(a0) * 46), p1 = new THREE.Vector3(Math.cos(a1) * 46, 0, Math.sin(a1) * 46); for (const y of [.55, 1.05]) { p0.y = p1.y = y; rails.push({ g: new THREE.BoxGeometry(.06, .1, p0.distanceTo(p1)), m: new THREE.Matrix4().compose(p0.clone().add(p1).multiplyScalar(.5), new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), p1.clone().sub(p0).normalize()), new THREE.Vector3(1, 1, 1)) }); } }
@@ -633,14 +610,14 @@ export async function createScene(canvas, onProgress = () => {}) {
   const gloves = [new THREE.Mesh(gloveGeos.right, gloveMat), new THREE.Mesh(gloveGeos.rightTop, gloveMat)];
   for (const g of gloves) { g.castShadow = true; scene.add(g); }
   const armMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .75, bumpMap: knitBump(), bumpScale: .0012 });
-  const SKIN = '#b5865f', SWEATER = '#f1ecdc', TRIM = '#1f3a2c', L_UPPER = .5, L_FORE = .36;
+  const SKIN = '#b5865f', SWEATER = '#ece6d3', TRIM = '#1f3a2c', L_UPPER = .5, L_FORE = .36;
   const forearmGeo = mergeGeometries([
-    { g: lathe([[.028, -.01], [.03, 0], [.036, .06], [.041, .12], [.04, .15]], 18), c: SKIN },
+    { g: lathe([[.034, -.01], [.036, 0], [.039, .06], [.042, .12], [.041, .15]], 18), c: SKIN },
     { g: lathe([[.043, .13], [.047, .16], [.049, .26], [.047, L_FORE]], 18), c: SWEATER },
     { g: new THREE.TorusGeometry(.044, .011, 8, 20), m: mat4(0, .135, 0, Math.PI / 2), c: TRIM },
     { g: new THREE.SphereGeometry(.05, 14, 10), m: mat4(0, L_FORE, 0), c: SWEATER },
   ]);
-  const upperGeo = mergeGeometries([{ g: lathe([[.05, 0], [.056, .12], [.06, .3], [.065, .42], [.06, L_UPPER]], 18), c: SWEATER }]);
+  const upperGeo = mergeGeometries([{ g: lathe([[.046, 0], [.05, .12], [.053, .3], [.055, .42], [.05, L_UPPER]], 18), c: SWEATER }]);
   const arms = [0, 1].map(() => ({ fore: new THREE.Mesh(forearmGeo, armMat), upper: new THREE.Mesh(upperGeo, armMat) }));
   for (const a of arms) { a.fore.castShadow = true; a.upper.material = armMat; a.upper.material.side = THREE.DoubleSide; scene.add(a.fore, a.upper); }
   const padMat = new THREE.MeshStandardMaterial({ color: '#f4f1e6', roughness: .85, bumpMap: quiltBump(), bumpScale: .004 });
@@ -649,15 +626,14 @@ export async function createScene(canvas, onProgress = () => {}) {
     { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .4, .04, 0, 0, Math.PI / 2) }, { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .47, .05, 0, 0, Math.PI / 2) }, { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .54, .045, 0, 0, Math.PI / 2) },
   ]);
   const pads = [new THREE.Mesh(padGeo, padMat), new THREE.Mesh(padGeo, padMat)]; for (const p of pads) scene.add(p);
-  const chest = new THREE.Mesh(mergeGeometries([{ g: new THREE.TorusGeometry(.17, .05, 8, 24, Math.PI), m: mat4(0, 0, 0, Math.PI / 2 + .3, 0, Math.PI), c: SWEATER }, { g: new THREE.SphereGeometry(.24, 16, 12), m: mat4(0, -.12, -.02, 0, 0, 0, 1, .6, .6), c: SWEATER }, { g: new THREE.TorusGeometry(.12, .012, 6, 20, Math.PI), m: mat4(0, -.02, .1, Math.PI / 2 - .5, 0, Math.PI), c: TRIM }]), armMat); scene.add(chest);
-  const shoulderBase = [new THREE.Vector3(.22, 1.40, .74), new THREE.Vector3(-.22, 1.40, .74)];
+  const shoulderBase = [new THREE.Vector3(.21, 1.38, 1.02), new THREE.Vector3(-.21, 1.38, 1.02)];
   let hand = 'right', handSign = 1, lastBatX = .25, lastBatY = .44, lastBatZ = -.12, batSpeed = 0;
   const wristLocal = new THREE.Vector3(.034, 0, .105), gloveY = [.40, .51];
   const kick = new THREE.Vector3(), headOffset = new THREE.Vector3(), headVel = new THREE.Vector3(); let kickRoll = 0, headRoll = 0, headRollVel = 0, flash = 0;
   function setHand(h) {
     if (h === hand) return; hand = h; handSign = h === 'left' ? -1 : 1;
     gloves[0].geometry = h === 'left' ? gloveGeos.left : gloveGeos.right; gloves[1].geometry = h === 'left' ? gloveGeos.leftTop : gloveGeos.rightTop;
-    shoulderBase[0].x = .22 * handSign; shoulderBase[1].x = -.22 * handSign;
+    shoulderBase[0].x = .21 * handSign; shoulderBase[1].x = -.21 * handSign;
   }
   // Two-bone analytic IK: fixed bone lengths, elbow pole out-and-down, torso lean absorbs overreach.
   function solveArm(i, wristW, shoulderW) {
@@ -696,7 +672,6 @@ export async function createScene(canvas, onProgress = () => {}) {
     // Pads and sweater sway with the stroke so a shot reads as body motion, not a floating bat.
     const swayX = leanX * .5, swayZ = -travel * .06 + leanZ * .4;
     pads[0].position.set(-.17 * handSign + swayX, .0, .55 + swayZ); pads[0].rotation.set(-.14, 0, .06 * handSign); pads[1].position.set(.15 * handSign + swayX, .0, .8 + swayZ); pads[1].rotation.set(-.08, 0, -.04 * handSign);
-    chest.position.set(.02 + swayX * .7, 1.47 + leanY * .3, .96 + swayZ); chest.rotation.set(.1 + travel * .12, 0, -leanX * .15);
   }
 
   // ---------------------------------------------------------------- camera, gaze, head motion
@@ -743,8 +718,8 @@ export async function createScene(canvas, onProgress = () => {}) {
     const over = c.weather === 'overcast', evening = c.weather === 'evening';
     setHand(c.hand);
     windUniform.value = Math.min(.06, Math.abs(c.wind) * .0025);
-    renderer.toneMappingExposure = over ? .92 : evening ? 1.0 : 1.05;
-    if (evening) { sun.color.set('#ff9d55'); sun.intensity = 2.8; sun.position.set(-40, 6, -12); ambient.color.set('#6d7aa6'); ambient.groundColor.set('#4a4033'); ambient.intensity = .3; scene.environmentIntensity = .55; scene.backgroundIntensity = 1; scene.fog.color.set('#d9ad80'); scene.fog.near = 35; scene.fog.far = 200; }
+    renderer.toneMappingExposure = over ? .9 : evening ? 1.15 : 1.05;
+    if (evening) { sun.color.set('#ffa25c'); sun.intensity = 3.4; sun.position.set(-19, 5.2, -30); ambient.color.set('#8b86a8'); ambient.groundColor.set('#4f4433'); ambient.intensity = .42; scene.environmentIntensity = .7; scene.backgroundIntensity = 1.25; scene.fog.color.set('#c9a07a'); scene.fog.near = 40; scene.fog.far = 220; }
     else if (over) { sun.color.set('#e8ecec'); sun.intensity = .55; sun.position.set(-14, 30, -10); ambient.color.set('#cfd3d0'); ambient.groundColor.set('#59614c'); ambient.intensity = .95; scene.environmentIntensity = .95; scene.backgroundIntensity = .95; scene.fog.color.set('#c5cbc6'); scene.fog.near = 30; scene.fog.far = 180; }
     else { sun.color.set('#fff4de'); sun.intensity = 4.2; sun.position.set(-24, 30, -6); ambient.color.set('#d7e6f5'); ambient.groundColor.set('#4f5d36'); ambient.intensity = .32; scene.environmentIntensity = .5; scene.backgroundIntensity = 1; scene.fog.color.set('#cdd9e2'); scene.fog.near = 45; scene.fog.far = 260; }
     const cam = sun.shadow.camera; cam.left = -17; cam.right = 16; cam.top = evening ? 9 : 13; cam.bottom = evening ? -3 : -10; cam.near = 5; cam.far = 90; cam.updateProjectionMatrix();
@@ -753,7 +728,7 @@ export async function createScene(canvas, onProgress = () => {}) {
     scene.backgroundRotation.set(0, theta, 0); scene.environmentRotation.set(0, theta, 0); scene.backgroundBlurriness = .04;
     lampMat.emissiveIntensity = evening ? 3 : 0; for (const g of glows) g.material.opacity = evening ? .9 : 0; for (const s of spots) s.intensity = evening ? 1.3 : 0;
     wearUniform.value = pitchTexture(c.pitch);
-    pitchMat.color.set(c.pitch === 'green' ? '#a7ab86' : c.pitch === 'soft' ? '#9a8e76' : c.pitch === 'dry' ? '#cdbc98' : '#bfb08c');
+    pitchMat.color.set(c.pitch === 'green' ? '#8e956f' : c.pitch === 'soft' ? '#847862' : c.pitch === 'dry' ? '#b4a483' : '#a3946e');
     pitchMat.normalScale.setScalar(c.pitch === 'dry' ? .2 : c.pitch === 'soft' ? .08 : .1);
     pitchMat.roughness = c.pitch === 'soft' ? (over ? .5 : .45) : .95; pitchMat.clearcoat = c.pitch === 'soft' ? .25 : 0;
     ballMat.roughness = .3 + c.age / 200; ballMat.clearcoat = Math.max(0, 1 - c.age / 50); ballMat.color.set(c.age > 40 ? '#6e1519' : '#a3131f');

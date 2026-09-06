@@ -232,7 +232,7 @@ dialog::backdrop{background:#06100ab8;backdrop-filter:blur(8px);-webkit-backdrop
   .metric{padding:2px 10px;min-width:56px}
   .metric strong{font-size:22px}
   .scorebug-time{font-size:18px;padding:0 10px}
-  .hud-button span{display:none}
+  .hud-button span:not(.when-playing):not(.when-paused){display:none}
   .hud-button{padding:0 10px}
   #delivery-speed{font-size:54px}
 }
@@ -252,6 +252,7 @@ dialog::backdrop{background:#06100ab8;backdrop-filter:blur(8px);-webkit-backdrop
 }
 @media(max-width:600px){
   :root{--pad:12px}
+  .conditions-label{display:none}
   .hud-cluster.hud-right{gap:6px}
   .icon-button,.hud-button{width:34px;height:34px}
   #help-button{display:none}
@@ -276,6 +277,11 @@ dialog::backdrop{background:#06100ab8;backdrop-filter:blur(8px);-webkit-backdrop
   .dialog-head h2{font-size:38px}
   .help-grid{grid-template-columns:1fr;gap:6px 0}
   .help-grid span{margin-bottom:8px}
+}
+@media(max-height:760px){
+  .intro-card h1{font-size:clamp(72px,11vw,124px)}
+  .intro-actions{margin-top:20px}
+  .intro-status{margin-top:18px}
 }
 @media(prefers-reduced-motion:reduce){
   :root{--d-fast:1ms;--d-base:1ms}
