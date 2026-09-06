@@ -153,7 +153,7 @@ try{
       view.animateBowler(phase,phase==='runup'?phaseTime:delivery?.time??0,deliveryConfig);
     }else accumulator=0;
     view.updateGaze(delivery,delta,paused);view.updateBat(bat);view.updateBall(delivery,config.guide);view.render();
-    const point=view.project(bat);reticle.style.left=point.x+'px';reticle.style.top=point.y+'px';reticle.style.setProperty('--travel',(batControl.travel/BAT_LIMITS.travel).toFixed(3));
+    const point=view.project(bat),rx=clamp(point.x,16,canvas.clientWidth-16),ry=clamp(point.y,16,canvas.clientHeight-16);reticle.style.left=rx+'px';reticle.style.top=ry+'px';reticle.classList.toggle('is-clipped',rx!==point.x||ry!==point.y);reticle.style.setProperty('--travel',(batControl.travel/BAT_LIMITS.travel).toFixed(3));
     $('bat-angle').textContent=Math.round(bat.yaw*180/Math.PI)+'°';$('bat-loft').textContent=Math.round(bat.loft*180/Math.PI)+'°';$('bat-roll').textContent=Math.round(bat.roll*180/Math.PI)+'°';
     const minutes=Math.floor(sessionSeconds/60),seconds=Math.floor(sessionSeconds%60);$('session-time').textContent=String(minutes).padStart(2,'0')+':'+String(seconds).padStart(2,'0');
   }requestAnimationFrame(frame);
