@@ -1,66 +1,160 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta name="theme-color" content="#111914"><meta name="description" content="Step into the nets. First-person cricket practice with mouse-controlled batting, pace, swing, spin and changing pitch conditions.">
-  <title>CricSim — The nets</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23101914'/%3E%3Cpath d='M20 46V20m12 26V20m12 26V20M18 17h28' stroke='%23d0ed94' stroke-width='5'/%3E%3C/svg%3E">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0b120e">
+  <meta name="description" content="Step into the nets. First-person cricket practice with mouse-controlled batting, pace, swing, spin and changing pitch conditions.">
+  <title>CricSim — The Nets</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b120e'/%3E%3Cpath d='M20 46V20m12 26V20m12 26V20M18 17h28' stroke='%23c9f26b' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
+  <link rel="preload" href="./fonts/barlow-condensed-700.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="./fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="./style.css">
 </head>
 <body>
-  <header class="topbar">
-    <a class="brand" href="./" aria-label="CricSim home"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M7 23V7m7 16V7m7 16V7M5 4h18"/></svg>Cric<span>Sim</span></a>
-    <div class="mode-label"><span></span>THE NETS <span class="mode-divider">/</span> <span class="subtle">PRACTICE SESSION</span></div>
-    <div class="top-actions"><button id="help-button" class="text-button">How to play <kbd>?</kbd></button><button id="sound-button" class="icon-button" aria-label="Mute sound" title="Toggle sound"><svg viewBox="0 0 24 24"><path d="m11 5-6 4H2v6h3l6 4V5Zm4 3a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg></button><button id="fullscreen-button" class="icon-button" aria-label="Enter fullscreen" title="Fullscreen"><svg viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button></div>
-  </header>
   <main>
-    <aside id="setup" class="setup-panel">
-      <div class="panel-heading"><div><p class="eyebrow">MAKE IT YOUR SESSION</p><h1>Set the conditions.</h1></div><button id="close-setup" class="icon-button mobile-only" aria-label="Close settings">×</button></div>
+    <section id="viewport" class="viewport" data-phase="intro" data-balls="0" aria-label="First-person cricket nets">
+      <canvas id="game" tabindex="0" aria-label="Cricket simulation. Move the mouse to position your bat, hold left click and move to play a shot, right click to defend. Space bowls the next ball."></canvas>
+      <div class="scrim scrim-top" aria-hidden="true"></div>
+      <div class="scrim scrim-bottom" aria-hidden="true"></div>
+      <div id="reticle" class="reticle" aria-hidden="true"><i></i></div>
+
+      <header class="hud hud-top">
+        <div class="hud-cluster hud-left">
+          <a class="brand" href="./" aria-label="CricSim home"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M7 23V7m7 16V7m7 16V7M5 4h18"/></svg><span>Cric<b>Sim</b></span></a>
+          <div class="chips conditions-label"><span class="chip" id="scene-weather">Clear afternoon</span><span class="chip" id="scene-pitch">Hard &amp; true</span><span class="chip chip-mode" id="clock-label">Real time · 1×</span></div>
+        </div>
+        <div class="scorebug" role="group" aria-label="This session">
+          <div class="scorebug-time"><span class="live-dot" aria-hidden="true"></span><span id="session-time">00:00</span></div>
+          <div class="metric"><strong id="stat-balls">0</strong><span>Balls</span></div>
+          <div class="metric"><strong id="stat-contact">—</strong><span>Contact</span></div>
+          <div class="metric"><strong id="stat-clean">0</strong><span>Clean</span></div>
+          <div class="metric metric-exit"><strong id="stat-exit">— <small>km/h</small></strong><span>Exit</span></div>
+        </div>
+        <div class="hud-cluster hud-right">
+          <button id="help-button" class="icon-button" aria-label="How to play" title="How to play (?)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.25"/><path d="M9.4 9.5a2.6 2.6 0 1 1 3.7 2.4c-.8.4-1.1.9-1.1 1.7M12 17h.01"/></svg></button>
+          <button id="sound-button" class="icon-button" aria-label="Mute sound" title="Toggle sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4V5Zm4 3a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg></button>
+          <button id="fullscreen-button" class="icon-button" aria-label="Enter fullscreen" title="Fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button>
+          <button id="settings-button" class="hud-button" aria-controls="setup" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10m4 0h2M4 17h4m4 0h8M4 12h16"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Conditions</span></button>
+          <button id="pause-button" class="hud-button" aria-label="Pause"><span class="when-playing"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg><span>Pause</span></span><span class="when-paused"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5Z"/></svg><span>Resume</span></span></button>
+        </div>
+      </header>
+
+      <footer class="hud hud-bottom">
+        <div class="delivery-info">
+          <span id="delivery-state" class="eyebrow state-label">Ready when you are</span>
+          <div class="delivery-readout"><strong id="delivery-speed">140</strong><span class="unit">km/h</span><span class="delivery-separator" aria-hidden="true"></span><span id="delivery-style">Right-arm pace</span></div>
+          <p id="coach-tip" class="coach-tip" aria-live="polite"></p>
+        </div>
+        <div class="hud-cluster hud-bottom-right">
+          <div class="aim-info" aria-label="Bat angles"><div><strong id="bat-angle">0°</strong><span>Face</span></div><div><strong id="bat-loft">0°</strong><span>Loft</span></div><div><strong id="bat-roll">0°</strong><span>Roll</span></div></div>
+          <button id="next-button" class="primary-button next-button"><span class="label">Next ball</span><kbd>Space</kbd></button>
+        </div>
+      </footer>
+
+      <div id="shot-feedback" class="shot-feedback hidden" aria-live="polite" data-outcome="">
+        <span id="feedback-label" class="eyebrow">Delivery 01</span>
+        <strong id="feedback-title">Sweet spot</strong>
+        <span id="feedback-detail">Clean contact through the middle.</span>
+      </div>
+
+      <div id="intro" class="intro-overlay">
+        <div class="intro-card">
+          <span class="intro-marker">First-person cricket practice</span>
+          <h1>The<br>Nets</h1>
+          <p>One lane. A bowler at the top of his mark. Move the mouse to line the bat up, hold left click and push through the line.</p>
+          <div class="intro-actions"><button id="start-button" class="primary-button large">Take guard <kbd>Space</kbd></button></div>
+          <div class="intro-status"><span class="progress" aria-hidden="true"><i></i></span><span id="asset-status" role="status">Preparing the nets…</span></div>
+        </div>
+      </div>
+
+      <div id="pause-overlay" class="modal-overlay hidden">
+        <div class="modal-card">
+          <span class="eyebrow">Take a breath</span>
+          <h2>Paused</h2>
+          <button id="resume-button" class="primary-button">Back to the crease <kbd>P</kbd></button>
+        </div>
+      </div>
+
+      <div id="error-overlay" class="modal-overlay hidden" role="alert">
+        <div class="modal-card">
+          <span class="eyebrow">Something went wrong</span>
+          <h2>The nets couldn’t load</h2>
+          <p id="error-message">This game needs a browser with WebGL 2 enabled.</p>
+          <button onclick="location.reload()" class="primary-button">Try again</button>
+        </div>
+      </div>
+    </section>
+
+    <div class="drawer-scrim" id="drawer-scrim" aria-hidden="true"></div>
+    <aside id="setup" class="setup-panel" aria-label="Conditions">
+      <div class="panel-heading">
+        <div><p class="eyebrow">Conditions</p><h2>Set the session</h2></div>
+        <button id="close-setup" class="icon-button" aria-label="Close conditions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+      </div>
       <div class="settings-scroll">
         <section class="setting-section">
-          <div class="section-heading"><h2><span>01</span> The bowler</h2><span id="bowler-tag" class="tiny-tag">PACE</span></div>
-          <label for="bowler">Bowling style</label><select id="bowler"><option value="fast">Fast pace</option><option value="outswing">Outswing</option><option value="inswing">Inswing</option><option value="offspin">Off spin</option><option value="legspin">Leg spin</option></select>
+          <div class="section-heading"><h3><span>01</span>The bowler</h3><span id="bowler-tag" class="tiny-tag">PACE</span></div>
+          <label for="bowler">Bowling style</label>
+          <select id="bowler"><option value="fast">Fast pace</option><option value="outswing">Outswing</option><option value="inswing">Inswing</option><option value="offspin">Off spin</option><option value="legspin">Leg spin</option></select>
           <p id="bowler-description" class="field-note">Hit the deck. Read the bounce.</p>
           <div class="split-fields"><div><label for="arm">Bowling arm</label><select id="arm"><option value="right">Right arm</option><option value="left">Left arm</option></select></div><div><label for="hand">Your stance</label><select id="hand"><option value="right">Right handed</option><option value="left">Left handed</option></select></div></div>
-          <div class="range-heading"><label for="speed">Release speed</label><output id="speed-value">140 <span>km/h</span></output></div><input type="range" id="speed" min="120" max="160" value="140"><div class="range-scale"><span id="speed-min">120</span><span id="speed-max">160 km/h</span></div>
+          <div class="range-heading"><label for="speed">Release speed</label><output id="speed-value">140 <span>km/h</span></output></div>
+          <input type="range" id="speed" min="120" max="160" value="140">
+          <div class="range-scale"><span id="speed-min">120</span><span id="speed-max">160 km/h</span></div>
           <div class="split-fields"><div><label for="length">Length</label><select id="length"><option value="good">Good length</option><option value="full">Full</option><option value="yorker">Yorker</option><option value="short">Short</option><option value="mixed">Mixed</option></select></div><div><label for="line">Line</label><select id="line"><option value="off">Off stump</option><option value="middle">Middle stump</option><option value="leg">Leg stump</option><option value="wide">Outside off</option><option value="mixed">Mixed</option></select></div></div>
         </section>
         <section class="setting-section">
-          <div class="section-heading"><h2><span>02</span> The surface</h2><span class="mini-icon">▱</span></div>
-          <div class="pitch-options" role="group" aria-label="Pitch type"><button class="pitch-option active" data-pitch="hard" aria-pressed="true"><i class="pitch-swatch hard"></i><span>Hard & true</span></button><button class="pitch-option" data-pitch="green" aria-pressed="false"><i class="pitch-swatch green"></i><span>Green top</span></button><button class="pitch-option" data-pitch="dry" aria-pressed="false"><i class="pitch-swatch dry"></i><span>Dry & worn</span></button><button class="pitch-option" data-pitch="soft" aria-pressed="false"><i class="pitch-swatch soft"></i><span>Soft & damp</span></button></div><p id="pitch-detail" class="field-note">Carry · consistent bounce</p>
+          <div class="section-heading"><h3><span>02</span>The surface</h3></div>
+          <div class="pitch-options" role="group" aria-label="Pitch type">
+            <button class="pitch-option active" data-pitch="hard" aria-pressed="true"><i class="pitch-swatch hard"></i><span>Hard &amp; true</span></button>
+            <button class="pitch-option" data-pitch="green" aria-pressed="false"><i class="pitch-swatch green"></i><span>Green top</span></button>
+            <button class="pitch-option" data-pitch="dry" aria-pressed="false"><i class="pitch-swatch dry"></i><span>Dry &amp; worn</span></button>
+            <button class="pitch-option" data-pitch="soft" aria-pressed="false"><i class="pitch-swatch soft"></i><span>Soft &amp; damp</span></button>
+          </div>
+          <p id="pitch-detail" class="field-note">Carry · consistent bounce</p>
         </section>
         <section class="setting-section">
-          <div class="section-heading"><h2><span>03</span> The conditions</h2><span class="mini-icon">☼</span></div>
-          <label for="weather">Sky & light</label><select id="weather"><option value="clear">Clear afternoon</option><option value="overcast">Overcast</option><option value="evening">Late evening</option></select>
-          <div class="range-heading"><label for="wind">Crosswind</label><output id="wind-value">0 <span>km/h</span></output></div><input type="range" id="wind" min="-25" max="25" value="0"><div class="range-scale"><span>← Left</span><span>Right →</span></div>
-          <div class="range-heading"><label for="age">Ball age</label><output id="age-value">8 <span>overs</span></output></div><input type="range" id="age" min="0" max="80" value="8"><div class="range-scale"><span>New ball</span><span>Worn</span></div>
+          <div class="section-heading"><h3><span>03</span>The conditions</h3></div>
+          <label for="weather">Sky &amp; light</label>
+          <select id="weather"><option value="clear">Clear afternoon</option><option value="overcast">Overcast</option><option value="evening">Late evening</option></select>
+          <div class="range-heading"><label for="wind">Crosswind</label><output id="wind-value">0 <span>km/h</span></output></div>
+          <input type="range" id="wind" min="-25" max="25" value="0">
+          <div class="range-scale"><span>← Left</span><span>Right →</span></div>
+          <div class="range-heading"><label for="age">Ball age</label><output id="age-value">8 <span>overs</span></output></div>
+          <input type="range" id="age" min="0" max="80" value="8">
+          <div class="range-scale"><span>New ball</span><span>Worn</span></div>
         </section>
-        <section class="setting-section practice-section">
-          <div class="section-heading"><h2><span>04</span> Practice tools</h2></div>
-          <label for="timeScale">Simulation speed</label><select id="timeScale"><option value="1">Real time · 1×</option><option value="0.75">Read the ball · 0.75×</option><option value="0.5">Slow practice · 0.5×</option></select>
-          <label class="switch-row" for="guide">Bat guide & ball trail<input id="guide" type="checkbox" checked><span class="switch"></span></label><label class="switch-row" for="auto">Continuous deliveries<input id="auto" type="checkbox"><span class="switch"></span></label>
+        <section class="setting-section">
+          <div class="section-heading"><h3><span>04</span>Practice tools</h3></div>
+          <label for="timeScale">Simulation speed</label>
+          <select id="timeScale"><option value="1">Real time · 1×</option><option value="0.75">Read the ball · 0.75×</option><option value="0.5">Slow practice · 0.5×</option></select>
+          <label class="switch-row" for="guide"><span>Bat guide &amp; ball trail</span><input id="guide" type="checkbox" checked><span class="switch"></span></label>
+          <label class="switch-row" for="auto"><span>Continuous deliveries</span><input id="auto" type="checkbox"><span class="switch"></span></label>
         </section>
       </div>
-      <div class="settings-footer"><span class="save-hint" id="settings-hint">Changes apply to the next ball</span><button id="reset-session" class="text-button">Reset session ↺</button></div>
+      <div class="settings-footer"><span class="save-hint" id="settings-hint">Changes apply to the next ball</span><button id="reset-session" class="text-button">Reset session</button></div>
     </aside>
-    <section class="play-panel" aria-label="First-person cricket nets">
-      <div id="viewport" class="viewport">
-        <canvas id="game" tabindex="0" aria-label="Cricket simulation. Move the mouse to position your bat, hold left click and move to play a shot, right click to defend. Space bowls the next ball."></canvas>
-        <div class="scene-vignette"></div>
-        <div class="scene-top"><div class="venue"><span class="live-dot"></span> OUTDOOR NETS <span class="lane">LANE 01</span></div><div class="scene-controls"><button id="settings-button" class="scene-button" aria-label="Toggle conditions panel">☷ <span>Conditions</span></button><button id="pause-button" class="scene-button">Ⅱ <span>Pause</span></button></div></div>
-        <div class="conditions-label"><span id="scene-weather">CLEAR AFTERNOON</span><span id="scene-pitch">HARD & TRUE</span><span id="clock-label">REAL TIME · 1×</span></div>
-        <div id="reticle" class="reticle" aria-hidden="true"><span></span></div>
-        <div id="intro" class="intro-overlay"><span class="intro-marker">YOU'RE AT THE CREASE</span><h2>Just you.<br>And the next ball.</h2><p>Find your timing. Trust your hands.</p><button id="start-button" class="primary-button">Take guard <svg viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></svg></button><span id="asset-status" class="intro-caption" role="status">Preparing the nets…</span></div>
-        <div id="pause-overlay" class="pause-overlay hidden"><span class="eyebrow">TAKE A BREATH</span><h2>Session paused</h2><button id="resume-button" class="primary-button">Back to the crease</button></div>
-        <div id="error-overlay" class="pause-overlay hidden" role="alert"><h2>The nets couldn’t load</h2><p id="error-message">This game needs a browser with WebGL 2 enabled.</p><button onclick="location.reload()" class="primary-button">Try again</button></div>
-        <div id="shot-feedback" class="shot-feedback hidden" aria-live="polite"><span id="feedback-label">DELIVERY 01</span><strong id="feedback-title">Sweet spot</strong><span id="feedback-detail">Clean contact through the middle.</span></div>
-        <div class="scene-bottom"><div class="delivery-info"><span id="delivery-state" class="eyebrow">READY WHEN YOU ARE</span><div><strong id="delivery-speed">140</strong><span>km/h</span><span class="delivery-separator"></span><span id="delivery-style">Right-arm pace</span></div></div><div class="aim-info"><span id="bat-angle">FACE 0°</span><span id="bat-loft">LOFT 0°</span><span id="bat-roll">ROLL 0°</span></div></div>
-      </div>
-      <div class="session-bar"><div class="session-title"><span class="eyebrow">THIS SESSION</span><span id="session-time">00:00</span></div><div class="metric"><span>Balls faced</span><strong id="stat-balls">0</strong></div><div class="metric"><span>Bat contact</span><strong id="stat-contact">—</strong></div><div class="metric"><span>Clean strikes</span><strong id="stat-clean">0</strong></div><div class="metric last-metric"><span>Last exit speed</span><strong id="stat-exit">— <small>km/h</small></strong></div><button id="next-button" class="primary-button next-button">Next ball <kbd>SPACE</kbd></button></div>
-      <footer class="controls-bar"><div><span><i class="mouse-symbol"></i> Move to position</span><span><b>LMB</b> + move to swing</span><span><b>RMB</b> Defend</span><span><b>A</b><b>D</b> Bat face</span><span><b>W</b><b>S</b> Loft</span><span><b>Q</b><b>E</b> Cross-bat</span></div><span class="build-label">NETS ONLY. NO SCOREBOARD.</span></footer>
-    </section>
   </main>
-  <dialog id="help-dialog"><button id="close-help" class="dialog-close" aria-label="Close instructions">×</button><p class="eyebrow">A FEW BALLS TO FIND YOUR FEET</p><h2>Meet the ball.</h2><p>Watch the bowler’s hand, read the bounce, and bring the bat to the ball. The bat is regulation width. Start at half speed if you need more time.</p><div class="help-grid"><b>Move your mouse</b><span>Position the bat across the crease and up or down. The small guide marks the middle of the blade.</span><b>Left click + move</b><span>Hold, then drag to drive the bat through the ball. More mouse travel gives more reach; faster travel adds bat speed. Release to reset.</span><b>Right click</b><span>Hold for a soft-handed block. Move the blade to meet the ball. Move it aside to leave the delivery.</span><b>A / D · W / S</b><span>Turn the face left / right and add loft. Q / E rotates the blade for cuts and pulls. C resets all three angles.</span><b>Space · P</b><span>Bowl the next ball · pause or resume. Settings take effect on the next delivery.</span></div><p class="help-note">Touch: drag to position and play. For the full experience, use a mouse and keyboard. Pace and movement use a physical approximation; this is an early simulation, not a validated coaching instrument.</p><button id="help-done" class="primary-button">Got it. Let's bat.</button></dialog>
+
+  <dialog id="help-dialog">
+    <div class="dialog-head">
+      <div><p class="eyebrow">A few balls to find your feet</p><h2>Meet the ball</h2></div>
+      <button id="close-help" class="icon-button" aria-label="Close instructions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    </div>
+    <div class="dialog-body">
+      <p>Watch the bowler’s hand, read the bounce, and bring the bat to the ball. The bat is regulation width. Start at half speed if you need more time.</p>
+      <div class="help-grid">
+        <b><kbd>Mouse</kbd></b><span>Position the bat across the crease and up or down. The ring marks the middle of the blade.</span>
+        <b><kbd>LMB</kbd> + move</b><span>Hold, then push the mouse to drive the bat through the ball. More travel is more reach; faster travel is more bat speed. Release to reset.</span>
+        <b><kbd>RMB</kbd></b><span>Hold for a soft-handed block. Move the blade to meet the ball, or move it aside to leave.</span>
+        <b><kbd>A</kbd><kbd>D</kbd> <kbd>W</kbd><kbd>S</kbd></b><span>Turn the face and add loft. <kbd>Q</kbd><kbd>E</kbd> roll the blade for cuts and pulls. <kbd>C</kbd> resets all three.</span>
+        <b><kbd>Space</kbd> <kbd>P</kbd></b><span>Bowl the next ball · pause or resume. Conditions apply to the next delivery.</span>
+      </div>
+      <p class="help-note">Touch: drag to position and play. A mouse and keyboard give full control. Pace and movement use a physical approximation; this is an early simulation, not a coaching instrument.</p>
+    </div>
+    <div class="dialog-foot"><button id="help-done" class="primary-button">Got it. Let’s bat.</button></div>
+  </dialog>
   <script type="module" src="./game.js"></script>
 </body>
 </html>
