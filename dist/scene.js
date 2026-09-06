@@ -115,8 +115,8 @@ function gloveGeometry(thumbUp, mirror) {
   const ty = thumbUp ? 1 : -1;
   a.set(0.036, ty * 0.03, 0.03); b.set(-0.014, ty * 0.05, 0.024);
   add(new THREE.CapsuleGeometry(0.0125, 0.04, 3, 8), betweenMat(a, b), cream);
-  add(new THREE.CylinderGeometry(0.05, 0.044, 0.05, 14, 1, false), mat4(0.034, 0, 0.078, Math.PI / 2), green);
-  add(new THREE.TorusGeometry(0.046, 0.009, 6, 18), mat4(0.034, 0, 0.055, 0, 0, 0), cream); // padded wrist roll
+  add(new THREE.CylinderGeometry(0.05, 0.045, 0.046, 14, 1, true), mat4(0.034, 0, 0.076, Math.PI / 2), green);
+  add(new THREE.TorusGeometry(0.045, 0.005, 6, 20), mat4(0.034, 0, 0.099, 0, 0, 0), cream); // thin seam at the wrist opening
   add(new THREE.BoxGeometry(0.028, 0.012, 0.006), mat4(0.082, 0, 0.078), cream); // strap tab
   return mergeGeometries(parts);
 }
@@ -613,12 +613,12 @@ export async function createScene(canvas, onProgress = () => {}) {
   const armMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .75, bumpMap: knitBump(), bumpScale: .0012 });
   const SKIN = '#b5865f', SWEATER = '#ece6d3', TRIM = '#1f3a2c', L_UPPER = .5, L_FORE = .36;
   const forearmGeo = mergeGeometries([
-    { g: lathe([[.034, -.01], [.036, 0], [.039, .06], [.042, .12], [.041, .15]], 18), c: SKIN },
-    { g: lathe([[.043, .13], [.047, .16], [.049, .26], [.047, L_FORE]], 18), c: SWEATER },
-    { g: new THREE.TorusGeometry(.044, .011, 8, 20), m: mat4(0, .135, 0, Math.PI / 2), c: TRIM },
-    { g: new THREE.SphereGeometry(.05, 14, 10), m: mat4(0, L_FORE, 0), c: SWEATER },
+    { g: lathe([[.038, -.01], [.039, 0], [.041, .06], [.043, .12], [.042, .15]], 18), c: SKIN },
+    { g: lathe([[.041, .13], [.044, .16], [.045, .26], [.044, L_FORE]], 18), c: SWEATER },
+    { g: new THREE.TorusGeometry(.042, .009, 8, 20), m: mat4(0, .135, 0, Math.PI / 2), c: TRIM },
+    { g: new THREE.SphereGeometry(.046, 14, 10), m: mat4(0, L_FORE, 0), c: SWEATER },
   ]);
-  const upperGeo = mergeGeometries([{ g: lathe([[.046, 0], [.05, .12], [.053, .3], [.055, .42], [.05, L_UPPER]], 18), c: SWEATER }]);
+  const upperGeo = mergeGeometries([{ g: lathe([[.04, 0], [.043, .12], [.046, .3], [.048, .42], [.045, L_UPPER]], 18), c: SWEATER }]);
   const arms = [0, 1].map(() => ({ fore: new THREE.Mesh(forearmGeo, armMat), upper: new THREE.Mesh(upperGeo, armMat) }));
   for (const a of arms) { a.fore.castShadow = true; a.upper.material = armMat; a.upper.material.side = THREE.DoubleSide; scene.add(a.fore, a.upper); }
   const padMat = new THREE.MeshStandardMaterial({ color: '#f4f1e6', roughness: .85, bumpMap: quiltBump(), bumpScale: .004 });
@@ -627,7 +627,7 @@ export async function createScene(canvas, onProgress = () => {}) {
     { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .4, .04, 0, 0, Math.PI / 2) }, { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .47, .05, 0, 0, Math.PI / 2) }, { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .54, .045, 0, 0, Math.PI / 2) },
   ]);
   const pads = [new THREE.Mesh(padGeo, padMat), new THREE.Mesh(padGeo, padMat)]; for (const p of pads) scene.add(p);
-  const shoulderBase = [new THREE.Vector3(.21, 1.38, 1.02), new THREE.Vector3(-.21, 1.38, 1.02)];
+  const shoulderBase = [new THREE.Vector3(.21, 1.38, 1.04), new THREE.Vector3(-.21, 1.38, 1.04)];
   let hand = 'right', handSign = 1, lastBatX = .25, lastBatY = .44, lastBatZ = -.12, batSpeed = 0, lunge = 0;
   const wristLocal = new THREE.Vector3(.034, 0, .105), gloveY = [.40, .51];
   const kick = new THREE.Vector3(), headOffset = new THREE.Vector3(), headVel = new THREE.Vector3(); let kickRoll = 0, headRoll = 0, headRollVel = 0, flash = 0;
@@ -663,8 +663,8 @@ export async function createScene(canvas, onProgress = () => {}) {
     _m1.makeBasis(_v[0].set(w.x, w.y, w.z), _v[1].set(u.x, u.y, u.z), _v[2].set(-n.x, -n.y, -n.z));
     batGroup.quaternion.setFromRotationMatrix(_m1); batGroup.position.set(b.x, b.y, b.z); batGroup.updateMatrixWorld(true);
     batSpeed = batSpeed * .8 + .2 * Math.hypot(b.x - lastBatX, b.y - lastBatY, b.z - lastBatZ) / Math.max(1e-3, frameDt); lastBatX = b.x; lastBatY = b.y; lastBatZ = b.z;
-    const travel = clamp(-(b.z + .12), 0, .8), leanX = .42 * (b.x - .25 * handSign), leanY = .22 * clamp(b.y - .6, -.25, .7), leanZ = .55 * (b.z + .12);
-    lunge += (travel * .38 - lunge) * (1 - Math.exp(-frameDt * 9));
+    const travel = clamp(-(b.z + .12), 0, .8), leanX = .42 * (b.x - .25 * handSign), leanY = .22 * clamp(b.y - .6, -.25, .7), leanZ = cameraBase.z - .98;
+    lunge += (travel * .35 - lunge) * (1 - Math.exp(-frameDt * 9));
     cameraBase.z = .98 - lunge;
     const handleAxis = _v[8].set(u.x, u.y, u.z);
     for (let i = 0; i < 2; i++) {
@@ -729,8 +729,8 @@ export async function createScene(canvas, onProgress = () => {}) {
     const over = c.weather === 'overcast', evening = c.weather === 'evening';
     setHand(c.hand);
     windUniform.value = Math.min(.06, Math.abs(c.wind) * .0025);
-    renderer.toneMappingExposure = over ? .9 : evening ? 1.15 : 1.05;
-    if (evening) { sun.color.set('#ffa25c'); sun.intensity = 3.6; sun.position.set(-17, 6.5, -30); ambient.color.set('#9a8fa8'); ambient.groundColor.set('#55483a'); ambient.intensity = .5; scene.environmentIntensity = .8; scene.backgroundIntensity = 1.6; scene.fog.color.set('#d4a97f'); scene.fog.near = 40; scene.fog.far = 220; }
+    renderer.toneMappingExposure = over ? .9 : evening ? 1.02 : 1.05;
+    if (evening) { sun.color.set('#ffa25c'); sun.intensity = 3.4; sun.position.set(-17, 7.5, -30); ambient.color.set('#8d84a3'); ambient.groundColor.set('#55483a'); ambient.intensity = .42; scene.environmentIntensity = .5; scene.backgroundIntensity = .42; scene.fog.color.set('#b98f6a'); scene.fog.near = 40; scene.fog.far = 220; }
     else if (over) { sun.color.set('#e8ecec'); sun.intensity = .55; sun.position.set(-14, 30, -10); ambient.color.set('#cfd3d0'); ambient.groundColor.set('#59614c'); ambient.intensity = .95; scene.environmentIntensity = .95; scene.backgroundIntensity = .95; scene.fog.color.set('#c5cbc6'); scene.fog.near = 30; scene.fog.far = 180; }
     else { sun.color.set('#fff4de'); sun.intensity = 4.2; sun.position.set(-24, 30, -6); ambient.color.set('#d7e6f5'); ambient.groundColor.set('#4f5d36'); ambient.intensity = .32; scene.environmentIntensity = .5; scene.backgroundIntensity = 1; scene.fog.color.set('#cdd9e2'); scene.fog.near = 45; scene.fog.far = 260; }
     const cam = sun.shadow.camera; cam.left = -17; cam.right = 16; cam.top = evening ? 9 : 13; cam.bottom = evening ? -3 : -10; cam.near = 5; cam.far = 90; cam.updateProjectionMatrix();
@@ -738,7 +738,7 @@ export async function createScene(canvas, onProgress = () => {}) {
     const worldAz = Math.atan2(sun.position.z, sun.position.x) * 180 / Math.PI, theta = THREE.MathUtils.degToRad(worldAz - HDR_SUN_AZIMUTH[c.weather]);
     scene.backgroundRotation.set(0, theta, 0); scene.environmentRotation.set(0, theta, 0); scene.backgroundBlurriness = .04;
     lampMat.emissiveIntensity = evening ? 3 : 0; for (const g of glows) g.material.opacity = evening ? .9 : 0; for (const s of spots) s.intensity = evening ? 1.3 : 0;
-    sunGlow.position.copy(sun.position).normalize().multiplyScalar(300); sunGlow.scale.setScalar(evening ? 150 : 0); sunGlow.material.opacity = evening ? .95 : 0;
+    sunGlow.position.copy(sun.position).normalize().multiplyScalar(300); sunGlow.scale.setScalar(evening ? 46 : 0); sunGlow.material.opacity = evening ? .8 : 0;
     wearUniform.value = pitchTexture(c.pitch);
     pitchMat.color.set(c.pitch === 'green' ? '#8e956f' : c.pitch === 'soft' ? '#847862' : c.pitch === 'dry' ? '#b4a483' : '#a3946e');
     pitchMat.normalScale.setScalar(c.pitch === 'dry' ? .2 : c.pitch === 'soft' ? .08 : .1);
