@@ -10,11 +10,12 @@
   <link rel="preload" href="./fonts/barlow-condensed-700.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./menu.css">
 </head>
 <body>
   <main>
     <section id="viewport" class="viewport" data-phase="intro" data-balls="0" aria-label="First-person cricket nets">
-      <canvas id="game" tabindex="0" aria-label="Cricket simulation. Move the mouse to position your bat, hold left click and move to play a shot, right click to defend. Space bowls the next ball."></canvas>
+      <canvas id="game" tabindex="0" aria-label="Cricket simulation. Aim the contact ring, hold and swipe up to drive or sideways to cut or pull. Right click to defend. Keys 1, 2, 3 select grounded, lofted or defence. Space bowls the next ball."></canvas>
       <div class="scrim scrim-top" aria-hidden="true"></div>
       <div class="scrim scrim-bottom" aria-hidden="true"></div>
       <div id="reticle" class="reticle" aria-hidden="true"><i></i></div>
@@ -47,7 +48,16 @@
           <p id="coach-tip" class="coach-tip" aria-live="polite"></p>
         </div>
         <div class="hud-cluster hud-bottom-right">
-          <div class="aim-info" aria-label="Bat angles"><div><strong id="bat-angle">0°</strong><span>Face</span></div><div><strong id="bat-loft">0°</strong><span>Loft</span></div><div><strong id="bat-roll">0°</strong><span>Roll</span></div></div>
+          <div class="batting-panel">
+            <div class="stroke-heading"><strong id="shot-name">Straight drive</strong><span id="swing-state">Aim · hold · swipe</span></div>
+            <div id="stroke-meter" class="stroke-meter" aria-hidden="true"><span class="contact-window"></span><i></i></div>
+            <div class="shot-intents" role="group" aria-label="Shot intent">
+              <button data-intent="grounded" aria-pressed="true"><kbd>1</kbd> Grounded</button>
+              <button data-intent="lofted" aria-pressed="false"><kbd>2</kbd> Lofted</button>
+              <button data-intent="defend" aria-pressed="false"><kbd>3</kbd> Defend</button>
+            </div>
+            <span id="bat-trim" class="bat-trim" hidden></span>
+          </div>
           <button id="next-button" class="primary-button next-button"><span class="label">Next ball</span><kbd>Space</kbd></button>
         </div>
       </footer>
@@ -56,15 +66,43 @@
         <span id="feedback-label" class="eyebrow">Delivery 01</span>
         <strong id="feedback-title">Sweet spot</strong>
         <span id="feedback-detail">Clean contact through the middle.</span>
+        <div class="contact-review">
+          <div id="contact-map" class="contact-map" role="img" aria-label="Contact location on the bat face, handle at top"><i id="contact-mark" hidden></i></div>
+          <div><span>Stroke</span><strong id="feedback-shot">Straight drive</strong></div>
+          <div><span>Timing</span><strong id="feedback-timing">Well timed</strong></div>
+          <div><span>Exit speed</span><strong id="feedback-exit">—</strong></div>
+        </div>
       </div>
 
       <div id="intro" class="intro-overlay">
-        <div class="intro-card">
-          <span class="intro-marker">First-person cricket practice</span>
-          <h1>The<br>Nets</h1>
-          <p>One lane. A bowler at the top of his mark. Move the mouse to line the bat up, hold left click and push through the line.</p>
-          <div class="intro-actions"><button id="start-button" class="primary-button large">Take guard <kbd>Space</kbd></button></div>
-          <div class="intro-status"><span class="progress" aria-hidden="true"><i></i></span><span id="asset-status" role="status">Preparing the nets…</span></div>
+        <div class="menu-sheet">
+          <header class="menu-masthead">
+            <p class="menu-overline">Cricket · Net practice</p>
+            <h1>CricSim<span aria-hidden="true">.</span></h1>
+          </header>
+          <section class="menu-session" aria-labelledby="menu-session-title">
+            <div class="menu-section-heading"><h2 id="menu-session-title">Your session</h2><span>At the crease</span></div>
+            <dl class="menu-conditions">
+              <div><dt>Bowling</dt><dd id="menu-bowling">Right-arm pace</dd></div>
+              <div><dt>Release</dt><dd id="menu-speed">140 <small>km/h</small></dd></div>
+              <div><dt>Surface</dt><dd id="menu-surface">Hard &amp; true</dd></div>
+              <div><dt>Practice speed</dt><dd id="menu-tempo">Real time</dd></div>
+            </dl>
+            <button id="menu-conditions-button" class="menu-text-button" aria-controls="setup" aria-expanded="false">Change conditions <span aria-hidden="true">↗</span></button>
+          </section>
+          <div class="menu-start">
+            <button id="start-button" class="menu-play" disabled><span>Take guard</span><kbd>Space</kbd></button>
+            <button id="start-slow-button" class="menu-learn" disabled>First time? Practise at half speed.</button>
+          </div>
+          <footer class="menu-foot">
+            <button id="menu-help-button" class="menu-text-button">How to bat <span aria-hidden="true">?</span></button>
+            <p id="menu-gesture">Move to aim. Hold, then swipe.</p>
+            <p id="asset-status" class="menu-status" role="status">Preparing the nets…</p>
+          </footer>
+        </div>
+        <div id="menu-ground" class="menu-ground">
+          <div class="menu-ground-caption"><p>The practice wicket</p><span id="menu-weather">Clear afternoon</span></div>
+          <div class="menu-tools"><button id="menu-sound-button" aria-pressed="false">Sound on</button><button id="menu-fullscreen-button">Fullscreen</button></div>
         </div>
       </div>
 
@@ -143,15 +181,16 @@
       <button id="close-help" class="icon-button" aria-label="Close instructions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
     <div class="dialog-body">
-      <p>Watch the bowler’s hand, read the bounce, and bring the bat to the ball. The bat is regulation width. Start at half speed if you need more time.</p>
+      <p>Aim the ring at the point where you want to meet the ball. Hold to prepare the bat, then swipe. Your aim stays in place while the blade moves through it. The middle of the stroke meter is the contact zone.</p>
       <div class="help-grid">
-        <b><kbd>Mouse</kbd></b><span>Position the bat across the crease and up or down. The ring marks the middle of the blade.</span>
-        <b><kbd>LMB</kbd> + move</b><span>Hold, then push the mouse to drive the bat through the ball. More travel is more reach; faster travel is more bat speed. Release to reset.</span>
+        <b><kbd>Mouse</kbd></b><span>Move the contact ring across the crease and up or down. Place it before you start the stroke.</span>
+        <b><kbd>LMB</kbd> + swipe</b><span>Swipe up for a drive; diagonally to angle it; sideways for a cut, pull or low sweep. A quicker swipe gives more bat speed. Release after contact to follow through.</span>
         <b><kbd>RMB</kbd></b><span>Hold for a soft-handed block. Move the blade to meet the ball, or move it aside to leave.</span>
-        <b><kbd>A</kbd><kbd>D</kbd> <kbd>W</kbd><kbd>S</kbd></b><span>Turn the face and add loft. <kbd>Q</kbd><kbd>E</kbd> roll the blade for cuts and pulls. <kbd>C</kbd> resets all three.</span>
+        <b><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></b><span>Choose Grounded, Lofted or Defend. With Defend selected, hold the mouse or touch to block. You can also use the three buttons beside Next ball.</span>
+        <b>Fine adjustment</b><span><kbd>A</kbd><kbd>D</kbd> adjust the face, <kbd>W</kbd><kbd>S</kbd> adjust loft, and <kbd>Q</kbd><kbd>E</kbd> adjust blade roll. <kbd>C</kbd> clears these adjustments. Shot shape works without them.</span>
         <b><kbd>Space</kbd> <kbd>P</kbd></b><span>Bowl the next ball · pause or resume. Conditions apply to the next delivery.</span>
       </div>
-      <p class="help-note">Touch: drag to position and play. A mouse and keyboard give full control. Pace and movement use a physical approximation; this is an early simulation, not a coaching instrument.</p>
+      <p class="help-note">Touch: place a finger at the contact point, then swipe up or across. Select Defend for a block. Try half speed and middle-stump deliveries while learning. The ball and bat keep their physical width; the game does not aim for you.</p>
     </div>
     <div class="dialog-foot"><button id="help-done" class="primary-button">Got it. Let’s bat.</button></div>
   </dialog>
