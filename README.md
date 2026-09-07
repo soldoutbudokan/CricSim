@@ -4,9 +4,9 @@ A first-person cricket nets simulator. Aim a contact point and swipe through dri
 
 ## Play
 
-[Play CricSim](https://cricsim-nets.soldoutbudokan.chatgpt.site) (owner account sign-in).
+[Play CricSim](https://cricsim-nets.soldoutbudokan.chatgpt.site). Public access; no account or sign-in required.
 
-Public GitHub Pages target: https://soldoutbudokan.github.io/CricSim/
+An optional GitHub Pages mirror can use https://soldoutbudokan.github.io/CricSim/ once Pages is enabled in the repository settings.
 
 The `Deploy Production` workflow publishes `dist` to `gh-pages` after tests pass. For first-time activation, select **Settings → Pages → Deploy from a branch → gh-pages → / (root)**. Later pushes to `main` publish automatically.
 
@@ -54,6 +54,8 @@ Aim before pressing: the contact ring stays anchored during the swipe. Holding w
 
 ## Interface
 
+- The opening screen pairs a warm paper session sheet with a live view along the practice wicket. A serif CricSim masthead, ruled condition rows and a cricket-red Take guard button give it the character of a club scorebook. Bowling, release speed, surface and practice speed reflect the actual saved settings. Conditions, batting help, sound and fullscreen remain accessible before starting.
+- The menu uses its own camera and renders inside the visible ground panel; the batting rig stays hidden until taking guard. On phones, the ground sits above the session sheet and the menu scrolls when needed. The in-play camera and controls are unchanged by the menu composition.
 - The 3D view fills the window. Conditions, session statistics and delivery information stay at the edges. Shot intent, stroke name and a compact stroke meter replace the three constantly changing angle readouts; fine adjustments appear only when used.
 - Taking guard leaves you at the crease; Space or **Next ball** starts the bowler. Short coaching lines appear under the readout for the first three balls.
 - Results show outcome, shot, timing, exit speed and contact location on the blade. Timing is sampled at contact or as the ball passes the contact plane, so later pointer input cannot rewrite the feedback. Early, late, released early and missed-line feedback have different advice. Being bowled flashes the frame edge red.
@@ -101,7 +103,7 @@ This remains a simulation foundation, **not a finished photorealistic or validat
 - `dist/audio.js`: generated impact sound and ambience.
 - `dist/assets`: CC0 ground maps and HDR environments (about 9.8 MB total).
 - `dist/fonts`: Barlow Condensed and DM Sans, latin subsets (about 50 KB).
-- `dist/index.html` / `dist/style.css`: the interface.
+- `dist/index.html` / `dist/style.css`: the interface; `dist/menu.css` isolates the scorebook-style opening screen from the in-play HUD.
 - `tests/physics.test.mjs`: trajectory, speed, bounce, contact, outcome, and determinism checks.
 - `tests/bat-control.test.mjs`: swipe shape, handedness, displacement, speed limits, ground clearance, defence and release safety.
 - `tests/batting-play.test.mjs`: repeatable aimed strokes against seeded deliveries, shot direction, loft, input rates, feedback and camera geometry.

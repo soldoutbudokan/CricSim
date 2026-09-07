@@ -686,6 +686,28 @@ export async function createScene(canvas, onProgress = () => {}) {
   function resize() { const rect = canvas.parentElement.getBoundingClientRect(); renderer.setSize(rect.width, rect.height, false); camera.aspect = rect.width / rect.height; camera.fov = battingFov(camera.aspect); camera.updateProjectionMatrix(); }
   new ResizeObserver(resize).observe(canvas.parentElement); resize();
   const gazeCamera = camera.clone(), gazePoint = new THREE.Vector3().copy(BATTING_VIEW.look), restPoint = gazePoint.clone(), gazeTarget = new THREE.Vector3(), viewQuat = new THREE.Quaternion().copy(camera.quaternion);
+  // The title screen looks along the real nets from beside the crease. Give
+  // that view its own camera and viewport so the paper never covers its subject.
+  const menuCamera = new THREE.PerspectiveCamera(52, 1, .035, 400);
+  menuCamera.position.set(2.15, 1.7, 2.35); menuCamera.lookAt(-.15, .75, -10);
+  let menuFrame = null;
+  const batterMeshes = [batGroup, ...gloves, ...pads, ...arms.flatMap(arm => [arm.fore, arm.upper])];
+  function setMenuFrame(frame) {
+    menuFrame = frame;
+    for (const mesh of batterMeshes) mesh.visible = !frame;
+    if (frame && frame.width > 0 && frame.height > 0) { menuCamera.aspect = frame.width / frame.height; menuCamera.updateProjectionMatrix(); }
+  }
+  function render() {
+    const width = canvas.clientWidth, height = canvas.clientHeight;
+    if (menuFrame && menuFrame.width > 0 && menuFrame.height > 0) {
+      const f = menuFrame, bottom = height - f.y - f.height;
+      renderer.setViewport(f.x, bottom, f.width, f.height);
+      renderer.setScissor(Math.max(0, f.x), Math.max(0, bottom), Math.max(0, Math.min(width, f.x + f.width) - Math.max(0, f.x)), Math.max(0, Math.min(height, bottom + f.height) - Math.max(0, bottom)));
+      renderer.setScissorTest(true); renderer.render(scene, menuCamera);
+    } else {
+      renderer.setScissorTest(false); renderer.setViewport(0, 0, width, height); renderer.render(scene, camera);
+    }
+  }
   let lastBallTime = -1, followUntil = 0, frameDt = 0, clock = 0;
   function updateGaze(d, dt, isPaused) {
     if (isPaused) { frameDt = 0; return; }
@@ -745,5 +767,5 @@ export async function createScene(canvas, onProgress = () => {}) {
     ballMat.roughness = .3 + c.age / 200; ballMat.clearcoat = Math.max(0, 1 - c.age / 50); ballMat.color.set(c.age > 40 ? '#6e1519' : '#a3131f');
   }
   setEnvironment({ weather: 'clear', pitch: 'hard', age: 8, wind: 0, hand: 'right' });
-  return { renderer, scene, camera, setEnvironment, updateBat, updateBall, updateGaze, animateBowler, getReleasePosition, pointerWorld, project, render() { renderer.render(scene, camera); }, resetWicket, hitWicket };
+  return { renderer, scene, camera, setEnvironment, setMenuFrame, updateBat, updateBall, updateGaze, animateBowler, getReleasePosition, pointerWorld, project, render, resetWicket, hitWicket };
 }

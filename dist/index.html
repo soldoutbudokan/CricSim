@@ -10,6 +10,7 @@
   <link rel="preload" href="./fonts/barlow-condensed-700.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="./style.css">
+  <link rel="stylesheet" href="./menu.css">
 </head>
 <body>
   <main>
@@ -74,13 +75,34 @@
       </div>
 
       <div id="intro" class="intro-overlay">
-        <div class="intro-card">
-          <span class="intro-marker">First-person cricket practice</span>
-          <h1>The<br>Nets</h1>
-          <p>Aim where you want to meet the ball. Hold to lift the bat, then swipe through your shot.</p>
-          <div class="intro-strokes"><span><b>Swipe up</b>Drive through the line</span><span><b>Swipe across</b>Cut, pull or sweep</span></div>
-          <div class="intro-actions"><button id="start-button" class="primary-button large">Take guard <kbd>Space</kbd></button><button id="start-slow-button" class="text-button">Learn at half speed</button></div>
-          <div class="intro-status"><span class="progress" aria-hidden="true"><i></i></span><span id="asset-status" role="status">Preparing the nets…</span></div>
+        <div class="menu-sheet">
+          <header class="menu-masthead">
+            <p class="menu-overline">Cricket · Net practice</p>
+            <h1>CricSim<span aria-hidden="true">.</span></h1>
+          </header>
+          <section class="menu-session" aria-labelledby="menu-session-title">
+            <div class="menu-section-heading"><h2 id="menu-session-title">Your session</h2><span>At the crease</span></div>
+            <dl class="menu-conditions">
+              <div><dt>Bowling</dt><dd id="menu-bowling">Right-arm pace</dd></div>
+              <div><dt>Release</dt><dd id="menu-speed">140 <small>km/h</small></dd></div>
+              <div><dt>Surface</dt><dd id="menu-surface">Hard &amp; true</dd></div>
+              <div><dt>Practice speed</dt><dd id="menu-tempo">Real time</dd></div>
+            </dl>
+            <button id="menu-conditions-button" class="menu-text-button" aria-controls="setup" aria-expanded="false">Change conditions <span aria-hidden="true">↗</span></button>
+          </section>
+          <div class="menu-start">
+            <button id="start-button" class="menu-play" disabled><span>Take guard</span><kbd>Space</kbd></button>
+            <button id="start-slow-button" class="menu-learn" disabled>First time? Practise at half speed.</button>
+          </div>
+          <footer class="menu-foot">
+            <button id="menu-help-button" class="menu-text-button">How to bat <span aria-hidden="true">?</span></button>
+            <p id="menu-gesture">Move to aim. Hold, then swipe.</p>
+            <p id="asset-status" class="menu-status" role="status">Preparing the nets…</p>
+          </footer>
+        </div>
+        <div id="menu-ground" class="menu-ground">
+          <div class="menu-ground-caption"><p>The practice wicket</p><span id="menu-weather">Clear afternoon</span></div>
+          <div class="menu-tools"><button id="menu-sound-button" aria-pressed="false">Sound on</button><button id="menu-fullscreen-button">Fullscreen</button></div>
         </div>
       </div>
 

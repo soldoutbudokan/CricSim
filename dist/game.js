@@ -24,7 +24,7 @@ function savePreferences(){try{localStorage.setItem('cricsim-preferences',JSON.s
 function unlockAudio(){audio.setEnabled(config.audio);audio.unlock();}
 function sound(type,position=delivery?.p,strength=1,detail={}){audio.play(type,position,strength,detail);}
 // The stylesheet choreographs the HUD from these two attributes.
-function setPhase(next){phase=next;viewport.dataset.phase=next;coach();}
+function setPhase(next){phase=next;viewport.dataset.phase=next;if(next!=='intro')view?.setMenuFrame(null);coach();}
 function setState(text){$('delivery-state').textContent=text;}
 // Short, phase-aware coaching lines for the first few balls only.
 function coach(){
@@ -48,6 +48,18 @@ function syncControls(){
   $('clock-label').textContent=(config.timeScale===1?'Real time':config.timeScale===.75?'Read the ball':'Slow practice')+' · '+config.timeScale+'×';
   viewport.dataset.timescale=String(config.timeScale);
   $('reticle').style.visibility=config.guide?'visible':'hidden';
+  syncMenu();
+}
+function syncMenu(){
+  $('menu-bowling').textContent=`${config.arm==='left'?'Left':'Right'}-arm ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;
+  $('menu-speed').innerHTML=`${Math.round(config.speed)} <small>km/h</small>`;
+  $('menu-surface').textContent=PITCHES[config.pitch].name;
+  $('menu-tempo').textContent=config.timeScale===1?'Real time':config.timeScale===.75?'¾ speed':'½ speed';
+  $('menu-weather').textContent=$('weather').selectedOptions[0].text;
+  $('menu-sound-button').textContent=config.audio?'Sound on':'Sound off';
+  $('menu-sound-button').setAttribute('aria-pressed',String(!config.audio));
+  $('menu-sound-button').setAttribute('aria-label',config.audio?'Mute sound':'Enable sound');
+  $('menu-gesture').textContent=coarsePointer?'Touch to aim. Hold, then swipe.':'Move to aim. Hold, then swipe.';
 }
 function applyEnvironment(){view?.setEnvironment(config);audio.setWind(config.wind);audio.setSurface(config.pitch);$('scene-weather').textContent=$('weather').selectedOptions[0].text;$('scene-pitch').textContent=PITCHES[config.pitch].name;$('delivery-speed').textContent=Math.round(config.speed);$('delivery-style').textContent=`${config.arm==='left'?'Left':'Right'}-arm ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
 for(const key of ['bowler','arm','hand','length','line','weather','timeScale','speed','age','wind','auto','guide']){
@@ -161,27 +173,36 @@ window.addEventListener('blur',()=>{clearInput();if(phase!=='intro')pause(true);
 $('start-button').addEventListener('click',nextBall);$('next-button').addEventListener('click',nextBall);$('pause-button').addEventListener('click',()=>pause());$('resume-button').addEventListener('click',()=>pause(false));
 $('start-slow-button').addEventListener('click',()=>{if(!ready)return;config.timeScale=.5;config.line='middle';syncControls();savePreferences();nextBall();});
 $('reset-session').addEventListener('click',()=>{phaseTime=0;delivery=null;ballsFaced=contactCount=cleanCount=ballSerial=0;lastExit=null;sessionSeconds=0;resultCounted=false;resultRealTime=0;contactFlash=0;clearInput();resetBatControl(batControl,config.hand);$('intro').classList.add('hidden');$('shot-feedback').classList.add('hidden');viewport.classList.add('playing');setPhase('ready');setState('Ready when you are');$('next-button').disabled=false;pause(false);closeSetup();view?.resetWicket();applyEnvironment();updateStats();});
-$('sound-button').addEventListener('click',()=>{config.audio=!config.audio;audio.setEnabled(config.audio);if(config.audio)unlockAudio();syncControls();savePreferences();});
-$('fullscreen-button').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{$('fullscreen-button').title='Fullscreen is unavailable in this browser';}});
-document.addEventListener('fullscreenchange',()=>{$('fullscreen-button').setAttribute('aria-label',document.fullscreenElement?'Exit fullscreen':'Enter fullscreen');});
+function toggleSound(){config.audio=!config.audio;audio.setEnabled(config.audio);if(config.audio)unlockAudio();syncControls();savePreferences();}
+for(const id of ['sound-button','menu-sound-button'])$(id).addEventListener('click',toggleSound);
+async function toggleFullscreen(){try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{for(const id of ['fullscreen-button','menu-fullscreen-button'])$(id).title='Fullscreen is unavailable in this browser';}}
+for(const id of ['fullscreen-button','menu-fullscreen-button'])$(id).addEventListener('click',toggleFullscreen);
+document.addEventListener('fullscreenchange',()=>{const label=document.fullscreenElement?'Exit fullscreen':'Enter fullscreen';for(const id of ['fullscreen-button','menu-fullscreen-button'])$(id).setAttribute('aria-label',label);$('menu-fullscreen-button').textContent=document.fullscreenElement?'Exit fullscreen':'Fullscreen';});
 function openSetup(open=!document.body.classList.contains('setup-open')){
   if(open===document.body.classList.contains('setup-open'))return;
-  document.body.classList.toggle('setup-open',open);$('settings-button').setAttribute('aria-expanded',String(open));
+  document.body.classList.toggle('setup-open',open);for(const id of ['settings-button','menu-conditions-button'])$(id).setAttribute('aria-expanded',String(open));
   if(open){settingsPausedGame=!paused&&phase!=='intro';clearInput();if(settingsPausedGame)pause(true);$('setup').querySelector('select,button,input')?.focus({preventScroll:true});}
-  else {if(settingsPausedGame)pause(false);settingsPausedGame=false;if(phase!=='intro')$('game').focus({preventScroll:true});}
+  else {if(settingsPausedGame)pause(false);settingsPausedGame=false;$(phase==='intro'?'menu-conditions-button':'game').focus({preventScroll:true});}
 }
 function closeSetup(){openSetup(false);}
-$('settings-button').addEventListener('click',()=>openSetup());$('close-setup').addEventListener('click',closeSetup);$('drawer-scrim').addEventListener('click',closeSetup);
+for(const id of ['settings-button','menu-conditions-button'])$(id).addEventListener('click',()=>openSetup());$('close-setup').addEventListener('click',closeSetup);$('drawer-scrim').addEventListener('click',closeSetup);
 let helpWasPaused=false;
 function showHelp(){helpWasPaused=paused;pause(true);$('help-dialog').showModal();}
-$('help-button').addEventListener('click',showHelp);for(const id of ['close-help','help-done'])$(id).addEventListener('click',()=>$('help-dialog').close());$('help-dialog').addEventListener('close',()=>{if(!helpWasPaused)pause(false);});
+for(const id of ['help-button','menu-help-button'])$(id).addEventListener('click',showHelp);for(const id of ['close-help','help-done'])$(id).addEventListener('click',()=>$('help-dialog').close());$('help-dialog').addEventListener('close',()=>{if(!helpWasPaused)pause(false);if(phase==='intro')$('menu-help-button').focus({preventScroll:true});});
 function showError(error){console.error(error);$('error-message').textContent='The 3D scene or its assets could not load. Check your connection and WebGL 2 support, then try again.';$('error-overlay').classList.remove('hidden');$('start-button').disabled=true;$('start-slow-button').disabled=true;$('next-button').disabled=true;ready=false;}
 syncControls();updateStats();
 $('start-button').disabled=true;$('start-slow-button').disabled=true;$('next-button').disabled=true;
 try{
   $('asset-status').textContent='Preparing the nets…';
   const {createScene}=await import('./scene.js');view=await createScene(canvas,status=>{$('asset-status').textContent=status;});applyEnvironment();ready=true;$('start-button').disabled=false;$('start-slow-button').disabled=false;$('next-button').disabled=false;
-  $('asset-status').textContent=coarsePointer?'Touch to aim · swipe to play':'Aim · hold · swipe';
+  $('asset-status').textContent='Ready to play';
+  function updateMenuFrame(){
+    if(phase!=='intro'){view.setMenuFrame(null);return;}
+    const ground=$('menu-ground').getBoundingClientRect(),frame=canvas.getBoundingClientRect();
+    view.setMenuFrame({x:ground.left-frame.left,y:ground.top-frame.top,width:ground.width,height:ground.height});
+  }
+  new ResizeObserver(updateMenuFrame).observe($('menu-ground'));
+  $('intro').addEventListener('scroll',updateMenuFrame,{passive:true});updateMenuFrame();
   canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();pause(true);$('error-message').textContent='The graphics connection was interrupted. Reload to return to the nets.';showError(new Error('WebGL context lost'));});
   const reticle=$('reticle');
   function frame(now){
