@@ -102,7 +102,7 @@ export function stepDelivery(d, config, dt = DT, bat = null, oldBat = bat) {
   d.v.x += a.x*dt; d.v.y += a.y*dt; d.v.z += a.z*dt;
   d.p.x += d.v.x*dt; d.p.y += d.v.y*dt; d.p.z += d.v.z*dt;
   d.time += dt;
-  if (!d.hit && bat) {
+  if (!d.hit && bat && bat.active !== false) {
     const contact = batContact(from,d.p,bat,oldBat);
     if (contact) {
       const incoming = Math.hypot(d.v.x,d.v.y,d.v.z);
