@@ -1,6 +1,7 @@
 import { DEFAULTS, BOWLERS, PITCHES, DT, clamp, createDelivery, stepDelivery } from './physics.js';
 import { NetsAudio } from './audio.js';
-import { createBatControl, startStroke, moveBatTarget, releaseStroke, stepBat, BAT_LIMITS } from './bat-control.js';
+import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, CONTACT_Z } from './bat-control.js';
+import { describeShot } from './shot-feedback.js';
 const $=id=>document.getElementById(id);
 const config={...DEFAULTS};
 try {const saved=JSON.parse(localStorage.getItem('cricsim-preferences')||'null');if(saved){for(const key of Object.keys(DEFAULTS))if(typeof saved[key]===typeof DEFAULTS[key])config[key]=saved[key];}}
@@ -15,7 +16,8 @@ config.speed=clamp(config.speed,BOWLERS[config.bowler].min,BOWLERS[config.bowler
 let view,phase='intro',paused=false,phaseTime=0,delivery=null,deliveryConfig={...config},accumulator=0,lastTime=0,sessionSeconds=0,ready=false;
 let resultRealTime=0,resultCounted=false,contactCount=0,cleanCount=0,ballsFaced=0,lastExit=null,ballSerial=0,strideIndex=0;
 const batControl=createBatControl(config.hand),bat=batControl.pose,target=batControl.target;
-const input={held:false,defend:false,keys:new Set()};
+const input={held:false,defend:false,pointerId:null,button:0,keys:new Set()};
+let contactFlash=0,settingsPausedGame=false;
 const audio=new NetsAudio();audio.setEnabled(config.audio);
 const viewport=$('viewport'),coarsePointer=matchMedia('(pointer:coarse)').matches;
 function savePreferences(){try{localStorage.setItem('cricsim-preferences',JSON.stringify(config));}catch{}}
@@ -28,9 +30,9 @@ function setState(text){$('delivery-state').textContent=text;}
 function coach(){
   let tip='';
   if(ballsFaced<3){
-    if(phase==='ready')tip=ballsFaced?'Line the ring up with the ball. Hold left click and push through it.':(coarsePointer?'Drag to position the bat. Keep dragging forward to swing.':'Move the mouse to line the bat up. Space bowls.');
+    if(phase==='ready')tip=coarsePointer?'Touch the line of the ball, then swipe up to drive or sideways to cut or pull.':'Aim the ring. Hold and swipe up to drive, sideways to cut or pull. Space bowls.';
     else if(phase==='runup')tip='Watch the hand.';
-    else if(phase==='result'&&delivery)tip=delivery.hit?(delivery.contact.edge?'Off the edge. Line the ring up with the ball earlier.':delivery.contact.quality>.7?'That is the middle. Now do it again.':'Contact. Find the middle of the blade.'):(input.held?'Late. Start the push as the ball pitches.':'Hold left click and push the mouse through the line of the ball.');
+    else if(phase==='result'&&delivery)tip=describeShot(delivery.stroke,delivery.contact).detail;
   }
   $('coach-tip').textContent=tip;
 }
@@ -52,13 +54,19 @@ for(const key of ['bowler','arm','hand','length','line','weather','timeScale','s
   $(key).addEventListener(['speed','age','wind'].includes(key)?'input':'change',event=>{
     config[key]=['auto','guide'].includes(key)?event.target.checked:['timeScale','speed','age','wind'].includes(key)?Number(event.target.value):event.target.value;
     if(key==='bowler')config.speed=BOWLERS[config.bowler].speed;
-    if(key==='hand'&&(phase==='intro'||phase==='ready')){bat.x=target.x=config.hand==='left'?-.25:.25;}
+    if(key==='hand'&&(phase==='intro'||phase==='ready'))resetBatControl(batControl,config.hand);
     syncControls();savePreferences();
   });
 }
 for(const button of document.querySelectorAll('[data-pitch]'))button.addEventListener('click',()=>{config.pitch=button.dataset.pitch;syncControls();savePreferences();});
 function setReticle(){const r=$('reticle');r.classList.toggle('is-held',input.held);r.classList.toggle('is-defend',input.defend);}
-function clearInput(){input.held=false;input.defend=false;releaseStroke(batControl);input.keys.clear();setReticle();}
+function clearInput(){
+  const pointerId=input.pointerId;input.pointerId=null;input.held=false;input.defend=false;
+  releaseStroke(batControl,true);input.keys.clear();setReticle();
+  if(pointerId!==null&&$('game').hasPointerCapture(pointerId))$('game').releasePointerCapture(pointerId);
+}
+function chooseIntent(intent){clearInput();setBatIntent(batControl,intent);for(const button of document.querySelectorAll('[data-intent]'))button.setAttribute('aria-pressed',String(button.dataset.intent===intent));}
+for(const button of document.querySelectorAll('[data-intent]'))button.addEventListener('click',()=>{chooseIntent(button.dataset.intent);$('game').focus({preventScroll:true});});
 function setStat(id,html){const el=$(id);if(el.innerHTML===html)return;el.innerHTML=html;el.classList.remove('bump');void el.offsetWidth;el.classList.add('bump');}
 function updateStats(){setStat('stat-balls',String(ballsFaced));setStat('stat-contact',ballsFaced?Math.round(contactCount/ballsFaced*100)+'%':'—');setStat('stat-clean',String(cleanCount));setStat('stat-exit',(lastExit===null?'—':Math.round(lastExit))+' <small>km/h</small>');viewport.dataset.balls=String(ballsFaced);}
 function takeGuard(){
@@ -68,7 +76,9 @@ function takeGuard(){
 function nextBall(){
   if(!ready||paused||phase==='runup'||phase==='flight'||(phase==='result'&&resultRealTime<.8))return;
   if(phase==='intro'){takeGuard();return;}
-  phaseTime=0;delivery=null;deliveryConfig={...config};resultRealTime=0;resultCounted=false;ballSerial++;strideIndex=-1;
+  phaseTime=0;delivery=null;deliveryConfig={...config};resultRealTime=0;resultCounted=false;ballSerial++;strideIndex=-1;contactFlash=0;
+  if(batControl.hand!==(config.hand==='left'?-1:1))resetBatControl(batControl,config.hand);
+  batControl.attempted=false;
   $('shot-feedback').classList.add('hidden');$('next-button').disabled=true;setPhase('runup');setState('Bowler approaching');clearInput();view.resetWicket();applyEnvironment();unlockAudio();$('game').focus({preventScroll:true});
 }
 function pause(force){
@@ -81,8 +91,15 @@ function onResult(event){
   setPhase('result');resultRealTime=0;
   const card=$('shot-feedback');card.dataset.outcome=event.result.toLowerCase();card.classList.remove('hidden');
   $('feedback-label').textContent='Delivery '+String(ballsFaced).padStart(2,'0');$('feedback-title').textContent=event.result;
-  const detail=event.result==='Bowled'?'Through the gate. Cover your stumps.':delivery.hit?(delivery.contact.edge?'Caught the edge of the blade.':delivery.contact.quality>.7?'Clean contact through the middle.':'Contact, but not the middle of the blade.'):(input.held?'The ball beat the bat. Adjust your timing.':'A leave, or a miss. The next ball is yours.');
-  $('feedback-detail').textContent=delivery.hit?`${detail} ${Math.round(delivery.exitSpeed)} km/h off the bat.`:detail;
+  const feedback=describeShot(delivery.stroke,delivery.contact);
+  $('feedback-detail').textContent=feedback.detail;
+  $('feedback-timing').textContent=feedback.timing;
+  $('feedback-shot').textContent=delivery.stroke?.attempted?delivery.stroke.name:'No shot played';
+  $('feedback-exit').textContent=delivery.hit?Math.round(delivery.exitSpeed)+' km/h':'—';
+  const contact=$('contact-mark');contact.hidden=!delivery.hit;
+  if(delivery.hit){contact.style.left=clamp(50+delivery.contact.x/.108*100,0,100)+'%';contact.style.top=clamp(50-delivery.contact.y/.62*100,0,100)+'%';}
+  $('contact-map').classList.toggle('has-contact',delivery.hit);
+  $('contact-map').setAttribute('aria-label',delivery.hit?`Bat contact: ${delivery.contact.edge?'edge':delivery.contact.quality>.7?'middle':'off centre'}.`:'No bat contact.');
   if(event.result==='Bowled'){view.hitWicket();sound('wicket');}
   setState('Delivery complete');updateStats();
 }
@@ -96,9 +113,15 @@ function tick(dt){
     if(phaseTime>=2.2){view.animateBowler('runup',2.2,deliveryConfig);delivery=createDelivery(deliveryConfig,(Date.now()+ballSerial*4723)>>>0,view.getReleasePosition());setPhase('flight');phaseTime=0;setState('Ball in flight');$('delivery-speed').textContent=Math.round(delivery.speed);}
   }else if((phase==='flight'||phase==='result')&&delivery&&delivery.time<5){
     phaseTime+=dt;
-    for(const event of stepDelivery(delivery,deliveryConfig,dt,bat,previous)){
+    const beforeZ=delivery.p.z;
+    const events=stepDelivery(delivery,deliveryConfig,dt,bat,previous);
+    if(events.some(event=>event.type==='contact')||!delivery.stroke&&beforeZ<CONTACT_Z&&delivery.p.z>=CONTACT_Z){
+      delivery.stroke=strokeSnapshot(batControl);
+      if(delivery.hit)delivery.stroke.progress=previous.progress+(bat.progress-previous.progress)*delivery.contact.t;
+    }
+    for(const event of events){
       if(event.type==='bounce'&&event.impactSpeed>.8)sound('bounce',event,event.impactSpeed/9);
-      if(event.type==='contact')sound('contact',delivery.p,1,{quality:event.quality,edge:event.edge,exitSpeed:event.exitSpeed,defending:bat.defending});
+      if(event.type==='contact'){contactFlash=.28;sound('contact',delivery.p,1,{quality:event.quality,edge:event.edge,exitSpeed:event.exitSpeed,defending:bat.defending});}
       if(event.type==='result')onResult(event);
       if(event.type==='net'&&delivery.time<2.5)sound('net',delivery.p,Math.hypot(delivery.v.x,delivery.v.y,delivery.v.z)/22);
     }
@@ -107,41 +130,58 @@ function tick(dt){
 }
 const canvas=$('game');
 function updatePointer(event){
-  if(!view||paused||phase==='intro')return;const r=canvas.getBoundingClientRect();const x=(event.clientX-r.left)/r.width*2-1,y=1-(event.clientY-r.top)/r.height*2;const p=view.pointerWorld(x,y);if(!p)return;
-  moveBatTarget(batControl,p.x,p.y);
+  if(!canBat()||event.isPrimary===false||input.pointerId!==null&&event.pointerId!==input.pointerId)return;
+  if(input.pointerId!==null&&event.pointerType==='mouse'&&!(event.buttons&(input.button===2?2:1))){finishPointer(event);return;}
+  const r=canvas.getBoundingClientRect();const x=(event.clientX-r.left)/r.width*2-1,y=1-(event.clientY-r.top)/r.height*2;const p=view.pointerWorld(x,y);if(!p)return;
+  const scale=1.6/Math.min(r.width,r.height);
+  moveBatTarget(batControl,p.x,p.y,{x:(event.clientX-r.left)*scale,y:-(event.clientY-r.top)*scale});
 }
+function canBat(){return view&&ready&&!paused&&phase!=='intro'&&!document.body.classList.contains('setup-open')&&!$('help-dialog').open;}
 canvas.addEventListener('pointermove',updatePointer);
-canvas.addEventListener('pointerdown',event=>{if(paused||phase==='intro')return;event.preventDefault();canvas.focus({preventScroll:true});canvas.setPointerCapture(event.pointerId);updatePointer(event);unlockAudio();input.defend=event.button===2;input.held=!input.defend;startStroke(batControl,input.defend);setReticle();});
-canvas.addEventListener('pointerup',event=>{input.defend=false;input.held=false;releaseStroke(batControl);setReticle();if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);});
-canvas.addEventListener('pointercancel',clearInput);canvas.addEventListener('contextmenu',event=>event.preventDefault());
+canvas.addEventListener('pointerdown',event=>{
+  if(!canBat()||event.isPrimary===false||input.pointerId!==null||![0,2].includes(event.button))return;
+  event.preventDefault();canvas.focus({preventScroll:true});updatePointer(event);input.pointerId=event.pointerId;input.button=event.button;canvas.setPointerCapture(event.pointerId);unlockAudio();
+  input.defend=event.button===2||batControl.intent==='defend';input.held=!input.defend;startStroke(batControl,input.defend);setReticle();
+});
+function finishPointer(event){if(event.pointerId!==input.pointerId)return;input.pointerId=null;input.defend=false;input.held=false;releaseStroke(batControl);setReticle();if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);}
+canvas.addEventListener('pointerup',finishPointer);
+canvas.addEventListener('lostpointercapture',event=>{if(event.pointerId===input.pointerId)clearInput();});
+canvas.addEventListener('pointercancel',event=>{if(event.pointerId===input.pointerId)clearInput();});canvas.addEventListener('contextmenu',event=>event.preventDefault());
 document.addEventListener('keydown',event=>{
   if($('help-dialog').open)return;
   if(event.code==='Escape'&&document.body.classList.contains('setup-open')){closeSetup();return;}
   if(['SELECT','INPUT','TEXTAREA','BUTTON'].includes(document.activeElement?.tagName)&&event.code!=='Escape')return;
-  if(['Space','KeyW','KeyA','KeyS','KeyD','KeyP','KeyC','KeyQ','KeyE'].includes(event.code))event.preventDefault();
+  if(['Space','KeyW','KeyA','KeyS','KeyD','KeyP','KeyC','KeyQ','KeyE','Digit1','Digit2','Digit3'].includes(event.code))event.preventDefault();
   if(event.code==='Space'&&!event.repeat)nextBall();if((event.code==='KeyP'||event.code==='Escape')&&!event.repeat)pause();
-  if(event.key==='?')showHelp();if(event.code==='KeyC'){bat.yaw=0;bat.loft=0;bat.roll=0;}
+  if(event.key==='?')showHelp();if(event.code==='KeyC')resetBatTrim(batControl);
+  if(canBat()&&!event.repeat&&['Digit1','Digit2','Digit3'].includes(event.code))chooseIntent(['grounded','lofted','defend'][Number(event.code.at(-1))-1]);
   input.keys.add(event.key.toLowerCase());
 });document.addEventListener('keyup',event=>input.keys.delete(event.key.toLowerCase()));
 window.addEventListener('blur',()=>{clearInput();if(phase!=='intro')pause(true);});document.addEventListener('visibilitychange',()=>{if(document.hidden&&phase!=='intro')pause(true);});
 $('start-button').addEventListener('click',nextBall);$('next-button').addEventListener('click',nextBall);$('pause-button').addEventListener('click',()=>pause());$('resume-button').addEventListener('click',()=>pause(false));
-$('reset-session').addEventListener('click',()=>{phaseTime=0;delivery=null;ballsFaced=contactCount=cleanCount=ballSerial=0;lastExit=null;sessionSeconds=0;resultCounted=false;resultRealTime=0;clearInput();bat.x=target.x=config.hand==='left'?-.25:.25;bat.y=target.y=.45;bat.z=-.1;bat.yaw=bat.loft=bat.roll=0;$('intro').classList.add('hidden');$('shot-feedback').classList.add('hidden');viewport.classList.add('playing');setPhase('ready');setState('Ready when you are');$('next-button').disabled=false;pause(false);closeSetup();view?.resetWicket();applyEnvironment();updateStats();});
+$('start-slow-button').addEventListener('click',()=>{if(!ready)return;config.timeScale=.5;config.line='middle';syncControls();savePreferences();nextBall();});
+$('reset-session').addEventListener('click',()=>{phaseTime=0;delivery=null;ballsFaced=contactCount=cleanCount=ballSerial=0;lastExit=null;sessionSeconds=0;resultCounted=false;resultRealTime=0;contactFlash=0;clearInput();resetBatControl(batControl,config.hand);$('intro').classList.add('hidden');$('shot-feedback').classList.add('hidden');viewport.classList.add('playing');setPhase('ready');setState('Ready when you are');$('next-button').disabled=false;pause(false);closeSetup();view?.resetWicket();applyEnvironment();updateStats();});
 $('sound-button').addEventListener('click',()=>{config.audio=!config.audio;audio.setEnabled(config.audio);if(config.audio)unlockAudio();syncControls();savePreferences();});
 $('fullscreen-button').addEventListener('click',async()=>{try{if(document.fullscreenElement)await document.exitFullscreen();else await document.documentElement.requestFullscreen();}catch{$('fullscreen-button').title='Fullscreen is unavailable in this browser';}});
 document.addEventListener('fullscreenchange',()=>{$('fullscreen-button').setAttribute('aria-label',document.fullscreenElement?'Exit fullscreen':'Enter fullscreen');});
-function openSetup(open=!document.body.classList.contains('setup-open')){document.body.classList.toggle('setup-open',open);$('settings-button').setAttribute('aria-expanded',String(open));if(open)$('setup').querySelector('select,button,input')?.focus({preventScroll:true});else if(phase!=='intro')$('game').focus({preventScroll:true});}
+function openSetup(open=!document.body.classList.contains('setup-open')){
+  if(open===document.body.classList.contains('setup-open'))return;
+  document.body.classList.toggle('setup-open',open);$('settings-button').setAttribute('aria-expanded',String(open));
+  if(open){settingsPausedGame=!paused&&phase!=='intro';clearInput();if(settingsPausedGame)pause(true);$('setup').querySelector('select,button,input')?.focus({preventScroll:true});}
+  else {if(settingsPausedGame)pause(false);settingsPausedGame=false;if(phase!=='intro')$('game').focus({preventScroll:true});}
+}
 function closeSetup(){openSetup(false);}
 $('settings-button').addEventListener('click',()=>openSetup());$('close-setup').addEventListener('click',closeSetup);$('drawer-scrim').addEventListener('click',closeSetup);
 let helpWasPaused=false;
 function showHelp(){helpWasPaused=paused;pause(true);$('help-dialog').showModal();}
 $('help-button').addEventListener('click',showHelp);for(const id of ['close-help','help-done'])$(id).addEventListener('click',()=>$('help-dialog').close());$('help-dialog').addEventListener('close',()=>{if(!helpWasPaused)pause(false);});
-function showError(error){console.error(error);$('error-message').textContent='The 3D scene or its assets could not load. Check your connection and WebGL 2 support, then try again.';$('error-overlay').classList.remove('hidden');$('start-button').disabled=true;$('next-button').disabled=true;ready=false;}
+function showError(error){console.error(error);$('error-message').textContent='The 3D scene or its assets could not load. Check your connection and WebGL 2 support, then try again.';$('error-overlay').classList.remove('hidden');$('start-button').disabled=true;$('start-slow-button').disabled=true;$('next-button').disabled=true;ready=false;}
 syncControls();updateStats();
-$('start-button').disabled=true;$('next-button').disabled=true;
+$('start-button').disabled=true;$('start-slow-button').disabled=true;$('next-button').disabled=true;
 try{
   $('asset-status').textContent='Preparing the nets…';
-  const {createScene}=await import('./scene.js');view=await createScene(canvas,status=>{$('asset-status').textContent=status;});applyEnvironment();ready=true;$('start-button').disabled=false;$('next-button').disabled=false;
-  $('asset-status').textContent=coarsePointer?'Drag to position · keep dragging to swing':'Mouse & keyboard recommended';
+  const {createScene}=await import('./scene.js');view=await createScene(canvas,status=>{$('asset-status').textContent=status;});applyEnvironment();ready=true;$('start-button').disabled=false;$('start-slow-button').disabled=false;$('next-button').disabled=false;
+  $('asset-status').textContent=coarsePointer?'Touch to aim · swipe to play':'Aim · hold · swipe';
   canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();pause(true);$('error-message').textContent='The graphics connection was interrupted. Reload to return to the nets.';showError(new Error('WebGL context lost'));});
   const reticle=$('reticle');
   function frame(now){
@@ -153,8 +193,13 @@ try{
       view.animateBowler(phase,phase==='runup'?phaseTime:delivery?.time??0,deliveryConfig);
     }else accumulator=0;
     view.updateGaze(delivery,delta,paused);view.updateBat(bat);view.updateBall(delivery,config.guide);view.render();
-    const point=view.project(bat),rx=clamp(point.x,16,canvas.clientWidth-16),ry=clamp(point.y,16,canvas.clientHeight-16);reticle.style.left=rx+'px';reticle.style.top=ry+'px';reticle.classList.toggle('is-clipped',rx!==point.x||ry!==point.y);reticle.style.setProperty('--travel',(batControl.travel/BAT_LIMITS.travel).toFixed(3));
-    $('bat-angle').textContent=Math.round(bat.yaw*180/Math.PI)+'°';$('bat-loft').textContent=Math.round(bat.loft*180/Math.PI)+'°';$('bat-roll').textContent=Math.round(bat.roll*180/Math.PI)+'°';
+    if(!paused)contactFlash=Math.max(0,contactFlash-delta);
+    const point=view.project({x:target.x,y:target.y,z:CONTACT_Z}),rx=clamp(point.x,16,canvas.clientWidth-16),ry=clamp(point.y,16,canvas.clientHeight-16);reticle.style.left=rx+'px';reticle.style.top=ry+'px';reticle.classList.toggle('is-clipped',rx!==point.x||ry!==point.y);reticle.style.setProperty('--travel',bat.progress.toFixed(3));reticle.classList.toggle('is-contact',contactFlash>0);
+    $('shot-name').textContent=shotName(batControl);
+    $('swing-state').textContent=batControl.defending?'Hold the line':({guard:'Aim · hold · swipe',load:'Backlift · swipe through',swing:'Play through the ring',follow:'Follow-through',recover:'Returning to guard'}[batControl.phase]);
+    $('stroke-meter').style.setProperty('--stroke',bat.progress.toFixed(3));
+    $('bat-trim').textContent=`Face ${Math.round(batControl.trim.yaw*180/Math.PI)}° · Loft ${Math.round(batControl.trim.loft*180/Math.PI)}° · Roll ${Math.round(batControl.trim.roll*180/Math.PI)}°`;
+    $('bat-trim').hidden=!Object.values(batControl.trim).some(value=>Math.abs(value)>.01);
     const minutes=Math.floor(sessionSeconds/60),seconds=Math.floor(sessionSeconds%60);$('session-time').textContent=String(minutes).padStart(2,'0')+':'+String(seconds).padStart(2,'0');
   }requestAnimationFrame(frame);
 }catch(error){showError(error);}

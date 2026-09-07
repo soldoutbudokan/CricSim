@@ -4,6 +4,8 @@
 import * as THREE from './vendor/three.module.js';
 import { HDRLoader } from './vendor/HDRLoader.js';
 import { batBasis, random } from './physics.js';
+import { CONTACT_Z } from './bat-control.js';
+import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
@@ -153,8 +155,8 @@ export async function createScene(canvas, onProgress = () => {}) {
   const scene = new THREE.Scene();
   scene.background = daylight; scene.environment = daylight; scene.environmentIntensity = .5; scene.backgroundIntensity = 1;
   scene.fog = new THREE.Fog('#cdd9e2', 45, 260);
-  const camera = new THREE.PerspectiveCamera(60, 1, 0.035, 400);
-  const cameraBase = new THREE.Vector3(0.02, 1.72, 0.98); camera.position.copy(cameraBase); camera.lookAt(0, .5, -12);
+  const camera = new THREE.PerspectiveCamera(BATTING_VIEW.fov, 1, 0.035, 400);
+  const cameraBase = new THREE.Vector3().copy(BATTING_VIEW.eye); camera.position.copy(cameraBase); camera.lookAt(BATTING_VIEW.look.x, BATTING_VIEW.look.y, BATTING_VIEW.look.z);
   const ambient = new THREE.HemisphereLight('#d7e6f5', '#4f5d36', .32); scene.add(ambient);
   const sun = new THREE.DirectionalLight('#fff4de', 4.2); sun.position.set(-24, 30, -6); sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -.0004; sun.shadow.normalBias = .02; sun.target.position.set(0, 0, -10); scene.add(sun, sun.target);
@@ -627,28 +629,23 @@ export async function createScene(canvas, onProgress = () => {}) {
     { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .4, .04, 0, 0, Math.PI / 2) }, { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .47, .05, 0, 0, Math.PI / 2) }, { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .54, .045, 0, 0, Math.PI / 2) },
   ]);
   const pads = [new THREE.Mesh(padGeo, padMat), new THREE.Mesh(padGeo, padMat)]; for (const p of pads) scene.add(p);
-  const shoulderBase = [new THREE.Vector3(.21, 1.38, 1.04), new THREE.Vector3(-.21, 1.38, 1.04)];
-  let hand = 'right', handSign = 1, lastBatX = .25, lastBatY = .44, lastBatZ = -.12, batSpeed = 0, lunge = 0;
+  let hand = 'right', handSign = 1, lastBatX = .25, lastBatY = .48, lastBatZ = .06, batSpeed = 0;
   const wristLocal = new THREE.Vector3(.034, 0, .105), gloveY = [.40, .51];
   const kick = new THREE.Vector3(), headOffset = new THREE.Vector3(), headVel = new THREE.Vector3(); let kickRoll = 0, headRoll = 0, headRollVel = 0, flash = 0;
   function setHand(h) {
     if (h === hand) return; hand = h; handSign = h === 'left' ? -1 : 1;
     gloves[0].geometry = h === 'left' ? gloveGeos.left : gloveGeos.right; gloves[1].geometry = h === 'left' ? gloveGeos.leftTop : gloveGeos.rightTop;
-    shoulderBase[0].x = .21 * handSign; shoulderBase[1].x = -.21 * handSign;
   }
   // Two-bone analytic IK: fixed bone lengths, elbow pole out-and-down, torso lean absorbs overreach.
   function solveArm(i, wristW, shoulderW) {
     const side = (i === 0 ? 1 : -1) * handSign, S = _v[3].copy(shoulderW), axis = _v[4].subVectors(wristW, S);
-    const d = axis.length(), reach = L_UPPER + L_FORE - .01; axis.divideScalar(d);
+    let d = Math.max(axis.length(), .001); const reach = L_UPPER + L_FORE - .01; axis.divideScalar(d);
     const arm = arms[i], E = _v[6];
-    if (d > reach) {
-      // Over-reach: the forearm keeps its length and the upper arm stretches back to the
-      // shoulder, which sits behind the eye and is clipped, so the stretch is not seen.
-      E.copy(wristW).addScaledVector(axis, -L_FORE);
-      const pole = _v[5].crossVectors(UP, axis).multiplyScalar(side); pole.y -= .3; pole.addScaledVector(axis, -pole.dot(axis)).normalize();
-      E.addScaledVector(pole, .05);
-      arm.upper.scale.y = Math.max(1, E.distanceTo(S) / L_UPPER);
-    } else {
+    // Translate the shoulder girdle on a long reach instead of stretching the
+    // sleeve. The hands remain attached and both arm segments keep their length.
+    if (d > reach) { S.addScaledVector(axis, d - reach); d = reach; }
+    if (d < Math.abs(L_UPPER - L_FORE) + .01) { const min = Math.abs(L_UPPER - L_FORE) + .01; S.addScaledVector(axis, d - min); d = min; }
+    {
       const a = (L_UPPER * L_UPPER - L_FORE * L_FORE + d * d) / (2 * d), h = Math.sqrt(Math.max(0, L_UPPER * L_UPPER - a * a));
       const pole = _v[5].crossVectors(UP, axis).multiplyScalar(side); pole.y -= .55; pole.addScaledVector(axis, -pole.dot(axis)).normalize();
       E.copy(S).addScaledVector(axis, a).addScaledVector(pole, h);
@@ -662,13 +659,13 @@ export async function createScene(canvas, onProgress = () => {}) {
     const { n, w, u } = batBasis(b);
     _m1.makeBasis(_v[0].set(w.x, w.y, w.z), _v[1].set(u.x, u.y, u.z), _v[2].set(-n.x, -n.y, -n.z));
     batGroup.quaternion.setFromRotationMatrix(_m1); batGroup.position.set(b.x, b.y, b.z); batGroup.updateMatrixWorld(true);
-    batSpeed = batSpeed * .8 + .2 * Math.hypot(b.x - lastBatX, b.y - lastBatY, b.z - lastBatZ) / Math.max(1e-3, frameDt); lastBatX = b.x; lastBatY = b.y; lastBatZ = b.z;
-    const travel = clamp(-(b.z + .12), 0, .8), leanX = .42 * (b.x - .25 * handSign), leanY = .22 * clamp(b.y - .6, -.25, .7), leanZ = cameraBase.z - .98;
-    lunge += (travel * .35 - lunge) * (1 - Math.exp(-frameDt * 9));
-    cameraBase.z = .98 - lunge;
+    const blend = 1 - Math.exp(-frameDt * 18);
+    batSpeed += (Math.hypot(b.x - lastBatX, b.y - lastBatY, b.z - lastBatZ) / Math.max(1e-3, frameDt) - batSpeed) * blend; lastBatX = b.x; lastBatY = b.y; lastBatZ = b.z;
+    const motion = batterMotion(b, handSign);
+    cameraBase.lerp(_v[9].copy(motion.eye), 1 - Math.exp(-frameDt * 10));
     const handleAxis = _v[8].set(u.x, u.y, u.z);
     for (let i = 0; i < 2; i++) {
-      const glove = gloves[i], shoulder = _v[9].copy(shoulderBase[i]); shoulder.x += leanX; shoulder.y += leanY; shoulder.z += leanZ;
+      const glove = gloves[i], shoulder = _v[9].copy(motion.shoulders[i]);
       const centre = _v[10].set(0, gloveY[i], 0).applyMatrix4(batGroup.matrixWorld);
       // Provisional cuff direction toward the shoulder, then refine toward the solved elbow.
       let toward = _v[11].subVectors(shoulder, centre);
@@ -681,14 +678,14 @@ export async function createScene(canvas, onProgress = () => {}) {
       }
     }
     // Pads and sweater sway with the stroke so a shot reads as body motion, not a floating bat.
-    const swayX = leanX * .5, swayZ = -travel * .06 + leanZ * .4;
-    pads[0].position.set(-.17 * handSign + swayX, .0, .55 + swayZ); pads[0].rotation.set(-.14, 0, .06 * handSign); pads[1].position.set(.15 * handSign + swayX, .0, .8 + swayZ); pads[1].rotation.set(-.08, 0, -.04 * handSign);
+    pads[0].position.copy(motion.front); pads[0].rotation.set(-.14 - motion.forward * .15, motion.turn, .06 * handSign);
+    pads[1].position.copy(motion.rear); pads[1].rotation.set(-.08 + motion.back * .1, motion.turn * .45, -.04 * handSign);
   }
 
   // ---------------------------------------------------------------- camera, gaze, head motion
-  function resize() { const rect = canvas.parentElement.getBoundingClientRect(); renderer.setSize(rect.width, rect.height, false); camera.aspect = rect.width / rect.height; camera.fov = camera.aspect < 1 ? 70 : 60; camera.updateProjectionMatrix(); }
+  function resize() { const rect = canvas.parentElement.getBoundingClientRect(); renderer.setSize(rect.width, rect.height, false); camera.aspect = rect.width / rect.height; camera.fov = battingFov(camera.aspect); camera.updateProjectionMatrix(); }
   new ResizeObserver(resize).observe(canvas.parentElement); resize();
-  const gazeCamera = camera.clone(), gazePoint = new THREE.Vector3(0, .5, -12), restPoint = new THREE.Vector3(0, .5, -12), gazeTarget = new THREE.Vector3(), viewQuat = new THREE.Quaternion().copy(camera.quaternion);
+  const gazeCamera = camera.clone(), gazePoint = new THREE.Vector3().copy(BATTING_VIEW.look), restPoint = gazePoint.clone(), gazeTarget = new THREE.Vector3(), viewQuat = new THREE.Quaternion().copy(camera.quaternion);
   let lastBallTime = -1, followUntil = 0, frameDt = 0, clock = 0;
   function updateGaze(d, dt, isPaused) {
     if (isPaused) { frameDt = 0; return; }
@@ -696,9 +693,10 @@ export async function createScene(canvas, onProgress = () => {}) {
     animateWicket(dt); animateEffects(dt);
     let rate = 3;
     if (!d) { gazeTarget.copy(restPoint); lastBallTime = -1; }
-    else if (!d.resolved && d.p.z < .45) {
-      const follow = smooth((d.p.z + 12) / 9);
-      gazeTarget.set(d.p.x * follow, lerp(.5, Math.max(.4, d.p.y), follow), Math.max(-1.6, Math.min(-.25, d.p.z))); rate = 18; lastBallTime = d.time; followUntil = d.hit ? d.time + 1.2 : d.time + .55;
+    else if (!d.hit && !d.resolved) {
+      // Hold the batting view through the delivery so the ring and ball stay in
+      // the same frame of reference. Only follow a struck ball after contact.
+      gazeTarget.copy(restPoint); lastBallTime = d.time; followUntil = d.time + 1.2;
     } else if (d.hit && d.time < followUntil) {
       gazeTarget.set(d.p.x, Math.max(.45, d.p.y), d.p.z); rate = 9;
       const yaw = Math.atan2(gazeTarget.x - cameraBase.x, -(gazeTarget.z - cameraBase.z)); if (Math.abs(yaw) > 1.05) { const r = Math.hypot(gazeTarget.x - cameraBase.x, gazeTarget.z - cameraBase.z); gazeTarget.x = cameraBase.x + Math.sin(Math.sign(yaw) * 1.05) * r; gazeTarget.z = cameraBase.z - Math.cos(1.05) * r; }
@@ -717,9 +715,10 @@ export async function createScene(canvas, onProgress = () => {}) {
     camera.quaternion.copy(viewQuat).multiply(_q1.setFromAxisAngle(_v[3].set(0, 0, 1), headRoll));
     if (flash > 0) { wood.emissive.setRGB(.5 * flash, .42 * flash, .25 * flash); flash = Math.max(0, flash - dt * 7); } else wood.emissive.setRGB(0, 0, 0);
   }
-  // Input plane is camera-independent: the gaze may follow the ball without moving the bat.
-  const pointer = new THREE.Vector3(), projected = new THREE.Vector3(), projectedOut = { x: 0, y: 0 };
-  function pointerWorld(x, y) { return pointer.set(x * 1.18, .35 + (y + 1) * .65, -.12); }
+  // Ray-plane aiming puts the contact ring under the pointer. During a stroke
+  // the controller anchors this world point and reads only screen-space travel.
+  const pointer = new THREE.Vector3(), pointerRay = new THREE.Raycaster(), contactPlane = new THREE.Plane(new THREE.Vector3(0,0,1), -CONTACT_Z), projected = new THREE.Vector3(), projectedOut = { x: 0, y: 0 };
+  function pointerWorld(x, y) { camera.updateMatrixWorld(); pointerRay.setFromCamera({x,y}, camera); return pointerRay.ray.intersectPlane(contactPlane, pointer); }
   function project(p) { projected.set(p.x, p.y, p.z).project(camera); projectedOut.x = (projected.x + 1) * .5 * canvas.clientWidth; projectedOut.y = (1 - projected.y) * .5 * canvas.clientHeight; return projectedOut; }
   const releaseOut = { x: 0, y: 0, z: 0 };
   function getReleasePosition() { bowler.updateMatrixWorld(true); heldBall.getWorldPosition(_v[0]); releaseOut.x = _v[0].x; releaseOut.y = _v[0].y; releaseOut.z = _v[0].z; return releaseOut; }
