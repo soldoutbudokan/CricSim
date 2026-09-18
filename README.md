@@ -37,20 +37,32 @@ The game remains plain static files. Vite is a development-only dependency.
 | Left click + upward swipe | Lift the bat, then drive through the aimed point |
 | Left click + sideways swipe | Cut or pull a high ball; sweep a low ball |
 | Diagonal swipe | Angle a drive; swipe speed controls bat speed |
-| Release | Follow through after contact, then return to guard |
-| Right click | Hold a soft-handed block and move it onto the ball's line |
+| Release | A quarter of the way into the stroke the swing commits and carries through on its own, so a flick works. Let go before that point to pull out of the shot. |
+| Right click | Hold a soft-handed block and move it onto the ball's line, or aside to leave |
 | 1 / 2 / 3 or shot buttons | Choose Grounded, Lofted or Defend; Defend also works with left click or touch |
 | A / D | Fine adjustment of the bat face |
 | W / S | Fine adjustment of loft |
 | Q / E | Fine adjustment of blade roll |
 | C | Clear the three fine adjustments |
 | Space | Take guard, then bowl the next delivery |
-| P / Escape | Pause or resume; Escape also closes the conditions drawer |
+| P / Escape | Pause or resume; Escape also closes an open panel |
+| B · H · Y | Cycle bowling style · bowling arm · your stance |
+| [ / ] | Release speed −5 / +5 km/h |
+| L · K | Cycle length · line |
+| U · O | Cycle surface · sky and light |
+| − / = | Crosswind −5 / +5 km/h |
+| , / . | Ball age −10 / +10 overs |
+| T · V | Cycle simulation speed · swipe length |
+| G · X | Toggle the bat guide and ball trail · continuous deliveries |
+| M · F · N | Sound · fullscreen · the conditions drawer |
+| / | The shortcuts sidebar, where every key above can be switched off |
 | ? | Instructions |
+
+Every key is listed in the shortcuts sidebar with a switch. Turn off any that clash with your setup; the buttons and menus keep working. Choices are saved on the device. A key that changes a condition shows a short notice under the scorebug and applies to the next ball.
 
 On touch, put a finger at the contact point and swipe up or across. Select Defend and hold for a block. All shot choices work without a keyboard. **Learn at half speed** starts with slower play and middle-stump deliveries.
 
-Aim before pressing: the contact ring stays anchored during the swipe. Holding without moving prepares the backlift; it does not swing. Hold through contact, then release. The middle section of the stroke meter shows the contact portion of the arc. The bat's path is shaped by your gesture, never by the incoming ball. Guard, cancelled preparation and released follow-through cannot score accidental hits.
+Aim before pressing: the contact ring stays anchored during the swipe. Holding without moving prepares the backlift; it does not swing. The backlift follows the hand both ways until the swing commits a quarter of the way through; from there the blade keeps the pace the hand gave it, eases off rather than stopping dead when the pointer stalls, and never runs backwards. Letting go after the commit point finishes the stroke with the blade live; letting go before it pulls out. The middle section of the stroke meter shows the contact portion of the arc. The bat's path is shaped by your gesture, never by the incoming ball. Guard, cancelled strokes and the return to guard cannot score accidental hits. **Swipe length** in Practice tools sets how far the hand travels for a full stroke.
 
 ## Interface
 
@@ -58,7 +70,9 @@ Aim before pressing: the contact ring stays anchored during the swipe. Holding w
 - The menu uses its own camera and renders inside the visible ground panel; the batting rig stays hidden until taking guard. On phones, the ground sits above the session sheet and the menu scrolls when needed. The in-play camera and controls are unchanged by the menu composition.
 - The 3D view fills the window. Conditions, session statistics and delivery information stay at the edges. Shot intent, stroke name and a compact stroke meter replace the three constantly changing angle readouts; fine adjustments appear only when used.
 - Taking guard leaves you at the crease; Space or **Next ball** starts the bowler. Short coaching lines appear under the readout for the first three balls.
-- Results show outcome, shot, timing, exit speed and contact location on the blade. Timing is sampled at contact or as the ball passes the contact plane, so later pointer input cannot rewrite the feedback. Early, late, released early and missed-line feedback have different advice. Being bowled flashes the frame edge red.
+- Results show outcome, shot, timing, exit speed and contact location on the blade. Timing is sampled at contact or as the ball passes the contact plane, so later pointer input cannot rewrite the feedback. Early, late, pulled-out, missed-line and leave feedback have different advice. A ball left alone that misses the stumps reads **Left alone**; a swing that misses reads **Played & missed**. Being bowled flashes the frame edge red.
+- The **Control** figure in the scorebug is the share of balls the bat met or that were left alone safely. Playing and missing, or being bowled, is not control. **Clean** counts contact through the middle of the blade.
+- A shortcuts sidebar (the keyboard button or `/`) lists every key, grouped by what it changes, each with its own switch and a master switch.
 - Conditions open in a drawer over the scene at every size (a bottom sheet on phones), pausing play while you make changes and restoring the previous pause state when closed.
 - The ring marks the aimed contact point, fills an arc as the stroke moves, squares off while blocking and flashes on contact. Camera-ray aiming places it under the pointer within the bat's reach. Swipe distance uses screen coordinates, so camera movement or clamping at the edge cannot change a stroke.
 - Dark theme only, self-hosted Barlow Condensed and DM Sans, reduced-motion support, keyboard focus rings throughout.
@@ -71,7 +85,7 @@ Aim before pressing: the contact ring stays anchored during the swipe. Holding w
 - Right- and left-arm fast pace, inswing, outswing, off spin, and leg spin. Handedness changes off/leg line selection; bowling arm changes movement direction. Bowling style descriptions use right-arm/right-handed conventions.
 - Hard, green, dry, and damp surfaces; clear, overcast, and evening light; crosswind and ball wear. Cloud cover changes lighting and the air-density preset; it is not used as an arbitrary swing multiplier.
 - Continuous collision detection between a moving ball and oriented, finite-width bat face, including edge detection and bat-velocity-dependent rebound.
-- Swipe displacement advances a curved backlift, downswing and follow-through. Automatic face and wrist rotation distinguish vertical drives from horizontal cuts, pulls and sweeps. Cross-bat shots stay level through the contact area. Shared curve tangents preserve speed through impact. Gesture direction locks after a small dead zone, so jitter and repeated reversals cannot accumulate power.
+- Swipe displacement advances a curved backlift, downswing and follow-through. The stroke's progress is one smooth state with bounded velocity and acceleration; the blade, the stroke meter, the timing feedback and the collision model all read it, so a staircase of pointer events cannot show up as a stutter. Past the commit point the stroke carries a decaying momentum floor, so it completes at the pace the hand set. Automatic face and wrist rotation distinguish vertical drives from horizontal cuts, pulls and sweeps. Cross-bat shots stay level through the contact area. Shared curve tangents preserve speed through impact. Gesture direction is read from the whole backlift and freezes at the commit point, so a hand that curls on its way up still plays the drive it meant, and jitter or reversals cannot accumulate power.
 - Translation and rotation are smoothed and speed-limited. Blade corners remain above the pitch. Contact includes the surface velocity due to face rotation. Soft-handed defence uses a lower restitution coefficient; lofted intent changes the physical launch angle.
 - The ball starts at the animated bowling hand's world position. A steady eye-level view includes the release and contact area without diving after the incoming ball. It tracks a struck ball briefly, then settles back. Portrait screens preserve enough horizontal field of view for off-stump deliveries.
 
@@ -97,16 +111,18 @@ This remains a simulation foundation, **not a finished photorealistic or validat
 - `dist/physics.js`: deterministic simulation, presets, collision model.
 - `dist/scene.js`: Three.js environment, procedural textures and models, batter rig, camera.
 - `dist/game.js`: input, delivery lifecycle, session state, HUD choreography, settings.
-- `dist/bat-control.js`: anchored aiming, gesture-shaped stroke arcs, shot intent and three-axis fine adjustment.
+- `dist/bat-control.js`: anchored aiming, gesture-shaped stroke arcs with a committed, momentum-carrying downswing, shot intent, swipe length and three-axis fine adjustment.
+- `dist/shortcuts.js`: the keyboard shortcut table, key matching and the saved on/off state behind the shortcuts sidebar.
 - `dist/batter-motion.js`: stance, shoulder/foot placement and stable batting-camera geometry.
-- `dist/shot-feedback.js`: feedback from the stroke sampled at contact or at the crease.
+- `dist/shot-feedback.js`: feedback from the stroke sampled at contact or at the crease, the control rule for leaves, and result headlines.
 - `dist/audio.js`: generated impact sound and ambience.
 - `dist/assets`: CC0 ground maps and HDR environments (about 9.8 MB total).
 - `dist/fonts`: Barlow Condensed and DM Sans, latin subsets (about 50 KB).
 - `dist/index.html` / `dist/style.css`: the interface; `dist/menu.css` isolates the scorebook-style opening screen from the in-play HUD.
 - `tests/physics.test.mjs`: trajectory, speed, bounce, contact, outcome, and determinism checks.
-- `tests/bat-control.test.mjs`: swipe shape, handedness, displacement, speed limits, ground clearance, defence and release safety.
-- `tests/batting-play.test.mjs`: repeatable aimed strokes against seeded deliveries, shot direction, loft, input rates, feedback and camera geometry.
+- `tests/bat-control.test.mjs`: swipe shape, handedness, displacement, commit and momentum, direction reading, swipe length, speed and acceleration limits, ground clearance, defence and release safety.
+- `tests/batting-play.test.mjs`: repeatable aimed strokes against seeded deliveries, shot direction, loft, flick release, input rates, feedback, the control rule and camera geometry.
+- `tests/shortcuts.test.mjs`: shortcut matching, modifier chords, per-key and master switches, persistence and setting cycles.
 
 ```sh
 node --test tests/*.test.mjs
@@ -115,9 +131,9 @@ npm run check
 
 The `.openai/hosting.json` file configures static output. `dist` is portable to any static host.
 
-### Verification status, 2026-09-07
+### Verification status, 2026-09-18
 
-All 35 automated simulation, control and batting-play tests pass. The tests include seeded contact across four lengths and both stances, cuts and pulls, grounded versus lofted launches, input rates from 30 to 120 Hz, missed aim, release safety and camera projection. JavaScript syntax and local asset references are checked. This revision has not had an interactive browser or visual playtest. Rendering on real GPUs, audio balance, touch ergonomics and subjective mouse feel still need that check.
+All 48 automated simulation, control, shortcut and batting-play tests pass. The tests include seeded contact across four lengths and both stances, cuts and pulls, grounded versus lofted launches, a flick released after the commit point against one let go before it, input rates from 30 to 120 Hz, a 30 Hz pointer staircase against the velocity and acceleration bounds, missed aim, release safety, the control rule for leaves, shortcut matching and persistence, and camera projection. JavaScript syntax and local asset references are checked. A headless Chromium pass exercised the shortcuts sidebar, setting keys, a leave and a mouse swipe. Rendering on real GPUs, audio balance, touch ergonomics and subjective mouse feel still need an interactive check.
 
 ## References
 

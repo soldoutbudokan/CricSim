@@ -2,27 +2,28 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from '../dist/vendor/three.module.js';
 import { DEFAULTS, DT, createDelivery, stepDelivery, clamp } from '../dist/physics.js';
-import { createBatControl, moveBatTarget, startStroke, stepBat, strokeSnapshot, CONTACT_Z, BAT_LIMITS } from '../dist/bat-control.js';
-import { describeShot } from '../dist/shot-feedback.js';
+import { createBatControl, moveBatTarget, startStroke, releaseStroke, stepBat, strokeSnapshot, CONTACT_Z, BAT_LIMITS } from '../dist/bat-control.js';
+import { describeShot, isControlled, missTitle } from '../dist/shot-feedback.js';
 import { BATTING_VIEW, batterMotion, battingFov } from '../dist/batter-motion.js';
 
 // A repeatable player: observes one seeded trajectory, aims once, and performs
 // an open-loop swipe. The controller never receives the ball or its trajectory.
-function play({ length = 'good', hand = 'right', intent = 'grounded', side = 0, miss = 0, inputHz = 240, duration = .3, lead = duration / 2 + .06 } = {}) {
+function play({ length = 'good', hand = 'right', intent = 'grounded', side = 0, miss = 0, inputHz = 240, duration = .3, lead = duration / 2 + .02, release = null } = {}) {
   const config = { ...DEFAULTS, length, hand, line: 'middle' };
   const probe = createDelivery(config, 42);
   while (probe.p.z < CONTACT_Z) stepDelivery(probe, config);
   const c = createBatControl(hand); c.intent = intent;
   moveBatTarget(c, probe.p.x + miss, probe.p.y + (side ? 0 : .035), { x: 0, y: 0 });
   const d = createDelivery(config, 42), swipeAt = probe.time - lead;
-  let started = false, nextInput = 0, stroke = null;
+  let started = false, released = false, nextInput = 0, stroke = null;
   while (d.time < probe.time + .3) {
     if (!started && d.time >= swipeAt - .15) { startStroke(c); started = true; }
-    if (started && d.time >= nextInput) {
+    if (started && !released && d.time >= nextInput) {
       const t = clamp((d.time - swipeAt) / duration, 0, 1);
       moveBatTarget(c, 0, 0, { x: side * t * BAT_LIMITS.travel, y: side ? 0 : t * BAT_LIMITS.travel });
       nextInput = d.time + 1 / inputHz - 1e-8;
     }
+    if (release !== null && !released && started && d.time >= swipeAt + release) { releaseStroke(c); released = true; }
     const old = stepBat(c, DT), beforeZ = d.p.z;
     const events = stepDelivery(d, config, DT, c.pose, old);
     if (events.some(e => e.type === 'contact') || !stroke && beforeZ < CONTACT_Z && d.p.z >= CONTACT_Z) stroke = strokeSnapshot(c);
@@ -33,10 +34,11 @@ function play({ length = 'good', hand = 'right', intent = 'grounded', side = 0, 
 
 test('one aimed drive can meet yorkers, full, good and short balls in either stance', () => {
   for (const hand of ['left', 'right']) for (const length of ['yorker', 'full', 'good', 'short']) {
-    const { d } = play({ hand, length });
+    const { d, stroke } = play({ hand, length });
     assert.ok(d.hit, hand + '/' + length);
-    assert.equal(d.contact.edge, false);
-    assert.ok(d.contact.quality > (length === 'yorker' ? .4 : .7));
+    assert.equal(d.contact.edge, false, hand + '/' + length);
+    // The blade's corners stay above the pitch, so a yorker is dug out with the toe.
+    assert.ok(d.contact.quality > (length === 'yorker' ? .3 : .7), `${hand}/${length}: quality ${d.contact.quality.toFixed(2)} at progress ${stroke.progress.toFixed(2)}`);
   }
 });
 
@@ -62,6 +64,13 @@ test('an aimed miss stays a miss: shot shaping never seeks the ball', () => {
   assert.equal(describeShot(stroke).timing, 'Missed line');
 });
 
+test('a flick released after the swing commits still meets the ball; letting go first pulls out', () => {
+  const flick = play({ release: .12 }), pulled = play({ release: .05 });
+  assert.ok(flick.d.hit); assert.equal(flick.d.contact.edge, false); assert.ok(flick.d.contact.quality > .5);
+  assert.equal(pulled.d.hit, false);
+  assert.equal(describeShot(pulled.stroke).timing, 'Pulled out');
+});
+
 test('the same gesture remains playable at 30, 60 and 120 input updates per second', () => {
   const exits = [30, 60, 120].map(inputHz => {
     const { d } = play({ inputHz });
@@ -77,15 +86,37 @@ test('a faster swipe transfers more speed on a similarly timed drive', () => {
   assert.ok(fast.exitSpeed > slow.exitSpeed + 5);
 });
 
-test('timing feedback distinguishes preparation, late, early, release and aim errors', () => {
-  const stroke = { name: 'Drive', attempted: true, phase: 'swing', progress: .5 };
-  assert.equal(describeShot(null).timing, 'No stroke');
+test('timing feedback distinguishes leaves, late, early, pulled-out, release and aim errors', () => {
+  const stroke = { name: 'Drive', attempted: true, committed: true, phase: 'swing', progress: .5 };
+  assert.equal(describeShot(null).timing, 'Left');
+  assert.equal(describeShot(null, null, true).timing, 'Left');
+  assert.notEqual(describeShot(null, null, true).detail, describeShot(null).detail, 'a leave that is bowled gets different advice');
   assert.equal(describeShot({ ...stroke, progress: .15 }).timing, 'Late');
   assert.equal(describeShot({ ...stroke, progress: .9 }).timing, 'Early');
-  assert.equal(describeShot({ ...stroke, phase: 'recover' }).timing, 'Released early');
+  assert.equal(describeShot({ ...stroke, phase: 'recover' }).timing, 'Early');
+  assert.equal(describeShot({ ...stroke, phase: 'recover', committed: false }).timing, 'Pulled out');
+  assert.equal(describeShot({ ...stroke, phase: 'follow' }).timing, 'Missed line');
   assert.equal(describeShot(stroke).timing, 'Missed line');
   assert.equal(describeShot(stroke, { quality: .9, edge: false }).timing, 'Well timed');
   assert.equal(describeShot({ ...stroke, defending: true }, { quality: .5 }).timing, 'Soft hands');
+  assert.equal(describeShot({ ...stroke, defending: true }).timing, 'Left');
+  assert.equal(describeShot({ ...stroke, defending: true }, null, true).timing, 'Beaten');
+});
+
+test('a safe leave counts as control; playing and missing or being bowled does not', () => {
+  const swing = { attempted: true, committed: true, phase: 'swing', progress: .5 };
+  assert.equal(isControlled({ hit: true, stroke: swing }, 'Sweet spot'), true);
+  assert.equal(isControlled({ hit: false, stroke: null }, 'Missed'), true);
+  assert.equal(isControlled({ hit: false, stroke: { attempted: false } }, 'Missed'), true);
+  assert.equal(isControlled({ hit: false, stroke: { attempted: true, defending: true } }, 'Missed'), true);
+  assert.equal(isControlled({ hit: false, stroke: swing }, 'Missed'), false);
+  assert.equal(isControlled({ hit: false, stroke: null }, 'Bowled'), false);
+  assert.equal(isControlled({ hit: false, stroke: { attempted: true, defending: true } }, 'Bowled'), false);
+  assert.equal(isControlled(null, 'Missed'), false);
+  assert.equal(missTitle({ stroke: null }, 'Missed'), 'Left alone');
+  assert.equal(missTitle({ stroke: { attempted: true, defending: true } }, 'Missed'), 'Left alone');
+  assert.equal(missTitle({ stroke: swing }, 'Missed'), 'Played & missed');
+  assert.equal(missTitle({ stroke: swing }, 'Bowled'), 'Bowled');
 });
 
 test('front foot and back foot strokes move the body while keeping the head steady', () => {

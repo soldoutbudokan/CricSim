@@ -15,7 +15,7 @@ export const BOWLERS = {
   offspin: { name: 'Off spin', short: 'SPIN', speed: 82, min: 60, max: 105, swing: 0.03, spin: 135, turn: -1, seam: 0.04, description: 'Dips in flight. Turns into a right-hander.' },
   legspin: { name: 'Leg spin', short: 'SPIN', speed: 78, min: 55, max: 100, swing: -0.04, spin: 160, turn: 1, seam: 0.04, description: 'Drift, dip and turn away.' },
 };
-export const DEFAULTS = { bowler: 'fast', arm: 'right', speed: 140, pitch: 'hard', length: 'good', line: 'off', weather: 'clear', wind: 0, age: 8, timeScale: 1, auto: false, guide: true, hand: 'right', audio: true };
+export const DEFAULTS = { bowler: 'fast', arm: 'right', speed: 140, pitch: 'hard', length: 'good', line: 'off', weather: 'clear', wind: 0, age: 8, timeScale: 1, auto: false, guide: true, hand: 'right', audio: true, swipe: 'standard' };
 const lengths = { yorker: -0.65, full: -2.1, good: -4.0, short: -7.0 };
 const lines = { leg: -0.25, middle: 0, off: 0.30, wide: 0.70 };
 export const clamp = (x, min, max) => Math.max(min, Math.min(max, x));

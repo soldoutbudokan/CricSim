@@ -1,7 +1,13 @@
 import { batBasis, clamp } from './physics.js';
 
-export const BAT_LIMITS = { x: 1.18, minY: 0.35, maxY: 1.65, travel: 0.52, speed: 12, angularSpeed: 10 };
+export const BAT_LIMITS = { x: 1.18, minY: 0.35, maxY: 1.65, travel: 0.52, speed: 20, angularSpeed: 28, rate: 9 };
 export const CONTACT_Z = -0.22;
+// The downswing commits at this point of the stroke. Before it the backlift
+// follows the hand and can be pulled out of; after it the blade carries its own
+// momentum through contact, the way a real bat does once the hands go.
+export const COMMIT = 0.25;
+export const SWIPE_LENGTHS = { short: 0.7, standard: 1, long: 1.35 };
+const LOCK_DISTANCE = 0.06, TRACK_TIME = 0.025, ACCEL = 360, CARRY_DECAY = 0.11, COMPLETE_RATE = 2.5, FOLLOW_RATE = 3.5, LIFT_TIME = 0.09;
 const mix = (a, b, t) => a + (b - a) * t;
 const smooth = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
 const curve = (a, b, start, end, t) => (2*t*t*t-3*t*t+1)*a+(t*t*t-2*t*t+t)*start+(-2*t*t*t+3*t*t)*b+(t*t*t-t*t)*end;
@@ -9,25 +15,31 @@ const curve = (a, b, start, end, t) => (2*t*t*t-3*t*t+1)*a+(t*t*t-2*t*t+t)*start
 export function createBatControl(hand = 'right') {
   const sign = hand === 'left' ? -1 : 1, x = sign * 0.25;
   return {
-    hand: sign, intent: 'grounded', phase: 'guard',
+    hand: sign, intent: 'grounded', phase: 'guard', swipe: 1,
     pose: { x, y: 0.48, z: 0.06, yaw: 0, loft: -0.24, roll: -sign * 0.18,
       defending: false, active: false, progress: 0, weight: 0, turn: 0 },
     target: { x, y: 0.48 }, pointer: { x, y: 0.48 }, origin: { x, y: 0.48 },
     trim: { yaw: 0, loft: 0, roll: 0 },
     direction: { x: 0, y: 1 }, directionLocked: false,
-    held: false, defending: false, attempted: false, travel: 0, progress: 0,
-    speed: 0, releaseTime: 0, followFrom: 0,
+    held: false, defending: false, attempted: false, committed: false,
+    travel: 0, progress: 0, velocity: 0, carry: 0, lift: 0,
+    speed: 0, releaseTime: 0,
   };
 }
 
 // Keep pose/target references stable for the renderer and game loop.
 export function resetBatControl(control, hand = control.hand < 0 ? 'left' : 'right') {
-  const fresh = createBatControl(hand), { pose, target, intent } = control;
+  const fresh = createBatControl(hand), { pose, target, intent, swipe } = control;
   Object.assign(pose, fresh.pose); Object.assign(target, fresh.target);
-  Object.assign(control, fresh, { pose, target, intent });
+  Object.assign(control, fresh, { pose, target, intent, swipe });
 }
 
 export function resetBatTrim(control) { control.trim.yaw = control.trim.loft = control.trim.roll = 0; }
+
+// How far the hand travels for a full stroke, as a multiple of the standard swipe.
+export function setSwipeLength(control, factor) {
+  if (Number.isFinite(factor)) control.swipe = clamp(factor, 0.4, 2.5);
+}
 
 export function setBatIntent(control, intent) {
   if (!['grounded', 'lofted', 'defend'].includes(intent)) return;
@@ -39,8 +51,8 @@ export function startStroke(control, defend = control.intent === 'defend') {
   control.held = !defend; control.defending = defend; control.attempted = true;
   control.phase = defend ? 'defend' : 'load';
   control.origin = { ...control.pointer };
-  control.direction = { x: 0, y: 1 }; control.directionLocked = false;
-  control.travel = control.progress = control.releaseTime = 0;
+  control.direction = { x: 0, y: 1 }; control.directionLocked = false; control.committed = false;
+  control.travel = control.progress = control.velocity = control.carry = control.lift = control.releaseTime = 0;
 }
 
 // World coordinates aim the shot. A separate screen-space point makes swipe length
@@ -55,15 +67,14 @@ export function moveBatTarget(control, x, y, pointer = { x, y }) {
   }
   const dx = pointer.x - control.origin.x, dy = pointer.y - control.origin.y;
   const distance = Math.hypot(dx, dy);
-  if (!control.directionLocked && distance > 0.045) {
-    control.direction = { x: dx / distance, y: dy / distance };
-    control.directionLocked = true;
-  }
-  if (control.directionLocked) {
-    // Displacement along the chosen stroke, not accumulated travel: jitter and
-    // circular scribbling cannot charge a shot. Reversing the swipe retracts it.
-    control.travel = clamp(dx * control.direction.x + dy * control.direction.y, 0, BAT_LIMITS.travel);
-  }
+  // The stroke's direction is read from the whole backlift, not its first few
+  // pixels, and freezes when the downswing commits. A hand that curls a little
+  // on its way up still plays the drive it meant to.
+  if (!control.directionLocked && distance > LOCK_DISTANCE) control.direction = { x: dx / distance, y: dy / distance };
+  // Displacement along the chosen stroke, not accumulated travel: jitter and
+  // circular scribbling cannot charge a shot. Reversing an uncommitted swipe retracts it.
+  const along = distance > LOCK_DISTANCE || control.directionLocked ? dx * control.direction.x + dy * control.direction.y : 0;
+  control.travel = clamp(along, 0, BAT_LIMITS.travel * control.swipe);
 }
 
 export function releaseStroke(control, cancel = false) {
@@ -71,30 +82,41 @@ export function releaseStroke(control, cancel = false) {
     if (cancel) { control.phase = 'recover'; control.releaseTime = 0; control.pose.active = false; }
     return;
   }
-  control.held = control.defending = false;
-  control.followFrom = control.progress; control.releaseTime = 0;
-  control.phase = !cancel && control.progress >= 0.42 ? 'follow' : 'recover';
-  // The visual follow-through cannot create a hit after the player lets go.
-  control.pose.active = false; control.pose.defending = false;
+  control.held = control.defending = false; control.releaseTime = 0;
+  if (!cancel && control.committed && control.progress < 1) {
+    // A committed stroke finishes on its own after the hands let go.
+    control.phase = 'follow';
+    control.velocity = Math.max(control.velocity, control.carry, FOLLOW_RATE);
+  } else {
+    // Letting go before the swing commits pulls out of the shot; a cancelled
+    // or finished stroke cannot create a hit on its way back to guard.
+    control.phase = 'recover'; control.pose.active = false; control.velocity = control.carry = 0;
+  }
+  control.pose.defending = false;
   control.travel = 0;
 }
 
 export function shotName(control) {
   if (control.defending || control.intent === 'defend') return 'Soft defence';
-  const across = Math.abs(control.direction.x) > 0.6;
+  const across = Math.abs(control.direction.x) > 0.7;
   const name = across ? control.target.y < 0.65 ? 'Sweep' : control.direction.x * control.hand > 0 ? 'Cut' : 'Pull'
-    : control.target.y > 1.05 ? 'Back-foot punch' : Math.abs(control.direction.x) > 0.22 ? 'Angled drive' : 'Straight drive';
+    : control.target.y > 1.05 ? 'Back-foot punch' : Math.abs(control.direction.x) > 0.35 ? 'Angled drive' : 'Straight drive';
   return control.intent === 'lofted' ? 'Lofted ' + name.toLowerCase() : name;
 }
 
 export function strokeSnapshot(control) {
   return { name: shotName(control), progress: control.pose.progress, phase: control.phase,
-    attempted: control.attempted, defending: control.defending, active: control.pose.active };
+    attempted: control.attempted, defending: control.defending, committed: control.committed, active: control.pose.active };
+}
+
+function guardPose(control) {
+  return { x: control.target.x, y: control.target.y, z: control.defending ? CONTACT_Z : 0.06,
+    yaw: 0, loft: control.defending ? -0.04 : -0.24, roll: -control.hand * (control.defending ? 0.04 : 0.18), weight: control.defending ? 0.28 : 0, turn: 0 };
 }
 
 function strokePose(control, progress) {
   const { target: a, direction: d, hand, intent } = control;
-  const across = smooth((Math.abs(d.x) - 0.25) / 0.6);
+  const across = smooth((Math.abs(d.x) - 0.4) / 0.45);
   const side = Math.sign(d.x) || hand;
   const contactRoll = mix(-hand * 0.06, side * 1.25, across);
   const contactLoft = intent === 'lofted' ? 0.32 : -0.08;
@@ -122,6 +144,33 @@ function strokePose(control, progress) {
   };
 }
 
+// The stroke's progress is the one smooth state everything else reads: the blade,
+// the stroke meter, timing feedback and the collision model all agree on where
+// the swing is. Its velocity is bounded and its acceleration is bounded, so a
+// staircase of pointer events can never show up as a stutter in the bat.
+function advanceStroke(control, dt) {
+  const limit = BAT_LIMITS.travel * control.swipe;
+  let v = control.velocity;
+  if (control.held) {
+    const desired = clamp(control.travel / limit, 0, 1);
+    const wanted = clamp((desired - control.progress) / TRACK_TIME, -BAT_LIMITS.rate, BAT_LIMITS.rate);
+    v += clamp(wanted - v, -ACCEL * dt, ACCEL * dt);
+  } else if (control.phase !== 'follow') return;
+  control.lift = Math.min(1, control.lift + dt / LIFT_TIME);
+  if (control.committed) {
+    // Momentum: the blade keeps the pace the hands gave it, easing off rather
+    // than stopping dead when the pointer stalls, and never travels backwards.
+    control.carry = Math.max(v, control.carry * Math.exp(-dt / CARRY_DECAY));
+    v = Math.max(v, control.carry, control.held ? COMPLETE_RATE : FOLLOW_RATE);
+  }
+  control.progress = clamp(control.progress + v * dt, 0, 1);
+  if (!control.committed && control.progress >= COMMIT) { control.committed = true; control.directionLocked = true; control.carry = Math.max(v, 0); }
+  if (control.progress >= 1) { v = 0; control.carry = 0; }
+  control.velocity = v;
+  if (control.held) control.phase = control.committed ? 'swing' : 'load';
+  else if (control.progress >= 1) { control.phase = 'recover'; control.releaseTime = 0; control.pose.active = false; }
+}
+
 export function stepBat(control, dt, keys = new Set()) {
   const p = control.pose, before = { ...p };
   if (!Number.isFinite(dt) || dt <= 0) return before;
@@ -130,26 +179,21 @@ export function stepBat(control, dt, keys = new Set()) {
   trim.yaw = clamp(trim.yaw + direction('d', 'a') * dt * 0.95, -0.95, 0.95);
   trim.loft = clamp(trim.loft + direction('w', 's') * dt * 0.7, -0.45, 0.75);
   trim.roll = clamp(trim.roll + direction('e', 'q') * dt * 1.5, -1.5, 1.5);
-  if (control.held) {
-    const desiredProgress = control.travel / BAT_LIMITS.travel;
-    control.progress += clamp((desiredProgress - control.progress) * (1 - Math.exp(-42 * dt)), -6 * dt, 6 * dt);
-    control.phase = control.progress < 0.08 ? 'load' : 'swing';
-  } else if (control.phase === 'follow') {
-    control.releaseTime += dt;
-    control.progress = mix(control.followFrom, 1, smooth(control.releaseTime / 0.22));
-    if (control.releaseTime >= 0.3) control.phase = 'recover';
-  }
+  advanceStroke(control, dt);
+  const swinging = control.held || control.phase === 'follow';
   let goal;
-  if (control.held || control.phase === 'follow') goal = strokePose(control, control.progress);
-  else {
-    goal = { x: control.target.x, y: control.target.y, z: control.defending ? CONTACT_Z : 0.06,
-      yaw: 0, loft: control.defending ? -0.04 : -0.24, roll: -control.hand * (control.defending ? 0.04 : 0.18), weight: control.defending ? 0.28 : 0, turn: 0 };
+  if (swinging) {
+    // The backlift rises over a few frames after the press rather than snapping.
+    const guard = guardPose(control), stroke = strokePose(control, control.progress), lift = smooth(control.lift);
+    goal = {}; for (const key of Object.keys(stroke)) goal[key] = mix(guard[key], stroke[key], lift);
+  } else {
+    goal = guardPose(control);
     if (control.phase === 'recover') {
-      control.releaseTime += dt;
+      control.releaseTime += dt; control.progress *= Math.exp(-dt * 9);
       if (control.releaseTime > 0.65) { control.phase = 'guard'; control.progress = 0; }
     }
   }
-  const blend = 1 - Math.exp(-(control.phase === 'recover' ? 10 : control.held ? 38 : 30) * dt);
+  const blend = 1 - Math.exp(-(control.phase === 'recover' ? 10 : swinging ? 90 : 30) * dt);
   for (const axis of ['yaw', 'loft', 'roll']) {
     const value = clamp(goal[axis] + trim[axis], axis === 'roll' ? -2 : -1.2, axis === 'roll' ? 2 : 1.2);
     p[axis] += clamp((value - p[axis]) * blend, -BAT_LIMITS.angularSpeed * dt, BAT_LIMITS.angularSpeed * dt);
@@ -163,7 +207,7 @@ export function stepBat(control, dt, keys = new Set()) {
   p.y = Math.max(floor, p.y);
   p.weight = mix(p.weight, goal.weight, blend); p.turn = mix(p.turn, goal.turn, blend);
   p.progress = control.progress; p.defending = control.defending;
-  p.active = control.defending || (control.held && control.progress > 0.08);
+  p.active = control.defending || (swinging && control.progress > 0.08);
   control.speed = Math.hypot(p.x - before.x, p.y - before.y, p.z - before.z) / dt;
   return before;
 }
