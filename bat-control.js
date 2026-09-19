@@ -106,7 +106,7 @@ export function shotName(control) {
 
 export function strokeSnapshot(control) {
   return { name: shotName(control), progress: control.pose.progress, phase: control.phase,
-    attempted: control.attempted, defending: control.defending, committed: control.committed, active: control.pose.active };
+    attempted: control.attempted, held: control.held, defending: control.defending, committed: control.committed, active: control.pose.active };
 }
 
 function guardPose(control) {

@@ -1,7 +1,7 @@
 import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, createDelivery, stepDelivery } from './physics.js';
 import { NetsAudio } from './audio.js';
 import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setSwipeLength, SWIPE_LENGTHS, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, CONTACT_Z } from './bat-control.js';
-import { describeShot, describeMiss, isControlled, isSwing, missTitle } from './shot-feedback.js';
+import { describeShot, describeMiss, missDiagram, isControlled, isSwing, missTitle } from './shot-feedback.js';
 import { SHORTCUTS, SHORTCUT_GROUPS, keyLabel, createShortcutState, serializeShortcutState, isShortcutEnabled, setShortcutEnabled, matchShortcut, cycleValue } from './shortcuts.js';
 const $=id=>document.getElementById(id);
 const config={...DEFAULTS};
@@ -128,17 +128,31 @@ function onResult(event){
   const feedback=describeShot(delivery.stroke,delivery.contact,bowled);
   $('feedback-detail').textContent=feedback.detail;
   $('feedback-timing').textContent=feedback.timing;
-  $('feedback-shot').textContent=isSwing(delivery.stroke)||delivery.stroke?.defending?delivery.stroke.name:'Leave';
-  // On a miss the little bat shows where the ball passed and the last cell how far away it was.
-  const miss=delivery.hit?null:describeMiss(delivery.miss,config.hand==='left'?-1:1);
-  if(miss&&isSwing(delivery.stroke))$('feedback-detail').textContent+=' '+miss.sentence;
-  $('feedback-exit-label').textContent=delivery.hit?'Exit speed':'Missed by';
-  $('feedback-exit').textContent=delivery.hit?Math.round(delivery.exitSpeed)+' km/h':miss?miss.distance:'—';
-  const contact=$('contact-mark');contact.hidden=!delivery.hit&&!miss;contact.classList.toggle('miss',!delivery.hit);
+  const played=delivery.hit||isSwing(delivery.stroke)||delivery.stroke?.defending;
+  $('feedback-shot').textContent=played?delivery.stroke?.name||'Shot':'Leave';
+  // Safe leaves never carry a "Missed by" label. A full miss gets its own
+  // unclipped diagram, frozen at the ball's closest approach to the blade.
+  const miss=!delivery.hit&&(isSwing(delivery.stroke)||bowled)?describeMiss(delivery.miss,deliveryConfig.hand==='left'?-1:1):null;
+  $('feedback-exit-label').textContent=delivery.hit?'Exit speed':miss?'Closest gap':'Outcome';
+  $('feedback-exit').textContent=delivery.hit?Math.round(delivery.exitSpeed)+' km/h':miss?miss.distance:bowled?'Bowled':'Safe leave';
+  const contact=$('contact-mark');contact.hidden=!delivery.hit;
   if(delivery.hit){contact.style.left=clamp(50+delivery.contact.x/.108*100,0,100)+'%';contact.style.top=clamp(50-delivery.contact.y/.62*100,0,100)+'%';}
-  else if(miss){contact.style.left=clamp(50+delivery.miss.x/.108*100,-90,190)+'%';contact.style.top=clamp(50-delivery.miss.y/.62*100,-40,140)+'%';}
-  $('contact-map').classList.toggle('has-contact',delivery.hit);$('contact-map').classList.toggle('has-miss',!delivery.hit&&Boolean(miss));
-  $('contact-map').setAttribute('aria-label',delivery.hit?`Bat contact: ${delivery.contact.edge?'edge':delivery.contact.quality>.7?'middle':'off centre'}.`:miss?`No bat contact. The ball passed ${miss.where}, ${miss.distance} from the blade.`:'No bat contact.');
+  $('contact-map').classList.toggle('has-contact',delivery.hit);
+  $('contact-map').classList.toggle('hidden',!delivery.hit);
+  $('contact-review').classList.toggle('no-contact',!delivery.hit);
+  $('contact-map').setAttribute('aria-label',delivery.hit?`Bat contact: ${delivery.contact.edge?'edge':delivery.contact.quality>.7?'middle':'off centre'}.`:'No bat contact.');
+  $('miss-review').hidden=!miss;
+  if(miss){
+    const diagram=missDiagram(delivery.miss);
+    const point=p=>`${p.x.toFixed(2)},${p.y.toFixed(2)}`;
+    $('miss-blade').setAttribute('points',diagram.blade.map(point).join(' '));
+    $('miss-handle').setAttribute('points',diagram.handle.map(point).join(' '));
+    $('miss-gap').setAttribute('points',[diagram.nearest,diagram.ball].map(point).join(' '));
+    $('miss-ball').setAttribute('cx',diagram.ball.x);$('miss-ball').setAttribute('cy',diagram.ball.y);$('miss-ball').setAttribute('r',diagram.radius);
+    $('miss-direction').textContent=miss.direction;
+    $('miss-distance').textContent=`${miss.distance} from the blade`;
+    $('miss-map').setAttribute('aria-label',`Ball ${miss.direction} of the bat, ${miss.distance} from the blade at closest approach. ${miss.sentence}`);
+  }
   if(bowled){view.hitWicket();sound('wicket');}
   setState('Delivery complete');updateStats();
 }

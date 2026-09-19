@@ -1,9 +1,12 @@
 // Feedback describes the stroke at contact / at the crease, never the current
 // mouse button after the ball has gone. Timing is relative to the stroke's middle.
 
-// A swing is a stroke that got past the commit point. Lifting the bat and backing
-// off before that is a leave, as is holding a block out of the ball's way.
-export const isSwing = stroke => Boolean(stroke?.attempted && !stroke.defending && stroke.committed);
+import { BALL, batBasis, clamp } from './physics.js';
+
+// Misses use the button state sampled as the ball passes, even when a released
+// stroke still has momentum. Actual bat contact always remains a shot.
+export const isSwing = stroke => Boolean(stroke?.attempted && stroke.held && !stroke.defending && stroke.committed);
+const isDismissal = result => result === 'Bowled' || result === 'LBW';
 
 export function describeShot(stroke, contact = null, bowled = false) {
   if (!stroke?.attempted) {
@@ -17,10 +20,10 @@ export function describeShot(stroke, contact = null, bowled = false) {
       ? { timing: 'Beaten', detail: 'The block was off the line. Move the contact ring onto the ball.' }
       : { timing: 'Left', detail: 'Shouldered arms. The blade stayed out of the way.' };
   }
-  if (!stroke.committed) {
+  if (!contact && (!stroke.held || !stroke.committed)) {
     return bowled
       ? { timing: 'Backed off', detail: 'You lifted the bat and backed off a straight one. Play it or cover the stumps.' }
-      : { timing: 'Backed off', detail: 'You lifted the bat and let it go. That counts as a leave.' };
+      : { timing: 'Backed off', detail: 'You backed off and let the ball go. Well left.' };
   }
   if (stroke.phase === 'guard' || stroke.phase === 'recover' || stroke.progress > 0.72) {
     return { timing: 'Early', detail: 'The stroke passed its middle before the ball arrived. Start a little later.' };
@@ -35,14 +38,14 @@ export function describeShot(stroke, contact = null, bowled = false) {
 // at it and the stumps survived. Swinging and missing, or being bowled, is not.
 export function isControlled(delivery, result) {
   if (!delivery) return false;
+  if (isDismissal(result)) return false;
   if (delivery.hit) return true;
-  if (result === 'Bowled') return false;
   return !isSwing(delivery.stroke);
 }
 
 // The headline for a delivery that passed the bat.
 export function missTitle(delivery, result) {
-  if (result === 'Bowled') return 'Bowled';
+  if (isDismissal(result)) return result;
   return isSwing(delivery?.stroke) ? 'Played & missed' : 'Left alone';
 }
 
@@ -57,5 +60,38 @@ export function describeMiss(miss, hand = 1) {
   if (along > 0.005) parts.push(`${cm(along)} cm ${miss.y > 0 ? 'above the blade' : 'below the toe'}`);
   if (parts.length === 0) parts.push(Math.abs(miss.depth) > 0.06 ? (miss.depth > 0 ? 'in front of the face before the blade arrived' : 'behind the face after the blade had gone') : 'on the line of the blade');
   const distance = miss.gap < 0.01 ? 'a whisker' : `${cm(miss.gap)} cm`;
-  return { distance, where: parts.join(', '), sentence: `The ball passed ${parts.join(', ')}.` };
+  const { ball, nearest } = missView(miss);
+  const dx = ball.x - nearest.x, dy = ball.y - nearest.y;
+  const directions = [];
+  if (Math.abs(dx) > 0.005) directions.push(dx > 0 ? 'right' : 'left');
+  if (Math.abs(dy) > 0.005) directions.push(dy > 0 ? 'above' : 'below');
+  const direction = directions.length ? directions.join(' / ') : 'in line · timing';
+  return { distance, direction, where: parts.join(', '), sentence: `The ball passed ${parts.join(', ')}.` };
+}
+
+// An orthographic view from the batter's side: right stays right in both
+// stances, and a cut shows the blade lying across the screen. Fit the ball and
+// the bat together so distant misses retain their direction without clipping.
+function missView(miss) {
+  const basis = batBasis(miss.bat || { yaw: 0, loft: 0, roll: 0 });
+  const project = (x, y, depth = 0) => ({
+    x: x * basis.w.x + y * basis.u.x + depth * basis.n.x,
+    y: x * basis.w.y + y * basis.u.y + depth * basis.n.y,
+  });
+  return {
+    blade: [[-.054, -.31], [.054, -.31], [.054, .31], [-.054, .31]].map(([x, y]) => project(x, y)),
+    handle: [project(0, .31), project(0, .49)],
+    ball: project(miss.x, miss.y, miss.depth),
+    nearest: project(clamp(miss.x, -.054, .054), clamp(miss.y, -.31, .31), clamp(miss.depth, -.018, .018)),
+  };
+}
+
+export function missDiagram(miss) {
+  const view = missView(miss), { ball } = view;
+  const points = [...view.blade, ...view.handle, { x: ball.x - BALL.radius, y: ball.y - BALL.radius }, { x: ball.x + BALL.radius, y: ball.y + BALL.radius }];
+  const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
+  const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y));
+  const scale = Math.min(108 / Math.max(.108, maxX - minX), 76 / Math.max(.62, maxY - minY));
+  const map = p => ({ x: 60 + (p.x - (minX + maxX) / 2) * scale, y: 44 - (p.y - (minY + maxY) / 2) * scale });
+  return { blade: view.blade.map(map), handle: view.handle.map(map), ball: map(ball), nearest: map(view.nearest), radius: Math.max(2.5, BALL.radius * scale) };
 }

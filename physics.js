@@ -108,13 +108,36 @@ export function batContact(from, to, bat, oldBat = bat) {
   if (Math.abs(x) > 0.054+BALL.radius || Math.abs(y) > 0.31+BALL.radius) return null;
   return { x, y, t, normal: n, edge: Math.abs(x) > 0.047, quality: clamp(1-Math.abs(x)/0.11-Math.abs(y+0.035)/0.55,0.05,1) };
 }
+// Closest approach over a physics step, using the same moving blade frame as
+// contact detection. Sampling only the step's endpoint can overstate a near miss.
+export function batMiss(from, to, bat, oldBat = bat) {
+  const before = batBasis(oldBat), after = batBasis(bat);
+  const a = subtract(from, oldBat), b = subtract(to, bat);
+  const start = [dot(a, before.w), dot(a, before.u), dot(a, before.n)];
+  const end = [dot(b, after.w), dot(b, after.u), dot(b, after.n)];
+  const at = t => start.map((v, i) => v + (end[i] - v) * t);
+  const distance = t => {
+    const [x, y, depth] = at(t);
+    return Math.hypot(Math.max(0, Math.abs(x) - .054), Math.max(0, Math.abs(y) - .31), Math.max(0, Math.abs(depth) - .018));
+  };
+  let lo = 0, hi = 1;
+  for (let i = 0; i < 24; i++) {
+    const left = (2 * lo + hi) / 3, right = (lo + 2 * hi) / 3;
+    if (distance(left) < distance(right)) hi = right; else lo = left;
+  }
+  const t = [0, (lo + hi) / 2, 1].reduce((best, candidate) => distance(candidate) < distance(best) ? candidate : best);
+  const [x, y, depth] = at(t), pose = {};
+  for (const axis of ['yaw', 'loft', 'roll']) pose[axis] = (oldBat[axis] || 0) + ((bat[axis] || 0) - (oldBat[axis] || 0)) * t;
+  return { x, y, depth, gap: Math.max(0, distance(t) - BALL.radius), bat: pose };
+}
+
 export function stepDelivery(d, config, dt = DT, bat = null, oldBat = bat) {
   const events = [];
   const from = { ...d.p }, a = airAcceleration(d.v, config, d);
   d.v.x += a.x*dt; d.v.y += a.y*dt; d.v.z += a.z*dt;
   d.p.x += d.v.x*dt; d.p.y += d.v.y*dt; d.p.z += d.v.z*dt;
   d.time += dt;
-  if (!d.hit && bat && bat.active !== false) {
+  if (!d.hit && !d.resolved && bat && bat.active !== false) {
     const contact = batContact(from,d.p,bat,oldBat);
     if (contact) {
       const incoming = Math.hypot(d.v.x,d.v.y,d.v.z);
@@ -138,11 +161,9 @@ export function stepDelivery(d, config, dt = DT, bat = null, oldBat = bat) {
   }
   // Nearest the ball came to the blade while it was in the batting zone: where
   // it passed in the bat's own frame, and the gap from the ball to the face.
-  if (!d.hit && bat && d.p.z > -1.6 && d.p.z < 1.3) {
-    const basis = batBasis(bat), rel = subtract(d.p, bat);
-    const x = dot(rel, basis.w), y = dot(rel, basis.u), depth = dot(rel, basis.n);
-    const gap = Math.max(0, Math.hypot(Math.max(0, Math.abs(x) - 0.054), Math.max(0, Math.abs(y) - 0.31), depth) - BALL.radius);
-    if (!d.miss || gap < d.miss.gap) d.miss = { x, y, depth, gap };
+  if (!d.hit && !d.resolved && bat && d.p.z > -1.6 && from.z < 1.18) {
+    const miss = batMiss(from, d.p, bat, oldBat);
+    if (!d.miss || miss.gap < d.miss.gap) d.miss = miss;
   }
   if (d.p.y <= BALL.radius+GROUND && d.v.y < 0) {
     const impactSpeed=-d.v.y;
