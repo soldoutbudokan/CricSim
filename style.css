@@ -148,7 +148,10 @@ main{position:relative;height:100vh;height:100dvh;width:100%}
 .contact-map{position:relative;height:46px;width:12px;margin:0 5px;border:1px solid #ffffff55;border-radius:2px;background:linear-gradient(transparent 38%,#c9f26b30 38% 65%,transparent 65%)}
 .contact-map::before{content:'';position:absolute;width:3px;height:7px;left:3.5px;top:-7px;background:#ffffff66}
 .contact-map:not(.has-contact){opacity:.3}
-.contact-map i{position:absolute;width:5px;height:5px;transform:translate(-50%,-50%);border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px #13200f}
+.contact-map i{position:absolute;width:5px;height:5px;transform:translate(-50%,-50%);border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px #13200f;z-index:1}
+.contact-map.has-miss{opacity:.75}
+.contact-map i.miss{width:7px;height:7px;background:transparent;border:1.5px solid var(--warn);box-shadow:0 0 0 2px #13200f}
+.contact-map i.miss::after{content:'';position:absolute;left:50%;top:50%;width:1px;height:1px;background:var(--warn)}
 .shot-feedback[data-outcome="sweet spot"]{border-left-color:var(--good)}
 .shot-feedback[data-outcome="sweet spot"]>strong{color:var(--good)}
 .shot-feedback[data-outcome="outside edge"],.shot-feedback[data-outcome="inside edge"]{border-left-color:var(--warn)}
