@@ -71,7 +71,7 @@
           <div id="contact-map" class="contact-map" role="img" aria-label="Contact location on the bat face, handle at top"><i id="contact-mark" hidden></i></div>
           <div><span>Stroke</span><strong id="feedback-shot">Straight drive</strong></div>
           <div><span>Timing</span><strong id="feedback-timing">Well timed</strong></div>
-          <div><span>Exit speed</span><strong id="feedback-exit">—</strong></div>
+          <div><span id="feedback-exit-label">Exit speed</span><strong id="feedback-exit">—</strong></div>
         </div>
       </div>
 
@@ -155,6 +155,9 @@
           <div class="range-heading"><label for="speed">Release speed</label><output id="speed-value">140 <span>km/h</span></output></div>
           <input type="range" id="speed" min="120" max="160" value="140">
           <div class="range-scale"><span id="speed-min">120</span><span id="speed-max">160 km/h</span></div>
+          <label for="speedSpread">Pace variation</label>
+          <select id="speedSpread"><option value="none">Consistent · same pace every ball</option><option value="slight">Slight · about ±2 km/h</option><option value="natural">Natural · about ±4 km/h</option><option value="mixed">Mixed · about ±7 km/h, the odd slower ball</option></select>
+          <p class="field-note">Each ball's pace is drawn from a bell curve around the release speed, clipped so nothing wild comes down. The readout shows the real pace once the ball is bowled.</p>
           <div class="split-fields"><div><label for="length">Length</label><select id="length"><option value="good">Good length</option><option value="full">Full</option><option value="yorker">Yorker</option><option value="short">Short</option><option value="mixed">Mixed</option></select></div><div><label for="line">Line</label><select id="line"><option value="off">Off stump</option><option value="middle">Middle stump</option><option value="leg">Leg stump</option><option value="wide">Outside off</option><option value="mixed">Mixed</option></select></div></div>
         </section>
         <section class="setting-section">
@@ -209,7 +212,7 @@
         <b><kbd>Space</kbd> <kbd>P</kbd></b><span>Bowl the next ball · pause or resume. Conditions apply to the next delivery.</span>
         <b><kbd>/</kbd></b><span>Open the shortcuts list. Every condition has a key (bowler, length, line, surface, speed and more) and each key can be switched off.</span>
       </div>
-      <p class="help-note">Touch: place a finger at the contact point, then swipe up or across. Select Defend for a block. Try half speed and middle-stump deliveries while learning. Leaving a ball that misses the stumps counts as control; playing and missing does not. The ball and bat keep their physical width; the game does not aim for you.</p>
+      <p class="help-note">Touch: place a finger at the contact point, then swipe up or across. Select Defend for a block. Try half speed and middle-stump deliveries while learning. Leaving a ball that misses the stumps counts as control, and so does lifting the bat and backing off; a committed swing that misses does not. When you miss, the small bat on the result card shows where the ball passed and by how much. The ball and bat keep their physical width; the game does not aim for you.</p>
     </div>
     <div class="dialog-foot"><button id="help-done" class="primary-button">Got it. Let’s bat.</button></div>
   </dialog>

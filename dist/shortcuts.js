@@ -17,6 +17,7 @@ export const SHORTCUTS = [
   { id: 'hand', group: 'The bowler', keys: ['KeyY'], label: 'Your stance' },
   { id: 'speedDown', group: 'The bowler', keys: ['BracketLeft'], label: 'Release speed −5 km/h', repeat: true },
   { id: 'speedUp', group: 'The bowler', keys: ['BracketRight'], label: 'Release speed +5 km/h', repeat: true },
+  { id: 'speedSpread', group: 'The bowler', keys: ['KeyJ'], label: 'Pace variation' },
   { id: 'length', group: 'The bowler', keys: ['KeyL'], label: 'Length' },
   { id: 'line', group: 'The bowler', keys: ['KeyK'], label: 'Line' },
   { id: 'pitch', group: 'Surface & conditions', keys: ['KeyU'], label: 'Surface' },

@@ -48,6 +48,7 @@ The game remains plain static files. Vite is a development-only dependency.
 | P / Escape | Pause or resume; Escape also closes an open panel |
 | B · H · Y | Cycle bowling style · bowling arm · your stance |
 | [ / ] | Release speed −5 / +5 km/h |
+| J | Cycle pace variation |
 | L · K | Cycle length · line |
 | U · O | Cycle surface · sky and light |
 | − / = | Crosswind −5 / +5 km/h |
@@ -71,7 +72,8 @@ Aim before pressing: the contact ring stays anchored during the swipe. Holding w
 - The 3D view fills the window. Conditions, session statistics and delivery information stay at the edges. Shot intent, stroke name and a compact stroke meter replace the three constantly changing angle readouts; fine adjustments appear only when used.
 - Taking guard leaves you at the crease; Space or **Next ball** starts the bowler. Short coaching lines appear under the readout for the first three balls.
 - Results show outcome, shot, timing, exit speed and contact location on the blade. Timing is sampled at contact or as the ball passes the contact plane, so later pointer input cannot rewrite the feedback. Early, late, pulled-out, missed-line and leave feedback have different advice. A ball left alone that misses the stumps reads **Left alone**; a swing that misses reads **Played & missed**. Being bowled flashes the frame edge red.
-- The **Control** figure in the scorebug is the share of balls the bat met or that were left alone safely. Playing and missing, or being bowled, is not control. **Clean** counts contact through the middle of the blade.
+- The **Control** figure in the scorebug is the share of balls the bat met or that were left alone safely, including a backlift you lifted and backed off before the swing committed. A committed swing that misses, or being bowled, is not control. **Clean** counts contact through the middle of the blade.
+- On a miss, the small bat on the result card marks where the ball passed in the blade's own frame, the last cell reads how far from the blade it was, and the advice says which edge or end it went past.
 - A shortcuts sidebar (the keyboard button or `/`) lists every key, grouped by what it changes, each with its own switch and a master switch.
 - Conditions open in a drawer over the scene at every size (a bottom sheet on phones), pausing play while you make changes and restoring the previous pause state when closed.
 - The ring marks the aimed contact point, fills an arc as the stroke moves, squares off while blocking and flashes on contact. Camera-ray aiming places it under the pointer within the bat's reach. Swipe distance uses screen coordinates, so camera movement or clamping at the edge cannot change a stroke.
@@ -82,6 +84,7 @@ Aim before pressing: the contact ring stays anchored during the swipe. Holding w
 - First-person camera at 1.72 m, a 20.12 m wicket-to-wicket pitch, 0.108 m blade width, 0.072 m ball diameter, and 0.711 m stumps.
 - Fixed 240 Hz physics, separate from rendering and simulation speed.
 - A numerical release-angle solver, gravity, quadratic aerodynamic drag, a tunable swing side force, spin dip/drift, seam deviation, and pitch-dependent restitution and friction.
+- **Pace variation** draws each ball's speed from a bell curve around the release speed, clipped at two and a half spreads: consistent, slight (about ±2 km/h), natural (about ±4) or mixed (about ±7, with the odd slower ball). The draw comes after the other seeded noise, so length, line and seam for a seed are the same whatever the spread.
 - Right- and left-arm fast pace, inswing, outswing, off spin, and leg spin. Handedness changes off/leg line selection; bowling arm changes movement direction. Bowling style descriptions use right-arm/right-handed conventions.
 - Hard, green, dry, and damp surfaces; clear, overcast, and evening light; crosswind and ball wear. Cloud cover changes lighting and the air-density preset; it is not used as an arbitrary swing multiplier.
 - Continuous collision detection between a moving ball and oriented, finite-width bat face, including edge detection and bat-velocity-dependent rebound.
@@ -119,7 +122,7 @@ This remains a simulation foundation, **not a finished photorealistic or validat
 - `dist/assets`: CC0 ground maps and HDR environments (about 9.8 MB total).
 - `dist/fonts`: Barlow Condensed and DM Sans, latin subsets (about 50 KB).
 - `dist/index.html` / `dist/style.css`: the interface; `dist/menu.css` isolates the scorebook-style opening screen from the in-play HUD.
-- `tests/physics.test.mjs`: trajectory, speed, bounce, contact, outcome, and determinism checks.
+- `tests/physics.test.mjs`: trajectory, speed, pace variation, bounce, contact, near-miss, outcome, and determinism checks.
 - `tests/bat-control.test.mjs`: swipe shape, handedness, displacement, commit and momentum, direction reading, swipe length, speed and acceleration limits, ground clearance, defence and release safety.
 - `tests/batting-play.test.mjs`: repeatable aimed strokes against seeded deliveries, shot direction, loft, flick release, input rates, feedback, the control rule and camera geometry.
 - `tests/shortcuts.test.mjs`: shortcut matching, modifier chords, per-key and master switches, persistence and setting cycles.
@@ -133,7 +136,7 @@ The `.openai/hosting.json` file configures static output. `dist` is portable to 
 
 ### Verification status, 2026-09-18
 
-All 48 automated simulation, control, shortcut and batting-play tests pass. The tests include seeded contact across four lengths and both stances, cuts and pulls, grounded versus lofted launches, a flick released after the commit point against one let go before it, input rates from 30 to 120 Hz, a 30 Hz pointer staircase against the velocity and acceleration bounds, missed aim, release safety, the control rule for leaves, shortcut matching and persistence, and camera projection. JavaScript syntax and local asset references are checked. A headless Chromium pass exercised the shortcuts sidebar, setting keys, a leave and a mouse swipe. Rendering on real GPUs, audio balance, touch ergonomics and subjective mouse feel still need an interactive check.
+All 51 automated simulation, control, shortcut and batting-play tests pass. The tests include pace variation and near-miss reporting, seeded contact across four lengths and both stances, cuts and pulls, grounded versus lofted launches, a flick released after the commit point against one let go before it, input rates from 30 to 120 Hz, a 30 Hz pointer staircase against the velocity and acceleration bounds, missed aim, release safety, the control rule for leaves, shortcut matching and persistence, and camera projection. JavaScript syntax and local asset references are checked. A headless Chromium pass exercised the shortcuts sidebar, setting keys, a leave and a mouse swipe. Rendering on real GPUs, audio balance, touch ergonomics and subjective mouse feel still need an interactive check.
 
 ## References
 

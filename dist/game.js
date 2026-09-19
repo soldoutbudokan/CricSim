@@ -1,7 +1,7 @@
-import { DEFAULTS, BOWLERS, PITCHES, DT, clamp, createDelivery, stepDelivery } from './physics.js';
+import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, createDelivery, stepDelivery } from './physics.js';
 import { NetsAudio } from './audio.js';
 import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setSwipeLength, SWIPE_LENGTHS, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, CONTACT_Z } from './bat-control.js';
-import { describeShot, isControlled, missTitle } from './shot-feedback.js';
+import { describeShot, describeMiss, isControlled, isSwing, missTitle } from './shot-feedback.js';
 import { SHORTCUTS, SHORTCUT_GROUPS, keyLabel, createShortcutState, serializeShortcutState, isShortcutEnabled, setShortcutEnabled, matchShortcut, cycleValue } from './shortcuts.js';
 const $=id=>document.getElementById(id);
 const config={...DEFAULTS};
@@ -13,7 +13,7 @@ if(!['clear','overcast','evening'].includes(config.weather))config.weather='clea
 if(!['yorker','full','good','short','mixed'].includes(config.length))config.length='good';
 if(!['leg','middle','off','wide','mixed'].includes(config.line))config.line='off';
 if(![1,.75,.5].includes(config.timeScale))config.timeScale=1;
-if(!SWIPE_LENGTHS[config.swipe])config.swipe='standard';
+if(!SWIPE_LENGTHS[config.swipe])config.swipe='standard';if(!(config.speedSpread in PACE_SPREADS))config.speedSpread='none';
 config.speed=clamp(config.speed,BOWLERS[config.bowler].min,BOWLERS[config.bowler].max);config.age=clamp(config.age,0,80);config.wind=clamp(config.wind,-25,25);
 let shortcutState=createShortcutState();
 try{shortcutState=createShortcutState(JSON.parse(localStorage.getItem('cricsim-shortcuts')||'null'));}catch{}
@@ -52,7 +52,7 @@ function notice(label,value=''){
 function optionText(id,value){return [...$(id).options].find(option=>option.value===String(value))?.text??String(value);}
 function paint(el){const pct=(el.value-el.min)/(el.max-el.min)*100;el.style.setProperty('--pct',pct+'%');}
 function syncControls(){
-  for(const key of ['bowler','arm','hand','length','line','weather','timeScale','swipe'])$(key).value=String(config[key]);
+  for(const key of ['bowler','arm','hand','length','line','weather','timeScale','swipe','speedSpread'])$(key).value=String(config[key]);
   for(const key of ['auto','guide'])$(key).checked=config[key];
   const b=BOWLERS[config.bowler];$('speed').min=b.min;$('speed').max=b.max;$('speed-min').textContent=b.min;$('speed-max').textContent=b.max+' km/h';$('bowler-tag').textContent=b.short;$('bowler-description').textContent=b.description;
   for(const key of ['speed','age','wind']){$(key).value=config[key];$(key+'-value').innerHTML=`${config[key]} <span>${key==='age'?'overs':'km/h'}</span>`;paint($(key));}
@@ -84,7 +84,7 @@ function applySetting(key,value){
   if(key==='hand'&&(phase==='intro'||phase==='ready'))resetBatControl(batControl,config.hand);
   syncControls();savePreferences();
 }
-for(const key of ['bowler','arm','hand','length','line','weather','timeScale','swipe','speed','age','wind','auto','guide']){
+for(const key of ['bowler','arm','hand','length','line','weather','timeScale','swipe','speedSpread','speed','age','wind','auto','guide']){
   $(key).addEventListener(['speed','age','wind'].includes(key)?'input':'change',event=>applySetting(key,['auto','guide'].includes(key)?event.target.checked:event.target.value));
 }
 for(const button of document.querySelectorAll('[data-pitch]'))button.addEventListener('click',()=>applySetting('pitch',button.dataset.pitch));
@@ -126,12 +126,17 @@ function onResult(event){
   const feedback=describeShot(delivery.stroke,delivery.contact,bowled);
   $('feedback-detail').textContent=feedback.detail;
   $('feedback-timing').textContent=feedback.timing;
-  $('feedback-shot').textContent=delivery.stroke?.attempted?delivery.stroke.name:'Leave';
-  $('feedback-exit').textContent=delivery.hit?Math.round(delivery.exitSpeed)+' km/h':'—';
-  const contact=$('contact-mark');contact.hidden=!delivery.hit;
+  $('feedback-shot').textContent=isSwing(delivery.stroke)||delivery.stroke?.defending?delivery.stroke.name:'Leave';
+  // On a miss the little bat shows where the ball passed and the last cell how far away it was.
+  const miss=delivery.hit?null:describeMiss(delivery.miss,config.hand==='left'?-1:1);
+  if(miss&&isSwing(delivery.stroke))$('feedback-detail').textContent+=' '+miss.sentence;
+  $('feedback-exit-label').textContent=delivery.hit?'Exit speed':'Missed by';
+  $('feedback-exit').textContent=delivery.hit?Math.round(delivery.exitSpeed)+' km/h':miss?miss.distance:'—';
+  const contact=$('contact-mark');contact.hidden=!delivery.hit&&!miss;contact.classList.toggle('miss',!delivery.hit);
   if(delivery.hit){contact.style.left=clamp(50+delivery.contact.x/.108*100,0,100)+'%';contact.style.top=clamp(50-delivery.contact.y/.62*100,0,100)+'%';}
-  $('contact-map').classList.toggle('has-contact',delivery.hit);
-  $('contact-map').setAttribute('aria-label',delivery.hit?`Bat contact: ${delivery.contact.edge?'edge':delivery.contact.quality>.7?'middle':'off centre'}.`:'No bat contact.');
+  else if(miss){contact.style.left=clamp(50+delivery.miss.x/.108*100,-90,190)+'%';contact.style.top=clamp(50-delivery.miss.y/.62*100,-40,140)+'%';}
+  $('contact-map').classList.toggle('has-contact',delivery.hit);$('contact-map').classList.toggle('has-miss',!delivery.hit&&Boolean(miss));
+  $('contact-map').setAttribute('aria-label',delivery.hit?`Bat contact: ${delivery.contact.edge?'edge':delivery.contact.quality>.7?'middle':'off centre'}.`:miss?`No bat contact. The ball passed ${miss.where}, ${miss.distance} from the blade.`:'No bat contact.');
   if(bowled){view.hitWicket();sound('wicket');}
   setState('Delivery complete');updateStats();
 }
@@ -240,6 +245,7 @@ const shortcutActions={
   bowler:()=>{cycleSetting('bowler','Bowling');},arm:()=>cycleSetting('arm','Bowling arm'),hand:()=>cycleSetting('hand','Your stance'),
   speedDown:()=>stepSetting('speed',-5,BOWLERS[config.bowler].min,BOWLERS[config.bowler].max,'Release speed','km/h'),
   speedUp:()=>stepSetting('speed',5,BOWLERS[config.bowler].min,BOWLERS[config.bowler].max,'Release speed','km/h'),
+  speedSpread:()=>cycleSetting('speedSpread','Pace variation'),
   length:()=>cycleSetting('length','Length'),line:()=>cycleSetting('line','Line'),
   pitch:()=>{applySetting('pitch',cycleValue(Object.keys(PITCHES),config.pitch));notice('Surface',PITCHES[config.pitch].name);},
   weather:()=>cycleSetting('weather','Sky & light'),

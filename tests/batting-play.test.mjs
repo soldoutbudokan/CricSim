@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from '../dist/vendor/three.module.js';
 import { DEFAULTS, DT, createDelivery, stepDelivery, clamp } from '../dist/physics.js';
 import { createBatControl, moveBatTarget, startStroke, releaseStroke, stepBat, strokeSnapshot, CONTACT_Z, BAT_LIMITS } from '../dist/bat-control.js';
-import { describeShot, isControlled, missTitle } from '../dist/shot-feedback.js';
+import { describeShot, describeMiss, isControlled, missTitle } from '../dist/shot-feedback.js';
 import { BATTING_VIEW, batterMotion, battingFov } from '../dist/batter-motion.js';
 
 // A repeatable player: observes one seeded trajectory, aims once, and performs
@@ -68,7 +68,9 @@ test('a flick released after the swing commits still meets the ball; letting go 
   const flick = play({ release: .12 }), pulled = play({ release: .05 });
   assert.ok(flick.d.hit); assert.equal(flick.d.contact.edge, false); assert.ok(flick.d.contact.quality > .5);
   assert.equal(pulled.d.hit, false);
-  assert.equal(describeShot(pulled.stroke).timing, 'Pulled out');
+  assert.equal(describeShot(pulled.stroke).timing, 'Backed off');
+  assert.equal(isControlled(pulled.d, 'Missed'), true, 'backing off before the swing commits is a leave');
+  assert.equal(missTitle(pulled.d, 'Missed'), 'Left alone');
 });
 
 test('the same gesture remains playable at 30, 60 and 120 input updates per second', () => {
@@ -86,7 +88,7 @@ test('a faster swipe transfers more speed on a similarly timed drive', () => {
   assert.ok(fast.exitSpeed > slow.exitSpeed + 5);
 });
 
-test('timing feedback distinguishes leaves, late, early, pulled-out, release and aim errors', () => {
+test('timing feedback distinguishes leaves, late, early, backed-off, release and aim errors', () => {
   const stroke = { name: 'Drive', attempted: true, committed: true, phase: 'swing', progress: .5 };
   assert.equal(describeShot(null).timing, 'Left');
   assert.equal(describeShot(null, null, true).timing, 'Left');
@@ -94,7 +96,8 @@ test('timing feedback distinguishes leaves, late, early, pulled-out, release and
   assert.equal(describeShot({ ...stroke, progress: .15 }).timing, 'Late');
   assert.equal(describeShot({ ...stroke, progress: .9 }).timing, 'Early');
   assert.equal(describeShot({ ...stroke, phase: 'recover' }).timing, 'Early');
-  assert.equal(describeShot({ ...stroke, phase: 'recover', committed: false }).timing, 'Pulled out');
+  assert.equal(describeShot({ ...stroke, phase: 'recover', committed: false }).timing, 'Backed off');
+  assert.equal(describeShot({ ...stroke, phase: 'load', committed: false }, null, true).timing, 'Backed off');
   assert.equal(describeShot({ ...stroke, phase: 'follow' }).timing, 'Missed line');
   assert.equal(describeShot(stroke).timing, 'Missed line');
   assert.equal(describeShot(stroke, { quality: .9, edge: false }).timing, 'Well timed');
@@ -103,20 +106,42 @@ test('timing feedback distinguishes leaves, late, early, pulled-out, release and
   assert.equal(describeShot({ ...stroke, defending: true }, null, true).timing, 'Beaten');
 });
 
-test('a safe leave counts as control; playing and missing or being bowled does not', () => {
+test('leaves, blocks moved aside and backed-off backlifts count as control; a committed swing that misses or a bowled ball does not', () => {
   const swing = { attempted: true, committed: true, phase: 'swing', progress: .5 };
+  const backedOff = { attempted: true, committed: false, phase: 'recover', progress: .1 };
   assert.equal(isControlled({ hit: true, stroke: swing }, 'Sweet spot'), true);
   assert.equal(isControlled({ hit: false, stroke: null }, 'Missed'), true);
   assert.equal(isControlled({ hit: false, stroke: { attempted: false } }, 'Missed'), true);
   assert.equal(isControlled({ hit: false, stroke: { attempted: true, defending: true } }, 'Missed'), true);
+  assert.equal(isControlled({ hit: false, stroke: backedOff }, 'Missed'), true);
   assert.equal(isControlled({ hit: false, stroke: swing }, 'Missed'), false);
   assert.equal(isControlled({ hit: false, stroke: null }, 'Bowled'), false);
+  assert.equal(isControlled({ hit: false, stroke: backedOff }, 'Bowled'), false);
   assert.equal(isControlled({ hit: false, stroke: { attempted: true, defending: true } }, 'Bowled'), false);
   assert.equal(isControlled(null, 'Missed'), false);
   assert.equal(missTitle({ stroke: null }, 'Missed'), 'Left alone');
+  assert.equal(missTitle({ stroke: backedOff }, 'Missed'), 'Left alone');
   assert.equal(missTitle({ stroke: { attempted: true, defending: true } }, 'Missed'), 'Left alone');
   assert.equal(missTitle({ stroke: swing }, 'Missed'), 'Played & missed');
   assert.equal(missTitle({ stroke: swing }, 'Bowled'), 'Bowled');
+});
+
+test('a miss reports where the ball passed and how far from the blade it was', () => {
+  const { d, stroke } = play({ miss: .6 });
+  assert.equal(d.hit, false);
+  assert.ok(d.miss && d.miss.gap > .3 && d.miss.gap < .7, JSON.stringify(d.miss));
+  const text = describeMiss(d.miss, 1);
+  assert.match(text.distance, /^\d+ cm$/);
+  assert.match(text.where, /past the (outside|inside) edge/);
+  assert.match(text.sentence, /^The ball passed .*\.$/);
+  // A right-hander aiming 0.6 m to the off side sees the ball pass the inside edge; a left-hander the outside.
+  assert.equal(describeMiss({ x: -.3, y: 0, depth: 0, gap: .2 }, 1).where, '25 cm past the inside edge');
+  assert.equal(describeMiss({ x: -.3, y: 0, depth: 0, gap: .2 }, -1).where, '25 cm past the outside edge');
+  assert.equal(describeMiss({ x: 0, y: -.4, depth: 0, gap: .05 }).where, '9 cm below the toe');
+  assert.equal(describeMiss({ x: 0, y: 0, depth: .2, gap: .16 }).where, 'in front of the face before the blade arrived');
+  assert.equal(describeMiss({ x: 0, y: 0, depth: 0, gap: 0 }).distance, 'a whisker');
+  assert.equal(describeMiss(null), null);
+  assert.ok(stroke);
 });
 
 test('front foot and back foot strokes move the body while keeping the head steady', () => {

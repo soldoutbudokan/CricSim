@@ -15,7 +15,10 @@ export const BOWLERS = {
   offspin: { name: 'Off spin', short: 'SPIN', speed: 82, min: 60, max: 105, swing: 0.03, spin: 135, turn: -1, seam: 0.04, description: 'Dips in flight. Turns into a right-hander.' },
   legspin: { name: 'Leg spin', short: 'SPIN', speed: 78, min: 55, max: 100, swing: -0.04, spin: 160, turn: 1, seam: 0.04, description: 'Drift, dip and turn away.' },
 };
-export const DEFAULTS = { bowler: 'fast', arm: 'right', speed: 140, pitch: 'hard', length: 'good', line: 'off', weather: 'clear', wind: 0, age: 8, timeScale: 1, auto: false, guide: true, hand: 'right', audio: true, swipe: 'standard' };
+// Ball-to-ball pace spread in km/h (one standard deviation). Real bowlers vary a
+// few km/h between deliveries; a mixed bag adds the occasional slower ball.
+export const PACE_SPREADS = { none: 0, slight: 2, natural: 4, mixed: 7 };
+export const DEFAULTS = { bowler: 'fast', arm: 'right', speed: 140, pitch: 'hard', length: 'good', line: 'off', weather: 'clear', wind: 0, age: 8, timeScale: 1, auto: false, guide: true, hand: 'right', audio: true, swipe: 'standard', speedSpread: 'none' };
 const lengths = { yorker: -0.65, full: -2.1, good: -4.0, short: -7.0 };
 const lines = { leg: -0.25, middle: 0, off: 0.30, wide: 0.70 };
 export const clamp = (x, min, max) => Math.max(min, Math.min(max, x));
@@ -59,6 +62,15 @@ export function createDelivery(config, seed = Date.now(), release = null) {
   const targetLine = (config.line === 'mixed' ? (rng() - 0.35) * 1.0 : lines[config.line]) * hand;
   const delivery = { seed, swing: b.swing * arm, turn: b.turn * arm, spin: b.spin, seam: (rng() - 0.5) * b.seam, releaseY: b.turn ? 2.13 : 2.18, releaseZ: -17.7, speed: config.speed + (rng() - 0.5) * 3, length: length + (rng() - 0.5) * 0.22, targetLine, hit: false, bounces: 0, time: 0, resolved: false, seamNoise: rng(), bounceNoise: rng(), path: [] };
   if(release){delivery.releaseY=release.y;delivery.releaseZ=release.z;}
+  const spread = PACE_SPREADS[config.speedSpread] ?? 0;
+  if (spread > 0) {
+    // Box-Muller from the same seeded stream, drawn after the other noise so
+    // length, line and seam stay identical for a seed whatever the spread.
+    // Clipped at 2.5 spreads: a natural variation never throws a wild ball.
+    const u1 = Math.max(rng(), 1e-9), u2 = rng();
+    const z = clamp(Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2), -2.5, 2.5);
+    delivery.speed = Math.max(40, delivery.speed + z * spread);
+  }
   const vz = delivery.speed / 3.6;
   const vy = initialVertical(vz, delivery.length, config, delivery);
   // Preserve the selected release speed after accounting for the downward angle.
@@ -123,6 +135,14 @@ export function stepDelivery(d, config, dt = DT, bat = null, oldBat = bat) {
       d.contactTime=d.time;
       events.push({type:'contact',quality:contact.quality,edge:contact.edge,exitSpeed:d.exitSpeed});
     }
+  }
+  // Nearest the ball came to the blade while it was in the batting zone: where
+  // it passed in the bat's own frame, and the gap from the ball to the face.
+  if (!d.hit && bat && d.p.z > -1.6 && d.p.z < 1.3) {
+    const basis = batBasis(bat), rel = subtract(d.p, bat);
+    const x = dot(rel, basis.w), y = dot(rel, basis.u), depth = dot(rel, basis.n);
+    const gap = Math.max(0, Math.hypot(Math.max(0, Math.abs(x) - 0.054), Math.max(0, Math.abs(y) - 0.31), depth) - BALL.radius);
+    if (!d.miss || gap < d.miss.gap) d.miss = { x, y, depth, gap };
   }
   if (d.p.y <= BALL.radius+GROUND && d.v.y < 0) {
     const impactSpeed=-d.v.y;
