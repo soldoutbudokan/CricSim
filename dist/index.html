@@ -67,11 +67,20 @@
         <span id="feedback-label" class="eyebrow">Delivery 01</span>
         <strong id="feedback-title">Sweet spot</strong>
         <span id="feedback-detail">Clean contact through the middle.</span>
-        <div class="contact-review">
+        <div id="contact-review" class="contact-review">
           <div id="contact-map" class="contact-map" role="img" aria-label="Contact location on the bat face, handle at top"><i id="contact-mark" hidden></i></div>
           <div><span>Stroke</span><strong id="feedback-shot">Straight drive</strong></div>
           <div><span>Timing</span><strong id="feedback-timing">Well timed</strong></div>
           <div><span id="feedback-exit-label">Exit speed</span><strong id="feedback-exit">—</strong></div>
+        </div>
+        <div id="miss-review" class="miss-review" hidden>
+          <svg id="miss-map" viewBox="0 0 120 88" role="img" aria-label="Ball relative to the bat">
+            <polyline id="miss-handle" class="miss-handle" />
+            <polygon id="miss-blade" class="miss-blade" />
+            <polyline id="miss-gap" class="miss-gap" />
+            <circle id="miss-ball" class="miss-ball" r="4" />
+          </svg>
+          <div><span>Ball relative to bat</span><strong id="miss-direction"></strong><b id="miss-distance"></b><small>At closest approach · batter’s view</small></div>
         </div>
       </div>
 
@@ -212,7 +221,7 @@
         <b><kbd>Space</kbd> <kbd>P</kbd></b><span>Bowl the next ball · pause or resume. Conditions apply to the next delivery.</span>
         <b><kbd>/</kbd></b><span>Open the shortcuts list. Every condition has a key (bowler, length, line, surface, speed and more) and each key can be switched off.</span>
       </div>
-      <p class="help-note">Touch: place a finger at the contact point, then swipe up or across. Select Defend for a block. Try half speed and middle-stump deliveries while learning. Leaving a ball that misses the stumps counts as control, and so does lifting the bat and backing off; a committed swing that misses does not. When you miss, the small bat on the result card shows where the ball passed and by how much. The ball and bat keep their physical width; the game does not aim for you.</p>
+      <p class="help-note">Touch: place a finger at the contact point, then swipe up or across. Select Defend for a block. Try half speed and middle-stump deliveries while learning. Release before the ball passes to leave, including after starting a swipe. A safe leave counts as control; holding through a swing that misses does not. The bat keeps its momentum after a committed flick, so any contact still counts as a shot. Being bowled is always a dismissal. On a full miss, the result card shows the ball’s direction and closest gap from the blade. The ball and bat keep their physical width; the game does not aim for you.</p>
     </div>
     <div class="dialog-foot"><button id="help-done" class="primary-button">Got it. Let’s bat.</button></div>
   </dialog>

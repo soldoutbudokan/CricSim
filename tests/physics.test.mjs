@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, createDelivery, stepDelivery, batContact } from '../dist/physics.js';
+import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, createDelivery, stepDelivery, batContact, batMiss } from '../dist/physics.js';
 function simulate(config,seed=42,until=1.18){const d=createDelivery({...DEFAULTS,...config},seed),events=[];for(let i=0;i<2400&&d.p.z<until;i++)events.push(...stepDelivery(d,{...DEFAULTS,...config}));return{d,events};}
 test('all bowler/pitch/length combinations reach the crease with finite coordinates',()=>{for(const bowler of Object.keys(BOWLERS))for(const pitch of Object.keys(PITCHES))for(const length of ['yorker','full','good','short']){const {d,events}=simulate({bowler,pitch,length,speed:BOWLERS[bowler].speed});assert.ok(events.some(e=>e.type==='result'),`${bowler}/${pitch}/${length} never reached wicket`);for(const k of ['x','y','z'])assert.ok(Number.isFinite(d.p[k]));assert.ok(d.bounces>=1);}});
 test('release speed stays within 3 km/h of configured speed',()=>{for(const bowler of Object.keys(BOWLERS))for(const speed of [BOWLERS[bowler].min,BOWLERS[bowler].max])for(const length of ['short','good','yorker']){const d=createDelivery({...DEFAULTS,bowler,speed,length},42);assert.ok(Math.abs(d.speed-speed)<3,`${bowler}/${length}: ${d.speed} vs ${speed}`);}});
@@ -38,4 +38,32 @@ test('a ball that passes the bat records the nearest it came, in the blade frame
   assert.ok(Math.abs(d.miss.gap-(Math.abs(d.miss.x)-.054-.036))<.02);
   const struck=createDelivery(c,42);const live={x:0,y:.5,z:-.07,yaw:0,loft:0,roll:0};struck.p={x:0,y:.5,z:-.2};struck.v={x:0,y:0,z:40};
   stepDelivery(struck,c,DT,live,live);assert.ok(struck.hit);
+});
+
+test('miss distance measures the swept gap to the blade, including ball radius and blade thickness',()=>{
+  const bat={x:0,y:.5,z:0,yaw:0,loft:0,roll:0};
+  for(const [x,y,gap] of [[.2,.5,.11],[-.2,.5,.11],[0,1,.154],[0,0,.154]]){
+    const miss=batMiss({x,y,z:-.2},{x,y,z:.2},bat);
+    assert.ok(Math.abs(miss.gap-gap)<1e-5,JSON.stringify(miss));
+    assert.ok(Math.abs(miss.depth)<=.0181);
+  }
+  const miss=batMiss({x:0,y:.5,z:-.2},{x:0,y:.5,z:-.2},bat);
+  assert.ok(Math.abs(miss.gap-.146)<1e-6,'distance includes the bat half thickness and ball radius');
+});
+
+test('moving the bat after the result cannot rewrite miss geometry',()=>{
+  const c={...DEFAULTS,line:'middle'},d=createDelivery(c,42);
+  const bat={x:.6,y:.5,z:.06,yaw:0,loft:0,roll:0,active:false};
+  while(!d.resolved&&d.time<3)stepDelivery(d,c,DT,bat,bat);
+  const frozen=structuredClone(d.miss);
+  for(let i=0;i<30;i++){
+    const moved={...bat,x:d.p.x,y:d.p.y,z:d.p.z};
+    stepDelivery(d,c,DT,moved,moved);
+  }
+  assert.deepEqual(d.miss,frozen);
+  const live={...bat,active:true};
+  d.p={x:live.x,y:live.y,z:live.z-.07};d.v={x:0,y:0,z:40};
+  const events=stepDelivery(d,c,DT,live,live);
+  assert.equal(d.hit,false,'a late swing cannot hit an already resolved delivery');
+  assert.ok(!events.some(event=>event.type==='contact'));
 });

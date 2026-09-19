@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from '../dist/vendor/three.module.js';
 import { DEFAULTS, DT, createDelivery, stepDelivery, clamp } from '../dist/physics.js';
 import { createBatControl, moveBatTarget, startStroke, releaseStroke, stepBat, strokeSnapshot, CONTACT_Z, BAT_LIMITS } from '../dist/bat-control.js';
-import { describeShot, describeMiss, isControlled, missTitle } from '../dist/shot-feedback.js';
+import { describeShot, describeMiss, missDiagram, isControlled, missTitle } from '../dist/shot-feedback.js';
 import { BATTING_VIEW, batterMotion, battingFov } from '../dist/batter-motion.js';
 
 // A repeatable player: observes one seeded trajectory, aims once, and performs
@@ -29,6 +29,7 @@ function play({ length = 'good', hand = 'right', intent = 'grounded', side = 0, 
     if (events.some(e => e.type === 'contact') || !stroke && beforeZ < CONTACT_Z && d.p.z >= CONTACT_Z) stroke = strokeSnapshot(c);
     if (d.hit) break;
   }
+  d.stroke = stroke;
   return { d, c, stroke };
 }
 
@@ -89,7 +90,7 @@ test('a faster swipe transfers more speed on a similarly timed drive', () => {
 });
 
 test('timing feedback distinguishes leaves, late, early, backed-off, release and aim errors', () => {
-  const stroke = { name: 'Drive', attempted: true, committed: true, phase: 'swing', progress: .5 };
+  const stroke = { name: 'Drive', attempted: true, held: true, committed: true, phase: 'swing', progress: .5 };
   assert.equal(describeShot(null).timing, 'Left');
   assert.equal(describeShot(null, null, true).timing, 'Left');
   assert.notEqual(describeShot(null, null, true).detail, describeShot(null).detail, 'a leave that is bowled gets different advice');
@@ -106,8 +107,8 @@ test('timing feedback distinguishes leaves, late, early, backed-off, release and
   assert.equal(describeShot({ ...stroke, defending: true }, null, true).timing, 'Beaten');
 });
 
-test('leaves, blocks moved aside and backed-off backlifts count as control; a committed swing that misses or a bowled ball does not', () => {
-  const swing = { attempted: true, committed: true, phase: 'swing', progress: .5 };
+test('leaves, blocks moved aside and released strokes count as control; a held swing that misses or a dismissal does not', () => {
+  const swing = { attempted: true, held: true, committed: true, phase: 'swing', progress: .5 };
   const backedOff = { attempted: true, committed: false, phase: 'recover', progress: .1 };
   assert.equal(isControlled({ hit: true, stroke: swing }, 'Sweet spot'), true);
   assert.equal(isControlled({ hit: false, stroke: null }, 'Missed'), true);
@@ -124,6 +125,72 @@ test('leaves, blocks moved aside and backed-off backlifts count as control; a co
   assert.equal(missTitle({ stroke: { attempted: true, defending: true } }, 'Missed'), 'Left alone');
   assert.equal(missTitle({ stroke: swing }, 'Missed'), 'Played & missed');
   assert.equal(missTitle({ stroke: swing }, 'Bowled'), 'Bowled');
+  const released = { ...swing, held: false };
+  assert.equal(isControlled({ stroke: released }, 'Missed'), true);
+  assert.equal(missTitle({ stroke: released }, 'Missed'), 'Left alone');
+  for (const result of ['Bowled', 'LBW']) {
+    assert.equal(isControlled({ stroke: released }, result), false);
+    assert.equal(missTitle({ stroke: released }, result), result);
+    assert.equal(isControlled({ hit: true, stroke: swing }, result), false, 'contact cannot override a dismissal');
+  }
+});
+
+test('a released committed miss is a leave, but a flick that makes contact is still a shot', () => {
+  const held = play({ miss: .6 });
+  const backedOff = play({ miss: .6, release: .12 });
+  assert.equal(held.d.hit, false);
+  assert.equal(held.stroke.held, true);
+  assert.equal(missTitle(held.d, 'Missed'), 'Played & missed');
+  assert.equal(isControlled(held.d, 'Missed'), false);
+  assert.equal(backedOff.d.hit, false);
+  assert.equal(backedOff.stroke.committed, true);
+  assert.equal(backedOff.stroke.held, false);
+  assert.equal(missTitle(backedOff.d, 'Missed'), 'Left alone');
+  assert.equal(isControlled(backedOff.d, 'Missed'), true);
+  assert.equal(describeShot(backedOff.stroke).timing, 'Backed off');
+  const flick = play({ release: .12 });
+  assert.ok(flick.d.hit);
+  assert.equal(flick.stroke.held, false);
+  assert.equal(describeShot(flick.stroke, flick.d.contact).timing, 'Well timed');
+});
+
+test('input after the ball passes cannot rewrite a leave or miss', () => {
+  const held = play({ miss: .6 });
+  releaseStroke(held.c);
+  assert.equal(held.c.held, false);
+  assert.equal(missTitle(held.d, 'Missed'), 'Played & missed');
+  const backedOff = play({ miss: .6, release: .12 });
+  startStroke(backedOff.c);
+  assert.equal(backedOff.c.held, true);
+  assert.equal(missTitle(backedOff.d, 'Missed'), 'Left alone');
+  const tapped = createBatControl();
+  startStroke(tapped); releaseStroke(tapped); stepBat(tapped, DT);
+  assert.equal(missTitle({ stroke: strokeSnapshot(tapped) }, 'Missed'), 'Left alone');
+  assert.equal(missTitle({ stroke: strokeSnapshot(createBatControl()) }, 'Missed'), 'Left alone');
+});
+
+test('miss diagrams keep screen directions, blade rotation and distant balls inside the graphic', () => {
+  for (const [x, y, direction] of [[.3, 0, 'right'], [-.3, 0, 'left'], [0, .5, 'above'], [0, -.5, 'below'], [.3, -.5, 'right / below']]) {
+    const miss = { x, y, depth: 0, gap: .2 };
+    assert.equal(describeMiss(miss, 1).direction, direction);
+    assert.equal(describeMiss(miss, -1).direction, direction);
+    const diagram = missDiagram(miss);
+    if (x > 0) assert.ok(diagram.ball.x > diagram.nearest.x);
+    if (y < 0) assert.ok(diagram.ball.y > diagram.nearest.y);
+  }
+  const rolled = { x: .3, y: 0, depth: 0, gap: .2, bat: { yaw: 0, loft: 0, roll: Math.PI / 2 } };
+  assert.equal(describeMiss(rolled).direction, 'above');
+  const cut = missDiagram(rolled);
+  assert.ok(Math.abs(cut.handle[0].x - cut.handle[1].x) > 5);
+  assert.ok(Math.abs(cut.handle[0].y - cut.handle[1].y) < 1e-8);
+  for (const x of [-3, 0, 3]) for (const y of [-3, 0, 3]) {
+    const diagram = missDiagram({ x, y, depth: .2, gap: 2 });
+    for (const p of [...diagram.blade, ...diagram.handle, diagram.ball]) {
+      assert.ok(p.x >= 0 && p.x <= 120 && p.y >= 0 && p.y <= 88);
+    }
+    assert.ok(diagram.ball.x - diagram.radius >= 0 && diagram.ball.x + diagram.radius <= 120);
+    assert.ok(diagram.ball.y - diagram.radius >= 0 && diagram.ball.y + diagram.radius <= 88);
+  }
 });
 
 test('a miss reports where the ball passed and how far from the blade it was', () => {
