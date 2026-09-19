@@ -25,6 +25,8 @@ const TRIM_KEYS={KeyA:'a',KeyD:'d',KeyW:'w',KeyS:'s',KeyQ:'q',KeyE:'e'};
 let contactFlash=0;
 const audio=new NetsAudio();audio.setEnabled(config.audio);
 const viewport=$('viewport'),coarsePointer=matchMedia('(pointer:coarse)').matches;
+// The result card and notices hang from the top HUD's measured height, so they never sit on the scorebug when it wraps.
+new ResizeObserver(entries=>viewport.style.setProperty('--hud-top',Math.round(entries[0].contentRect.height)+'px')).observe(document.querySelector('.hud-top'));
 function savePreferences(){try{localStorage.setItem('cricsim-preferences',JSON.stringify(config));}catch{}}
 function saveShortcuts(){try{localStorage.setItem('cricsim-shortcuts',JSON.stringify(serializeShortcutState(shortcutState)));}catch{}}
 function unlockAudio(){audio.setEnabled(config.audio);audio.unlock();}
