@@ -6,6 +6,9 @@ import { BALL, batBasis, clamp } from './physics.js';
 // Misses use the button state sampled as the ball passes, even when a released
 // stroke still has momentum. Actual bat contact always remains a shot.
 export const isSwing = stroke => Boolean(stroke?.attempted && stroke.held && !stroke.defending && stroke.committed);
+// Defence has its own held state: it does not use swipe commitment or `held`.
+// A block kept up as the ball passes is still a shot attempt.
+export const isPlayingShot = stroke => Boolean(stroke?.attempted && stroke.defending) || isSwing(stroke);
 const isDismissal = result => result === 'Bowled' || result === 'LBW';
 
 export function describeShot(stroke, contact = null, bowled = false) {
@@ -16,9 +19,7 @@ export function describeShot(stroke, contact = null, bowled = false) {
   }
   if (stroke.defending) {
     if (contact) return { timing: 'Soft hands', detail: 'A controlled block.' };
-    return bowled
-      ? { timing: 'Beaten', detail: 'The block was off the line. Move the contact ring onto the ball.' }
-      : { timing: 'Left', detail: 'Shouldered arms. The blade stayed out of the way.' };
+    return { timing: 'Beaten', detail: 'The block missed the ball. Move the contact ring onto its line.' };
   }
   if (!contact && (!stroke.held || !stroke.committed)) {
     return bowled
@@ -34,19 +35,19 @@ export function describeShot(stroke, contact = null, bowled = false) {
     : { timing: 'Missed line', detail: 'The stroke arrived in time. Adjust the contact ring to meet the ball.' };
 }
 
-// A ball is under control when the bat met it, or when the batter did not swing
-// at it and the stumps survived. Swinging and missing, or being bowled, is not.
+// A ball is under control when the bat met it, or when the batter left it and
+// the stumps survived. Missing a held swing or block, or being bowled, is not.
 export function isControlled(delivery, result) {
   if (!delivery) return false;
   if (isDismissal(result)) return false;
   if (delivery.hit) return true;
-  return !isSwing(delivery.stroke);
+  return !isPlayingShot(delivery.stroke);
 }
 
 // The headline for a delivery that passed the bat.
 export function missTitle(delivery, result) {
   if (isDismissal(result)) return result;
-  return isSwing(delivery?.stroke) ? 'Played & missed' : 'Left alone';
+  return isPlayingShot(delivery?.stroke) ? 'Played & missed' : 'Left alone';
 }
 
 // Where the ball passed, in the bat's frame: x across the blade (hand = +1 for a
