@@ -38,7 +38,7 @@ The game remains plain static files. Vite is a development-only dependency.
 | Left click + sideways swipe | Cut or pull a high ball; sweep a low ball |
 | Diagonal swipe | Angle a drive; swipe speed controls bat speed |
 | Release | Let go before the ball passes to leave. A committed flick still carries through and can hit the ball; if it makes no contact and the stumps survive, it counts as a leave. |
-| Right click | Hold a soft-handed block and move it onto the ball's line, or aside to leave |
+| Right click | Hold a soft-handed block and move it onto the ball's line. Release before the ball passes to leave. |
 | 1 / 2 / 3 or shot buttons | Choose Grounded, Lofted or Defend; Defend also works with left click or touch |
 | A / D | Fine adjustment of the bat face |
 | W / S | Fine adjustment of loft |
@@ -72,7 +72,7 @@ Aim before pressing: the contact ring stays anchored during the swipe. Holding w
 - The 3D view fills the window. Conditions, session statistics and delivery information stay at the edges. Shot intent, stroke name and a compact stroke meter replace the three constantly changing angle readouts; fine adjustments appear only when used.
 - Taking guard leaves you at the crease; Space or **Next ball** starts the bowler. Short coaching lines appear under the readout for the first three balls.
 - Results show outcome, shot, timing, exit speed and contact location on the blade. Timing and whether the pointer is held are sampled at contact or as the ball passes the contact plane, so later pointer input cannot rewrite the feedback. Early, late, pulled-out, missed-line and leave feedback have different advice. Releasing before the ball passes, including after a click or committed swipe, reads **Left alone** if it makes no contact and misses the stumps; holding through a committed swing that misses reads **Played & missed**. Being bowled flashes the frame edge red and always remains a dismissal.
-- The **Control** figure in the scorebug is the share of balls the bat met or that were left alone safely, including strokes you started and backed off. Holding through a committed swing that misses, or being bowled, is not control. **Clean** counts contact through the middle of the blade. A released flick that hits still counts as a shot.
+- The **Control** figure in the scorebug is the share of balls the bat met or that were left alone safely, including strokes you started and backed off. Holding through a committed swing or defensive block that misses, or being bowled, is not control. **Clean** counts contact through the middle of the blade. A released flick that hits still counts as a shot. A held block that misses reads **Played & missed**, with **Beaten** timing and the gap diagram; releasing the block before the ball passes is a leave. This applies to right-click defence and the Defend mode.
 - A full miss gets a larger diagram showing the ball relative to the rotated blade from the batter's side, with left/right and above/below labels and the closest surface gap in centimetres. The diagram fits both the ball and bat without clipping wide misses. Distance is measured across each physics step, including the ball radius and blade thickness, and freezes when the delivery resolves. Safe leaves say **Safe leave**, without a miss-distance label.
 - A shortcuts sidebar (the keyboard button or `/`) lists every key, grouped by what it changes, each with its own switch and a master switch.
 - Conditions open in a drawer over the scene at every size (a bottom sheet on phones), pausing play while you make changes and restoring the previous pause state when closed.
@@ -136,7 +136,7 @@ The `.openai/hosting.json` file configures static output. `dist` is portable to 
 
 ### Verification status, 2026-09-19
 
-All 56 automated simulation, control, shortcut and batting-play tests pass. They cover seeded contact across lengths and stances, stroke momentum, input rates, leaves before and after commitment, missed swings held through the ball, frozen input snapshots, dismissal precedence, swept miss distances, rotated diagrams and wide-miss bounds. JavaScript syntax checks pass. The previous version received a headless Chromium check; this update has not received an interactive browser check. Rendering on real GPUs, audio balance, touch ergonomics and subjective mouse feel still need an interactive check.
+All 59 automated simulation, control, shortcut and batting-play tests pass. They cover seeded contact across lengths and stances, stroke momentum, input rates, leaves before and after commitment, missed swings held through the ball, held versus released blocks in Defend mode and right-click defence, frozen input snapshots, dismissal precedence, swept miss distances, rotated diagrams and wide-miss bounds. JavaScript syntax checks pass. The previous version received a headless Chromium check; this update has not received an interactive browser check. Rendering on real GPUs, audio balance, touch ergonomics and subjective mouse feel still need an interactive check.
 
 ## References
 

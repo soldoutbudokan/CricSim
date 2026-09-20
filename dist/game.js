@@ -1,7 +1,7 @@
 import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, createDelivery, stepDelivery } from './physics.js';
 import { NetsAudio } from './audio.js';
 import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setSwipeLength, SWIPE_LENGTHS, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, CONTACT_Z } from './bat-control.js';
-import { describeShot, describeMiss, missDiagram, isControlled, isSwing, missTitle } from './shot-feedback.js';
+import { describeShot, describeMiss, missDiagram, isControlled, isPlayingShot, missTitle } from './shot-feedback.js';
 import { SHORTCUTS, SHORTCUT_GROUPS, keyLabel, createShortcutState, serializeShortcutState, isShortcutEnabled, setShortcutEnabled, matchShortcut, cycleValue } from './shortcuts.js';
 const $=id=>document.getElementById(id);
 const config={...DEFAULTS};
@@ -128,13 +128,13 @@ function onResult(event){
   const feedback=describeShot(delivery.stroke,delivery.contact,bowled);
   $('feedback-detail').textContent=feedback.detail;
   $('feedback-timing').textContent=feedback.timing;
-  const played=delivery.hit||isSwing(delivery.stroke)||delivery.stroke?.defending;
+  const played=delivery.hit||isPlayingShot(delivery.stroke);
   $('feedback-shot').textContent=played?delivery.stroke?.name||'Shot':'Leave';
   // Safe leaves never carry a "Missed by" label. A full miss gets its own
   // unclipped diagram, frozen at the ball's closest approach to the blade.
-  const miss=!delivery.hit&&(isSwing(delivery.stroke)||bowled)?describeMiss(delivery.miss,deliveryConfig.hand==='left'?-1:1):null;
+  const miss=!delivery.hit&&(played||bowled)?describeMiss(delivery.miss,deliveryConfig.hand==='left'?-1:1):null;
   $('feedback-exit-label').textContent=delivery.hit?'Exit speed':miss?'Closest gap':'Outcome';
-  $('feedback-exit').textContent=delivery.hit?Math.round(delivery.exitSpeed)+' km/h':miss?miss.distance:bowled?'Bowled':'Safe leave';
+  $('feedback-exit').textContent=delivery.hit?Math.round(delivery.exitSpeed)+' km/h':miss?miss.distance:bowled?'Bowled':played?'Missed':'Safe leave';
   const contact=$('contact-mark');contact.hidden=!delivery.hit;
   if(delivery.hit){contact.style.left=clamp(50+delivery.contact.x/.108*100,0,100)+'%';contact.style.top=clamp(50-delivery.contact.y/.62*100,0,100)+'%';}
   $('contact-map').classList.toggle('has-contact',delivery.hit);

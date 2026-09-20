@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from '../dist/vendor/three.module.js';
 import { DEFAULTS, DT, createDelivery, stepDelivery, clamp } from '../dist/physics.js';
 import { createBatControl, moveBatTarget, startStroke, releaseStroke, stepBat, strokeSnapshot, CONTACT_Z, BAT_LIMITS } from '../dist/bat-control.js';
-import { describeShot, describeMiss, missDiagram, isControlled, missTitle } from '../dist/shot-feedback.js';
+import { describeShot, describeMiss, missDiagram, isControlled, isPlayingShot, missTitle } from '../dist/shot-feedback.js';
 import { BATTING_VIEW, batterMotion, battingFov } from '../dist/batter-motion.js';
 
 // A repeatable player: observes one seeded trajectory, aims once, and performs
@@ -103,17 +103,17 @@ test('timing feedback distinguishes leaves, late, early, backed-off, release and
   assert.equal(describeShot(stroke).timing, 'Missed line');
   assert.equal(describeShot(stroke, { quality: .9, edge: false }).timing, 'Well timed');
   assert.equal(describeShot({ ...stroke, defending: true }, { quality: .5 }).timing, 'Soft hands');
-  assert.equal(describeShot({ ...stroke, defending: true }).timing, 'Left');
+  assert.equal(describeShot({ ...stroke, defending: true }).timing, 'Beaten');
   assert.equal(describeShot({ ...stroke, defending: true }, null, true).timing, 'Beaten');
 });
 
-test('leaves, blocks moved aside and released strokes count as control; a held swing that misses or a dismissal does not', () => {
+test('leaves and released strokes count as control; a held shot that misses or a dismissal does not', () => {
   const swing = { attempted: true, held: true, committed: true, phase: 'swing', progress: .5 };
   const backedOff = { attempted: true, committed: false, phase: 'recover', progress: .1 };
   assert.equal(isControlled({ hit: true, stroke: swing }, 'Sweet spot'), true);
   assert.equal(isControlled({ hit: false, stroke: null }, 'Missed'), true);
   assert.equal(isControlled({ hit: false, stroke: { attempted: false } }, 'Missed'), true);
-  assert.equal(isControlled({ hit: false, stroke: { attempted: true, defending: true } }, 'Missed'), true);
+  assert.equal(isControlled({ hit: false, stroke: { attempted: true, defending: true } }, 'Missed'), false);
   assert.equal(isControlled({ hit: false, stroke: backedOff }, 'Missed'), true);
   assert.equal(isControlled({ hit: false, stroke: swing }, 'Missed'), false);
   assert.equal(isControlled({ hit: false, stroke: null }, 'Bowled'), false);
@@ -122,7 +122,7 @@ test('leaves, blocks moved aside and released strokes count as control; a held s
   assert.equal(isControlled(null, 'Missed'), false);
   assert.equal(missTitle({ stroke: null }, 'Missed'), 'Left alone');
   assert.equal(missTitle({ stroke: backedOff }, 'Missed'), 'Left alone');
-  assert.equal(missTitle({ stroke: { attempted: true, defending: true } }, 'Missed'), 'Left alone');
+  assert.equal(missTitle({ stroke: { attempted: true, defending: true } }, 'Missed'), 'Played & missed');
   assert.equal(missTitle({ stroke: swing }, 'Missed'), 'Played & missed');
   assert.equal(missTitle({ stroke: swing }, 'Bowled'), 'Bowled');
   const released = { ...swing, held: false };
@@ -132,6 +132,75 @@ test('leaves, blocks moved aside and released strokes count as control; a held s
     assert.equal(isControlled({ stroke: released }, result), false);
     assert.equal(missTitle({ stroke: released }, result), result);
     assert.equal(isControlled({ hit: true, stroke: swing }, result), false, 'contact cannot override a dismissal');
+  }
+});
+
+// A block aims once and stays there; it never swipes or commits like a drive.
+function playBlock({ hand = 'right', rightClick = false, miss = 0, release = false, start = true } = {}) {
+  const config = { ...DEFAULTS, hand, line: 'off', length: 'good' };
+  const probe = createDelivery(config, 42);
+  while (probe.p.z < CONTACT_Z) stepDelivery(probe, config);
+  const c = createBatControl(hand);
+  if (!rightClick) c.intent = 'defend';
+  moveBatTarget(c, probe.p.x + miss, probe.p.y + .035);
+  const d = createDelivery(config, 42);
+  let started = false, released = false;
+  while (!d.resolved && d.time < 3) {
+    if (start && !started && d.time >= probe.time - .22) {
+      startStroke(c, rightClick || c.intent === 'defend'); started = true;
+    }
+    if (release && started && !released && d.time >= probe.time - .1) {
+      releaseStroke(c); released = true;
+    }
+    const old = stepBat(c, DT), beforeZ = d.p.z;
+    const events = stepDelivery(d, config, DT, c.pose, old);
+    if (events.some(e => e.type === 'contact') || !d.stroke && beforeZ < CONTACT_Z && d.p.z >= CONTACT_Z) d.stroke = strokeSnapshot(c);
+    for (const event of events) if (event.type === 'result') d.result = event.result;
+  }
+  assert.ok(d.resolved);
+  return { d, c };
+}
+
+test('a held block that misses is a played miss in Defend mode and right-click defence, in either stance', () => {
+  for (const hand of ['left', 'right']) for (const rightClick of [false, true]) {
+    const { d, c } = playBlock({ hand, rightClick, miss: .6 });
+    assert.equal(d.hit, false);
+    assert.equal(d.result, 'Missed');
+    assert.equal(d.stroke.defending, true);
+    assert.equal(d.stroke.held, false, 'defence uses a separate held flag');
+    assert.equal(d.stroke.committed, false);
+    assert.equal(isPlayingShot(d.stroke), true, 'the result card must show the miss diagram');
+    assert.equal(missTitle(d, d.result), 'Played & missed');
+    assert.equal(describeShot(d.stroke).timing, 'Beaten');
+    assert.equal(isControlled(d, d.result), false);
+    assert.ok(d.miss && describeMiss(d.miss));
+    releaseStroke(c);
+    assert.equal(missTitle(d, d.result), 'Played & missed', 'releasing after the ball cannot rewrite the block');
+  }
+});
+
+test('releasing a block or selecting Defend without pressing remains a safe leave', () => {
+  for (const rightClick of [false, true]) for (const options of [{ release: true }, { start: false }]) {
+    const { d, c } = playBlock({ rightClick, ...options });
+    assert.equal(d.hit, false);
+    assert.equal(d.result, 'Missed');
+    assert.equal(d.stroke.defending, false);
+    assert.equal(isPlayingShot(d.stroke), false);
+    assert.equal(missTitle(d, d.result), 'Left alone');
+    assert.equal(isControlled(d, d.result), true);
+    startStroke(c, true);
+    assert.equal(missTitle(d, d.result), 'Left alone', 'pressing after the ball cannot rewrite the leave');
+    assert.equal(isControlled(d, 'Bowled'), false);
+    assert.equal(missTitle(d, 'Bowled'), 'Bowled');
+  }
+});
+
+test('an aimed defensive block still makes contact and counts as control', () => {
+  for (const hand of ['left', 'right']) for (const rightClick of [false, true]) {
+    const { d } = playBlock({ hand, rightClick });
+    assert.equal(d.hit, true);
+    assert.equal(describeShot(d.stroke, d.contact).timing, 'Soft hands');
+    assert.equal(isControlled(d, d.result), true);
   }
 });
 
