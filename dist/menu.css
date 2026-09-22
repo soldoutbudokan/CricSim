@@ -1,36 +1,41 @@
 /* The opening screen is a club scorebook beside the live practice wicket.
-   Its paper/ink palette is separate from the in-play HUD. */
-.intro-overlay{--paper:#eee8d9;--ink:#263a31;--faded:#59655b;--rule:#c8c6b6;--red:#953b35;position:absolute;inset:0;z-index:var(--z-intro);display:grid;grid-template-columns:clamp(310px,30vw,400px) minmax(0,1fr);color:var(--ink);transition:opacity .25s ease,visibility .25s;pointer-events:none}
+   Its paper/ink tokens live in style.css so the HUD's buttons, titles and wordmark share them. */
+.intro-overlay{position:absolute;inset:0;z-index:var(--z-intro);display:grid;grid-template-columns:clamp(310px,30vw,400px) minmax(0,1fr);color:var(--ink);transition:opacity .25s ease,visibility .25s;pointer-events:none}
 .intro-overlay.hidden{display:grid!important;opacity:0;visibility:hidden}
 .intro-overlay button{pointer-events:auto}
 .intro-overlay.hidden button{pointer-events:none}
 .menu-sheet{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin;scrollbar-color:var(--rule) var(--paper);display:flex;flex-direction:column;padding:42px 36px 26px;background:var(--paper);border-right:1px solid #b3b7a8;box-shadow:8px 0 28px #15291d18;pointer-events:auto}
 .menu-masthead{padding-bottom:28px;border-bottom:3px double var(--ink)}
 .menu-overline{margin:0 0 12px;color:var(--faded);font-size:10px;font-weight:500;letter-spacing:.16em;text-transform:uppercase}
-.menu-masthead h1{margin:0;font:400 clamp(52px,5.4vw,72px)/.95 Georgia,'Times New Roman',serif;letter-spacing:-.065em;color:var(--ink)}
+.menu-masthead h1{margin:0;font:400 clamp(52px,5.4vw,72px)/.95 var(--font-serif);letter-spacing:-.035em;color:var(--ink)}
 .menu-masthead h1 span{color:var(--red)}
 .menu-session{margin-top:30px}
 .menu-section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px}
-.menu-section-heading h2{font:italic 400 23px/1.2 Georgia,'Times New Roman',serif;margin:0}
+.menu-section-heading h2{font:italic 400 24px/1.2 var(--font-serif);margin:0}
 .menu-section-heading>span{font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--faded)}
 .menu-conditions{margin:0 0 12px;border-top:1px solid var(--rule)}
 .menu-conditions>div{display:grid;grid-template-columns:minmax(72px,1fr) minmax(0,1.5fr);align-items:baseline;gap:12px;padding:11px 0;border-bottom:1px solid var(--rule)}
 .menu-conditions dt{font-size:11px;color:var(--faded)}
 .menu-conditions dd{margin:0;font-size:13px;font-weight:500;line-height:1.35;text-align:right}
-#menu-speed{font:400 26px/1 Georgia,'Times New Roman',serif;font-variant-numeric:lining-nums tabular-nums}
+.menu-conditions>.menu-extra{display:none}
+#menu-speed{font:400 27px/1 var(--font-serif);font-variant-numeric:lining-nums tabular-nums}
 #menu-speed small{font:400 10px var(--font-text);color:var(--faded);margin-left:3px}
-.menu-text-button{display:inline-flex;align-items:center;gap:13px;min-height:36px;padding:0;border:0;background:none;color:var(--ink);font-size:12px;font-weight:500;text-decoration:underline;text-decoration-color:#263a3155;text-underline-offset:4px}
-.menu-text-button:hover{color:var(--red);text-decoration-color:var(--red)}
-.menu-text-button>span{font:400 15px Georgia,serif;text-decoration:none}
+.menu-text-button{display:inline-flex;align-items:center;gap:10px;min-height:36px;padding:0;border:0;background:none;color:var(--ink);font-size:12px;font-weight:500;text-decoration:none}
+.menu-text-button .label{text-decoration:underline;text-decoration-color:#263a3155;text-underline-offset:4px}
+.menu-text-button:hover{color:var(--red)}
+.menu-text-button:hover .label{text-decoration-color:var(--red)}
+.menu-text-button>span[aria-hidden]{display:inline-grid;place-items:center;min-width:20px;height:20px;padding:0 5px;border:1px solid var(--rule);border-radius:2px;font:500 11px/1 var(--font-text);color:var(--faded);transition:border-color .15s,color .15s}
+.menu-text-button:hover>span[aria-hidden]{border-color:var(--red);color:var(--red)}
 .menu-start{margin:30px 0 26px}
-.menu-play{display:flex;align-items:center;justify-content:space-between;gap:18px;width:100%;min-height:58px;padding:13px 18px;border:1px solid #7c312c;border-radius:2px;background:var(--red);color:#fff6e6;box-shadow:0 2px 0 #6c2925;font:400 24px/1.2 Georgia,'Times New Roman',serif;text-align:left;transition:background .15s,transform .15s}
+.menu-play{display:flex;align-items:center;justify-content:space-between;gap:18px;width:100%;min-height:58px;padding:13px 18px;border:1px solid #7c312c;border-radius:2px;background:var(--red);color:#fff6e6;box-shadow:0 2px 0 #6c2925;font:400 25px/1.2 var(--font-serif);text-align:left;transition:background .15s,transform .15s}
 .menu-play:hover:not(:disabled){background:#7e2e29}
 .menu-play:active:not(:disabled){transform:translateY(1px);box-shadow:none}
 .menu-play kbd{border:1px solid #fff6e655;border-radius:2px;background:none;color:inherit;font-size:9px;font-weight:400;padding:5px 6px;letter-spacing:.04em}
 .menu-play:disabled{background:#d2cdbd;border-color:#c1bcae;color:#777b70;box-shadow:none}
-.menu-learn{min-height:42px;width:100%;border:0;background:none;padding:12px 0 0;color:var(--faded);font-size:11px;text-align:left}
-.menu-learn:hover:not(:disabled){color:var(--red);text-decoration:underline;text-underline-offset:4px}
-.menu-learn:disabled{opacity:.65}
+.menu-learn{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:46px;margin-top:10px;padding:0 16px 0 18px;border:1px solid #263a3140;border-radius:2px;background:#fffaf01a;color:var(--ink);font-size:13px;font-weight:500;text-align:left;transition:border-color .15s,color .15s,background .15s}
+.menu-learn em{font:italic 400 15px/1 var(--font-serif);color:var(--faded)}
+.menu-learn:hover:not(:disabled){border-color:var(--red);color:var(--red);background:#fffaf04d}
+.menu-learn:disabled{opacity:.55}
 .menu-foot{margin-top:auto;padding-top:18px;border-top:1px solid var(--rule)}
 .menu-links{display:flex;flex-wrap:wrap;gap:4px 26px}
 .menu-foot>p{margin:2px 0 0;font-size:11px;line-height:1.5;color:var(--faded)}
@@ -38,7 +43,7 @@
 .menu-status::before{content:'';display:inline-block;width:5px;height:5px;margin-right:7px;background:#9b855c;border-radius:50%;vertical-align:1px}
 .menu-sheet:has(#start-button:not(:disabled)) .menu-status::before{background:#5a7960}
 .menu-ground{position:relative;min-width:0;display:flex;align-items:flex-end;justify-content:space-between;gap:18px;padding:32px 36px;color:#fff7e7;background:linear-gradient(0deg,#13291fc2,transparent 24%)}
-.menu-ground-caption p{margin:0 0 4px;font:italic 400 25px/1.2 Georgia,'Times New Roman',serif;text-shadow:0 1px 8px #14241b88}
+.menu-ground-caption p{margin:0 0 4px;font:italic 400 27px/1.2 var(--font-serif);text-shadow:0 1px 8px #14241b88}
 .menu-ground-caption>span{font-size:10px;letter-spacing:.08em;text-transform:uppercase;opacity:.85}
 .menu-tools{display:flex;gap:22px;padding-bottom:3px}
 .menu-tools button{padding:8px 0;border:0;background:none;color:inherit;font-size:10px;letter-spacing:.02em;border-bottom:1px solid #fff7e755}
@@ -49,6 +54,13 @@
 .viewport[data-phase=intro] #game{pointer-events:none}
 .intro-overlay.hidden .menu-sheet{pointer-events:none}
 
+@media(min-height:841px) and (min-width:701px){.menu-conditions>.menu-extra{display:grid}}
+@media(max-height:780px) and (min-width:701px){
+  .menu-sheet{padding-top:34px}
+  .menu-session{margin-top:24px}
+  .menu-conditions>div{padding:9px 0}
+  .menu-start{margin:24px 0 20px}
+}
 @media(max-height:690px) and (min-width:701px){
   .menu-sheet{padding:25px 28px 20px}
   .menu-masthead{padding-bottom:20px}
@@ -59,6 +71,37 @@
   .menu-start{margin:20px 0 14px}
   .menu-foot{padding-top:10px}
   .menu-foot .menu-status{margin-top:8px}
+}
+/* Short landscape screens keep Take guard pinned to the bottom of the sheet. */
+@media(max-height:520px) and (min-width:701px){
+  .menu-sheet{padding:18px 24px 0}
+  .menu-overline{display:none}
+  .menu-masthead{padding-bottom:12px}
+  .menu-masthead h1{font-size:42px}
+  .menu-session{margin-top:12px}
+  .menu-section-heading{margin-bottom:6px}
+  .menu-section-heading h2{font-size:21px}
+  .menu-conditions{margin-bottom:4px}
+  .menu-conditions>div{padding:6px 0}
+  #menu-speed{font-size:23px}
+  .menu-start{position:sticky;bottom:0;z-index:1;margin:6px -24px 0;padding:10px 24px 12px;background:linear-gradient(to top,var(--paper) 80%,#eee8d900)}
+  .menu-play{min-height:48px;padding:9px 16px;font-size:21px}
+  .menu-learn{min-height:38px;margin-top:6px}
+  .menu-foot{padding:10px 0 18px}
+}
+@media(min-width:1200px){
+  .intro-overlay{grid-template-columns:clamp(320px,30vw,440px) minmax(0,1fr)}
+  .menu-overline{font-size:11px}
+  .menu-section-heading>span{font-size:10px}
+  .menu-conditions dt{font-size:12.5px}
+  .menu-conditions dd{font-size:14.5px}
+  #menu-speed small{font-size:11px}
+  .menu-text-button{font-size:13px}
+  .menu-learn{font-size:14px}
+  .menu-foot>p{font-size:12px}
+  .menu-foot .menu-status{font-size:10.5px}
+  .menu-tools button{font-size:12px}
+  .menu-ground-caption>span{font-size:11px}
 }
 @media(max-width:900px) and (min-width:701px){
   .menu-ground{padding:26px;flex-direction:column;justify-content:flex-end;align-items:flex-start}
