@@ -129,7 +129,7 @@ export async function createScene(canvas, onProgress = () => {}) {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.NeutralToneMapping; renderer.toneMappingExposure = .88;
-  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+  const maxAniso = renderer.capabilities.getMaxAnisotropy(), gl = renderer.getContext();
   const loader = new THREE.TextureLoader(), hdrLoader = new HDRLoader();
   let loaded = 0;
   const track = promise => promise.then(asset => { onProgress(`Loading the ground and light · ${++loaded}/9`); return asset; });
@@ -382,12 +382,13 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   const windUniform = { value: 0 }, timeUniform = { value: 0 };
   netMat.onBeforeCompile = shader => {
     shader.uniforms.uWind = windUniform; shader.uniforms.uTime = timeUniform;
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWind;\nuniform float uTime;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normal * uWind * uv.y * sin(uTime * 1.9 + position.x * 0.45 + position.y * 0.7);');
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWind;\nuniform float uTime;\nattribute float aSway;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normal * uWind * aSway * sin(uTime * 1.9 + position.x * 0.45 + position.y * 0.7);');
   };
-  const netPanel = (w, h, segsW, segsH, sag) => {
-    const g = new THREE.PlaneGeometry(w, h, segsW, segsH), pos = g.attributes.position, uvs = g.attributes.uv;
-    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i); const s = sag(x / w + .5, y / h + .5); pos.setXYZ(i, x + s[0], y + s[1], s[2]); uvs.setXY(i, uvs.getX(i) * w / .045, uvs.getY(i) * h / .045); }
-    g.computeVertexNormals(); return g;
+  // aSway weights the wind flutter 0-1 across a panel; the uvs are tiled per net cell, so they cannot.
+  const netPanel = (w, h, segsW, segsH, sag, sway = (u, v) => v) => {
+    const g = new THREE.PlaneGeometry(w, h, segsW, segsH), pos = g.attributes.position, uvs = g.attributes.uv, aSway = new Float32Array(pos.count);
+    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i), u = x / w + .5, v = y / h + .5; const s = sag(u, v); aSway[i] = sway(u, v); pos.setXYZ(i, x + s[0], y + s[1], s[2]); uvs.setXY(i, uvs.getX(i) * w / .045, uvs.getY(i) * h / .045); }
+    g.setAttribute('aSway', new THREE.BufferAttribute(aSway, 1)); g.computeVertexNormals(); return g;
   };
   const bayFrac = (u, len, bay) => { const b = u * len / bay; return b - Math.floor(b); };
   const netMeshes = [];
@@ -396,7 +397,7 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   for (const x of [-9.6, -3.1, 3.1, 9.6]) addNet(sideGeo, x, 2.9, -10, Math.PI / 2);
   const endGeo = netPanel(19.2, 5.8, 20, 6, (u, v) => { const xx = (u - .5) * 19.2; const f = xx < -3.1 ? (xx + 9.6) / 6.5 : xx < 3.1 ? (xx + 3.1) / 6.2 : (xx - 3.1) / 6.5; return [0, -0.07 * Math.sin(Math.PI * f) * v, 0]; });
   addNet(endGeo, 0, 2.9, -24, 0); addNet(endGeo, 0, 2.9, 3.6, 0);
-  const roofGeo = netPanel(19.2, 28, 20, 28, (u, v) => { const xx = (u - .5) * 19.2; const f = xx < -3.1 ? (xx + 9.6) / 6.5 : xx < 3.1 ? (xx + 3.1) / 6.2 : (xx - 3.1) / 6.5; return [0, 0, 0.14 * Math.sin(Math.PI * f) * Math.sin(Math.PI * bayFrac(v, 28, 7))]; });
+  const roofGeo = netPanel(19.2, 28, 20, 28, (u, v) => { const xx = (u - .5) * 19.2; const f = xx < -3.1 ? (xx + 9.6) / 6.5 : xx < 3.1 ? (xx + 3.1) / 6.2 : (xx - 3.1) / 6.5; return [0, 0, 0.14 * Math.sin(Math.PI * f) * Math.sin(Math.PI * bayFrac(v, 28, 7))]; }, (u, v) => .5 * Math.sin(Math.PI * bayFrac(v, 28, 7)));
   const roofNet = addNet(roofGeo, 0, 5.8, -10, 0, Math.PI / 2); void roofNet;
   const skirtMat = new THREE.MeshStandardMaterial({ map: skirtTexture(), roughness: .72, side: THREE.DoubleSide });
   const skirtParts = [];
@@ -747,6 +748,8 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     } else {
       renderer.setScissorTest(false); renderer.setViewport(0, 0, width, height); renderer.render(scene, camera);
     }
+    // Alpha-to-coverage grass and chalk leave partial alpha in the canvas; make it opaque so the page behind never tints their edges.
+    gl.colorMask(false, false, false, true); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); gl.colorMask(true, true, true, true); renderer.resetState();
   }
   let lastBallTime = -1, followUntil = 0, frameDt = 0, clock = 0;
   function updateGaze(d, dt, isPaused) {
@@ -807,5 +810,9 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     ballMat.roughness = .3 + c.age / 200; ballMat.clearcoat = Math.max(0, 1 - c.age / 50); ballMat.color.set(c.age > 40 ? '#6e1519' : '#a3131f');
   }
   setEnvironment({ weather: 'clear', pitch: 'hard', age: 8, wind: 0, hand: 'right' });
+  // The other surfaces' wear textures take a moment to paint; do it while the browser is idle rather than on a click or at run-up.
+  const idle = window.requestIdleCallback || (fn => setTimeout(fn, 200)), warm = ['hard', 'green', 'dry', 'soft'];
+  const warmNext = () => { const kind = warm.shift(); if (!kind) return; pitchTexture(kind); idle(warmNext); };
+  idle(warmNext);
   return { renderer, scene, camera, setEnvironment, setMenuFrame, updateBat, updateBall, updateGaze, animateBowler, getReleasePosition, pointerWorld, project, render, resetWicket, hitWicket };
 }

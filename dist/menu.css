@@ -34,6 +34,7 @@
 .menu-play:disabled{background:#d2cdbd;border-color:#c1bcae;color:#777b70;box-shadow:none}
 .menu-learn{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:46px;margin-top:10px;padding:0 16px 0 18px;border:1px solid #263a3140;border-radius:2px;background:#fffaf01a;color:var(--ink);font-size:13px;font-weight:500;text-align:left;transition:border-color .15s,color .15s,background .15s}
 .menu-learn em{font:italic 400 15px/1 var(--font-serif);color:var(--faded)}
+.menu-learn>*{white-space:nowrap}
 .menu-learn:hover:not(:disabled){border-color:var(--red);color:var(--red);background:#fffaf04d}
 .menu-learn:disabled{opacity:.55}
 .menu-foot{margin-top:auto;padding-top:18px;border-top:1px solid var(--rule)}
@@ -73,8 +74,9 @@
   .menu-foot .menu-status{margin-top:8px}
 }
 /* Short landscape screens keep Take guard pinned to the bottom of the sheet. */
-@media(max-height:520px) and (min-width:701px){
-  .menu-sheet{padding:18px 24px 0}
+@media(max-height:520px) and (min-width:560px){
+  .menu-sheet{padding:18px 24px 0 max(24px,env(safe-area-inset-left,0px))}
+  .menu-ground{padding-right:max(36px,env(safe-area-inset-right,0px));padding-bottom:max(32px,env(safe-area-inset-bottom,0px))}
   .menu-overline{display:none}
   .menu-masthead{padding-bottom:12px}
   .menu-masthead h1{font-size:42px}
@@ -103,11 +105,12 @@
   .menu-tools button{font-size:12px}
   .menu-ground-caption>span{font-size:11px}
 }
-@media(max-width:900px) and (min-width:701px){
+@media(max-width:900px) and (min-width:701px),(max-width:700px) and (max-height:520px) and (min-width:560px){
   .menu-ground{padding:26px;flex-direction:column;justify-content:flex-end;align-items:flex-start}
   .menu-ground-caption p{font-size:22px}
 }
-@media(max-width:700px){
+/* Phones in portrait stack the ground above the sheet; landscape phones keep the side-by-side sheet. */
+@media(max-width:700px) and (min-height:521px),(max-width:559px){
   .intro-overlay,.intro-overlay.hidden{display:flex!important;flex-direction:column;overflow-y:auto;overscroll-behavior:contain;pointer-events:auto}
   .intro-overlay.hidden{pointer-events:none}
   .menu-ground{order:-1;flex:0 0 clamp(145px,24svh,230px);min-height:145px;width:100%;padding:20px 24px;background:linear-gradient(0deg,#13291fc2,transparent 70%)}
@@ -127,4 +130,6 @@
   .menu-foot{padding-top:13px}
   .menu-foot .menu-status{margin-top:10px}
 }
+@media(min-width:701px) and (max-width:1099px),(max-height:520px) and (max-width:1099px){.menu-learn em{display:none}}
+@media(pointer:coarse){.menu-play kbd{display:none}}
 @media(prefers-reduced-motion:reduce){.intro-overlay,.menu-play{transition:none}}
