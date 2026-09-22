@@ -127,7 +127,7 @@ export async function createScene(canvas, onProgress = () => {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
+  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.NeutralToneMapping; renderer.toneMappingExposure = .88;
   const maxAniso = renderer.capabilities.getMaxAnisotropy();
   const loader = new THREE.TextureLoader(), hdrLoader = new HDRLoader();
   let loaded = 0;
@@ -153,15 +153,16 @@ export async function createScene(canvas, onProgress = () => {}) {
 
   const rng = random(478293);
   const scene = new THREE.Scene();
-  scene.background = daylight; scene.environment = daylight; scene.environmentIntensity = .5; scene.backgroundIntensity = 1;
-  scene.fog = new THREE.Fog('#cdd9e2', 45, 260);
+  scene.background = daylight; scene.environment = daylight; scene.environmentIntensity = .7; scene.backgroundIntensity = 1;
+  scene.fog = new THREE.Fog('#b9c7b4', 60, 420);
   const camera = new THREE.PerspectiveCamera(BATTING_VIEW.fov, 1, 0.035, 400);
   const cameraBase = new THREE.Vector3().copy(BATTING_VIEW.eye); camera.position.copy(cameraBase); camera.lookAt(BATTING_VIEW.look.x, BATTING_VIEW.look.y, BATTING_VIEW.look.z);
-  const ambient = new THREE.HemisphereLight('#d7e6f5', '#4f5d36', .32); scene.add(ambient);
-  const sun = new THREE.DirectionalLight('#fff4de', 4.2); sun.position.set(-24, 30, -6); sun.castShadow = true;
+  const ambient = new THREE.HemisphereLight('#d7e6f5', '#4f5d36', .9); scene.add(ambient);
+  // Clear sun sits front-left, behind the batter's shoulder, so the bowler and sight screen are front-lit.
+  const sun = new THREE.DirectionalLight('#fff4de', 4.2); sun.position.set(-22, 30, 12); sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -.0004; sun.shadow.normalBias = .02; sun.target.position.set(0, 0, -10); scene.add(sun, sun.target);
   const spots = [];
-  for (const x of [-16, 16]) { const s = new THREE.SpotLight('#dfe8ff', 0, 70, .55, .6, 0); s.position.set(x, 13.5, 9); s.target.position.set(0, 0, -8); scene.add(s, s.target); spots.push(s); }
+  for (const x of [-16, 16]) { const s = new THREE.SpotLight('#f0f3ff', 0, 70, .6, .8, 0); s.position.set(x, 13.5, 9); s.target.position.set(0, 0, -8); scene.add(s, s.target); spots.push(s); }
 
   // ---------------------------------------------------------------- texture helpers
   const texOf = (c, { srgb = false, repeat = null, clampEdge = false, aniso = 8 } = {}) => {
@@ -197,21 +198,23 @@ export async function createScene(canvas, onProgress = () => {}) {
     const col = makeCanvas(128, 128), msk = makeCanvas(128, 128); const cx = col.getContext('2d'); cx.fillStyle = '#26492f'; cx.fillRect(0, 0, 128, 128); draw(cx, true); draw(msk.getContext('2d'), false);
     return maskedTexture(col, msk);
   }
+  // Woven windbreak skirt: mid green with a fine horizontal weave, so the shaded side stays readable.
   function skirtTexture() {
-    const c = makeCanvas(256, 64), x = c.getContext('2d'); const g = x.createLinearGradient(0, 0, 0, 64); g.addColorStop(0, '#1b3d2c'); g.addColorStop(.12, '#224a36'); g.addColorStop(1, '#152e21'); x.fillStyle = g; x.fillRect(0, 0, 256, 64);
-    x.fillStyle = '#2a5a41'; x.fillRect(0, 0, 256, 4); x.fillStyle = '#0f2218'; x.fillRect(0, 4, 256, 1.5);
+    const c = makeCanvas(256, 64), x = c.getContext('2d'); const g = x.createLinearGradient(0, 0, 0, 64); g.addColorStop(0, '#2e5a44'); g.addColorStop(.12, '#35664d'); g.addColorStop(1, '#264c39'); x.fillStyle = g; x.fillRect(0, 0, 256, 64);
+    x.fillStyle = '#3f7658'; x.fillRect(0, 0, 256, 4); x.fillStyle = '#1a3326'; x.fillRect(0, 4, 256, 1.5);
+    for (let y = 6; y < 64; y += 2) { x.fillStyle = `rgba(0,0,0,${.06 + rng() * .04})`; x.fillRect(0, y, 256, 1); }
     noiseOn(x, 256, 64, 900, () => `rgba(${120 + rng() * 60},${130 + rng() * 40},${100 + rng() * 40},${.04 + rng() * .08})`, 1.5);
-    for (let i = 0; i < 14; i++) { x.strokeStyle = `rgba(160,170,140,${.05 + rng() * .1})`; x.lineWidth = .8 + rng() * 2; x.beginPath(); const y = 8 + rng() * 54; x.moveTo(rng() * 256, y); x.lineTo(rng() * 256, y + (rng() - .5) * 8); x.stroke(); }
     return texOf(c, { srgb: true });
   }
-  // Grass tuft: 13 tapered blades fanning from the base; colour on one canvas, coverage on another.
+  // Grass tuft: 34 fine blades, tall to short, a fifth of them straw; colour on one canvas, coverage on another.
   function tuftTexture() {
-    const blades = []; for (let i = 0; i < 13; i++) blades.push({ x0: 128 + (rng() - .5) * 70, lean: (rng() - .5) * 190, h: 150 + rng() * 100, w: 9 + rng() * 9, tone: rng() });
+    const blades = []; for (let i = 0; i < 34; i++) blades.push({ x0: 128 + (rng() - .5) * 120, lean: (rng() - .5) * 110, h: 90 + rng() * 150, w: 2.5 + rng() * 2.5, tone: rng(), dry: rng() < .22 });
+    blades.sort((a, b) => b.h - a.h);
     const draw = (x, colored) => { for (const b of blades) {
-      const cx = b.x0 + b.lean * .55, top = 256 - b.h;
-      if (colored) { const g = x.createLinearGradient(0, 256, 0, top); g.addColorStop(0, `rgb(${52 + b.tone * 20},${78 + b.tone * 20},${34})`); g.addColorStop(.7, `rgb(${96 + b.tone * 35},${138 + b.tone * 30},${58 + b.tone * 10})`); g.addColorStop(1, `rgb(${150 + b.tone * 40},${178 + b.tone * 30},${92})`); x.fillStyle = g; } else x.fillStyle = '#fff';
-      x.beginPath(); x.moveTo(b.x0 - b.w / 2, 258); x.quadraticCurveTo(cx - b.w * .2, 256 - b.h * .55, b.x0 + b.lean, top); x.quadraticCurveTo(cx + b.w * .2, 256 - b.h * .55, b.x0 + b.w / 2, 258); x.closePath(); x.fill(); } };
-    const col = makeCanvas(256, 256), msk = makeCanvas(256, 256); const cx = col.getContext('2d'); cx.fillStyle = '#5d7a3a'; cx.fillRect(0, 0, 256, 256); draw(cx, true); draw(msk.getContext('2d'), false);
+      const top = 256 - b.h, tipX = b.x0 + b.lean, midX = b.x0 + b.lean * .35;
+      if (colored) { const g = x.createLinearGradient(0, 256, 0, top); if (b.dry) { g.addColorStop(0, 'rgb(96,104,52)'); g.addColorStop(1, `rgb(${178 + b.tone * 30},${168 + b.tone * 20},104)`); } else { g.addColorStop(0, `rgb(${58 + b.tone * 14},${84 + b.tone * 16},30)`); g.addColorStop(.6, `rgb(${92 + b.tone * 26},${128 + b.tone * 24},50)`); g.addColorStop(1, `rgb(${136 + b.tone * 30},${160 + b.tone * 24},76)`); } x.fillStyle = g; } else x.fillStyle = '#fff';
+      x.beginPath(); x.moveTo(b.x0 - b.w / 2, 258); x.quadraticCurveTo(midX - b.w * .3, 256 - b.h * .5, tipX, top); x.quadraticCurveTo(midX + b.w * .3, 256 - b.h * .5, b.x0 + b.w / 2, 258); x.closePath(); x.fill(); } };
+    const col = makeCanvas(256, 256), msk = makeCanvas(256, 256); const cx = col.getContext('2d'); cx.fillStyle = '#6a8a3c'; cx.fillRect(0, 0, 256, 256); draw(cx, true); draw(msk.getContext('2d'), false);
     return maskedTexture(col, msk, { clampEdge: true });
   }
   // Large-scale lawn mottle x mowing stripes, sampled by world position in the lawn shader.
@@ -222,23 +225,38 @@ export async function createScene(canvas, onProgress = () => {}) {
     x.fillStyle = 'rgba(0,0,0,0.07)'; for (let i = 0; i < 25; i++) x.fillRect(i * 10.24 - 1, 0, 2, 256);
     const t = texOf(c); return t;
   }
-  // Pitch wear layer blended over the dirt map: straw tint, roller lines, worn good-length band,
-  // spike scuffs at both creases, bowler footmarks, plus cracks / grass / damp per pitch type.
+  // Pitch wear layer blended over the dirt map, 512 x 2048 (6 mm across, 12 mm along; soft marks are sized and
+  // rotated in metres so scuffs stay oval): a thin wash that leaves the soil grain showing, grassy edges, soft roller
+  // bands, grain speckle, a worn good-length band, crease scuffs and footmarks, then per type a live grass cover
+  // (green), bleached crust and a crack network (dry) or damp blotches and deep footholes (soft).
   const pitchTextures = new Map();
   function pitchTexture(kind) {
     if (pitchTextures.has(kind)) return pitchTextures.get(kind);
-    const c = makeCanvas(1024, 1024), x = c.getContext('2d');
-    const py = z => 1024 * (z + 21) / 24, px = xx => 512 + xx * 1024 / 3.05;
-    x.fillStyle = kind === 'soft' ? 'rgba(110,96,74,0.55)' : kind === 'dry' ? 'rgba(184,164,124,0.5)' : kind === 'green' ? 'rgba(150,148,104,0.45)' : 'rgba(172,152,110,0.5)'; x.fillRect(0, 0, 1024, 1024);
-    if (kind === 'green') { x.globalAlpha = .38; for (let ty = 0; ty < 1024; ty += 85) for (let tx = 0; tx < 1024; tx += 671) x.drawImage(turfColor.image, tx, ty, 671, 85); x.globalAlpha = 1; }
-    for (let i = 0; i < 10; i++) { x.fillStyle = i % 2 ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.025)'; x.fillRect(i * 100.7, 0, 100.7, 1024); }
-    const soft = (cx, cy, rx, ry, rot, col, a) => { const g = x.createRadialGradient(0, 0, 0, 0, 0, 1); g.addColorStop(0, col.replace('A', a)); g.addColorStop(1, col.replace('A', 0)); x.save(); x.translate(cx, cy); x.rotate(rot); x.scale(rx, ry); x.fillStyle = g; x.fillRect(-1, -1, 2, 2); x.restore(); };
-    soft(px(0), py(-4.8), 380, 130, 0, 'rgba(112,92,60,A)', .22); soft(px(0.15), py(-16.4), 170, 60, 0, 'rgba(112,92,60,A)', .14);
-    for (let i = 0; i < 46; i++) soft(px((rng() - .5) * 1.3), py(0.55 + (rng() - .5) * 2.4), 10 + rng() * 22, 4 + rng() * 8, rng() * 3, 'rgba(96,78,48,A)', .18 + rng() * .2);
-    for (let i = 0; i < 30; i++) soft(px((rng() - .5) * 1.1), py(-17.2 + (rng() - .5) * 2.2), 8 + rng() * 18, 3 + rng() * 6, rng() * 3, 'rgba(96,78,48,A)', .16 + rng() * .18);
-    for (let i = 0; i < 9; i++) { const side = i % 2 ? 1 : -1; soft(px(side * (0.25 + rng() * .3) + .35), py(-16.2 + i * .22 + rng() * .1), 22 + rng() * 10, 7 + rng() * 3, .3, 'rgba(90,72,44,A)', .28); }
-    if (kind === 'dry') { x.strokeStyle = 'rgba(107,90,60,0.4)'; x.lineWidth = 1; for (let i = 0; i < 70; i++) { let cx = rng() * 1024, cy = rng() * 1024; x.beginPath(); x.moveTo(cx, cy); for (let j = 0; j < 8; j++) { cx += (rng() - .5) * 26; cy += (rng() - .3) * 20; x.lineTo(cx, cy); } x.stroke(); } }
-    if (kind === 'soft') noiseOn(x, 1024, 1024, 2200, () => `rgba(70,62,44,${.05 + rng() * .1})`, 2);
+    const W = 512, H = 2048, c = makeCanvas(W, H), x = c.getContext('2d'), green = kind === 'green', dry = kind === 'dry', damp = kind === 'soft';
+    const py = z => H * (z + 21) / 24, px = xx => W / 2 + xx * W / 3.05;
+    x.fillStyle = damp ? 'rgba(92,88,66,0.48)' : dry ? 'rgba(190,170,128,0.4)' : green ? 'rgba(116,134,78,0.36)' : 'rgba(182,166,124,0.36)'; x.fillRect(0, 0, W, H);
+    for (const side of [0, 1]) { const e = W * (green ? .26 : .2), g = x.createLinearGradient(side ? W : 0, 0, side ? W - e : e, 0); g.addColorStop(0, `rgba(98,118,62,${green ? .6 : dry ? .36 : .46})`); g.addColorStop(.35, 'rgba(116,128,74,0.18)'); g.addColorStop(1, 'rgba(116,128,74,0)'); x.fillStyle = g; x.fillRect(side ? W - e : 0, 0, e, H); }
+    for (let i = 0; i < 6; i++) { const x0 = i * W / 6, w = W / 6, g = x.createLinearGradient(x0, 0, x0 + w, 0), a = (i % 2 ? .045 : .03) * (green ? 1.6 : 1), col = i % 2 ? '0,0,0' : '255,248,230'; g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(.3, `rgba(${col},${a})`); g.addColorStop(.7, `rgba(${col},${a})`); g.addColorStop(1, `rgba(${col},0)`); x.fillStyle = g; x.fillRect(x0, 0, w, H); }
+    const soft = (cx, cy, rx, ry, rot, col, a) => { const g = x.createRadialGradient(0, 0, 0, 0, 0, 1); g.addColorStop(0, col.replace('A', a)); g.addColorStop(1, col.replace('A', 0)); x.save(); x.translate(cx, cy); x.scale(W / 3.05, H / 24); x.rotate(rot); x.scale(rx, ry); x.fillStyle = g; x.fillRect(-1, -1, 2, 2); x.restore(); };
+    if (green) { // live grass: short green blades everywhere, thinning where the ball and the feet wear it
+      for (let i = 0; i < 26000; i++) { const u = rng(), v = rng(), z = v * 24 - 21, worn = Math.max(Math.exp(-(((z + 4.8) / 2.6) ** 2)) * .55, Math.exp(-(((z - .5) / 1.3) ** 2)) * .7, Math.exp(-(((z + 17.4) / 1.5) ** 2)) * .7) * (1 - Math.abs(u - .5) * 1.6); if (rng() < worn) continue; const t = rng(); x.fillStyle = `rgba(${62 + t * 50},${96 + t * 48},${34 + t * 22},${.16 + rng() * .24})`; x.fillRect(u * W, v * H, 1 + rng() * 1.5, 1 + rng() * 2); }
+    }
+    for (let i = 0; i < 9000; i++) { const u = rng(), edge = Math.pow(Math.abs(u - .5) * 2, 2); if (rng() > .3 + edge * .7) continue; const light = rng() < (dry ? .8 : damp ? .3 : .55); x.fillStyle = light ? `rgba(${196 + rng() * 30},${180 + rng() * 26},${130 + rng() * 20},${.08 + rng() * .12})` : `rgba(${80 + rng() * 30},${96 + rng() * 30},52,${.08 + rng() * .14})`; x.fillRect(u * W, rng() * H, 1 + rng() * 2, 1 + rng()); }
+    if (damp) for (let i = 0; i < 26; i++) soft(px((rng() - .5) * 2.4), py(-20 + rng() * 22), .25 + rng() * .4, .4 + rng() * .8, rng() * 3, 'rgba(70,58,42,A)', .14 + rng() * .14);
+    const mark = damp ? 1.35 : dry ? 1.2 : 1;
+    soft(px(0), py(-4.8), 1.13, 3.05, 0, dry ? 'rgba(200,178,132,A)' : 'rgba(112,92,60,A)', green ? .3 : .18); soft(px(0.15), py(-16.4), .5, 1.4, 0, 'rgba(112,92,60,A)', .14 * mark);
+    for (let i = 0; i < 46; i++) soft(px((rng() - .5) * 1.3), py(0.55 + (rng() - .5) * 2.4), .04 + rng() * .06, .07 + rng() * .1, rng() * 3, 'rgba(96,78,48,A)', (.12 + rng() * .16) * mark);
+    for (let i = 0; i < 30; i++) soft(px((rng() - .5) * 1.1), py(-17.2 + (rng() - .5) * 2.2), .035 + rng() * .05, .06 + rng() * .09, rng() * 3, 'rgba(96,78,48,A)', (.14 + rng() * .16) * mark);
+    for (let i = 0; i < 9; i++) { const side = i % 2 ? 1 : -1; soft(px(side * (0.25 + rng() * .3) + .35), py(-16.2 + i * .22 + rng() * .1), .05 + rng() * .02, .12 + rng() * .03, .3, damp ? 'rgba(66,52,34,A)' : 'rgba(90,72,44,A)', .28 * mark); }
+    if (dry) { // polygonal crack network, densest on the good length and at the crease ends; a light lip beside each crack
+      for (let i = 0; i < 260; i++) {
+        const z = rng() < .55 ? -4.8 + (rng() - .5) * 7 : -21 + rng() * 24; let cx = px((rng() - .5) * 2.7), cy = py(z), a = rng() * TAU; const path = [[cx, cy]];
+        for (let j = 0, n = 6 + rng() * 8; j < n; j++) { a += (rng() < .5 ? -1 : 1) * (.5 + rng() * .9); const l = .025 + rng() * .045; cx += Math.cos(a) * l * W / 3.05; cy += Math.sin(a) * l * H / 24; path.push([cx, cy]); }
+        for (const [dx, dy, style, lw] of [[1, 1, 'rgba(240,226,190,0.14)', .8], [0, 0, `rgba(84,68,44,${.28 + rng() * .2})`, .6 + rng() * .4]]) { x.strokeStyle = style; x.lineWidth = lw; x.beginPath(); path.forEach(([ax, ay], k) => k ? x.lineTo(ax + dx, ay + dy) : x.moveTo(ax + dx, ay + dy)); x.stroke(); }
+      }
+      noiseOn(x, W, H, 2600, () => `rgba(${220 + rng() * 30},${204 + rng() * 26},${160 + rng() * 20},${.12 + rng() * .16})`, 1.5);
+    }
+    if (damp) noiseOn(x, W, H, 2200, () => `rgba(70,62,44,${.05 + rng() * .1})`, 1.5);
     const t = texOf(c, { srgb: true, clampEdge: true, aniso: 16 }); pitchTextures.set(kind, t); return t;
   }
   function chalkTexture() {
@@ -319,19 +337,24 @@ export async function createScene(canvas, onProgress = () => {}) {
   }
   // ---------------------------------------------------------------- lawn
   const mottle = mottleTexture();
-  for (const tex of [turfColor, turfNormal, turfRoughness]) tex.repeat.set(100, 100);
-  const groundMat = new THREE.MeshStandardMaterial({ map: turfColor, normalMap: turfNormal, normalScale: new THREE.Vector2(.45, .45), roughnessMap: turfRoughness, color: '#a9bf80', roughness: 1 });
+  for (const tex of [turfColor, turfNormal, turfRoughness]) tex.repeat.set(410, 410);
+  const groundMat = new THREE.MeshStandardMaterial({ map: turfColor, normalMap: turfNormal, normalScale: new THREE.Vector2(.6, .6), roughnessMap: turfRoughness, color: '#ffffff', roughness: 1 });
+  // The sparse-grass photo is mostly soil: keep its luminance detail but remap it to mown-lawn greens (linear).
   groundMat.onBeforeCompile = shader => {
     shader.uniforms.mottleMap = { value: mottle };
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vMottle;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMottle = (modelMatrix * vec4(transformed, 1.0)).xz * 0.0166;');
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D mottleMap;\nvarying vec2 vMottle;').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb *= texture2D(mottleMap, vMottle).r * 1.08;');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D mottleMap;\nvarying vec2 vMottle;').replace('#include <map_fragment>', `#include <map_fragment>
+float lum = dot(sampledDiffuseColor.rgb, vec3(.2126, .7152, .0722));
+vec3 lawn = mix(vec3(.024, .052, .013), vec3(.105, .17, .05), smoothstep(.02, .16, lum));
+lawn = mix(lawn, sampledDiffuseColor.rgb * vec3(1.0, 1.1, .7), .15);
+diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   };
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), groundMat); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), groundMat); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 
   // ---------------------------------------------------------------- pitch strips, chalk
   for (const tex of [earthColor, earthNormal, earthRoughness]) tex.repeat.set(1.525, 12);
   const wearUniform = { value: pitchTexture('hard') };
-  const pitchMat = new THREE.MeshPhysicalMaterial({ map: earthColor, normalMap: earthNormal, normalScale: new THREE.Vector2(.12, .12), roughnessMap: earthRoughness, color: '#a3946e', roughness: 1, clearcoat: 0, clearcoatRoughness: .5 });
+  const pitchMat = new THREE.MeshPhysicalMaterial({ map: earthColor, normalMap: earthNormal, normalScale: new THREE.Vector2(.3, .3), roughnessMap: earthRoughness, color: '#d6cba6', roughness: 1, clearcoat: 0, clearcoatRoughness: .5 });
   pitchMat.onBeforeCompile = shader => {
     shader.uniforms.wearMap = wearUniform;
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWear;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvWear = uv;');
@@ -339,15 +362,14 @@ export async function createScene(canvas, onProgress = () => {}) {
   };
   const PITCH_TOP = 0.03;
   const pitch = new THREE.Mesh(new THREE.PlaneGeometry(3.05, 24), pitchMat); pitch.rotation.x = -Math.PI / 2; pitch.position.set(0, PITCH_TOP, -9); pitch.receiveShadow = true; scene.add(pitch);
-  const strips = [{ g: new THREE.BoxGeometry(3.05, PITCH_TOP, 24), m: mat4(0, PITCH_TOP / 2 - .003, -9) }];
-  const sideMat = new THREE.MeshStandardMaterial({ map: earthColor, normalMap: earthNormal, normalScale: new THREE.Vector2(.1, .1), roughnessMap: earthRoughness, color: '#9f9574', roughness: 1 });
-  for (const x of [-6.4, 6.4]) strips.push({ g: new THREE.PlaneGeometry(3.05, 25), m: mat4(x, PITCH_TOP - .005, -9, -Math.PI / 2), uv: [1.525, 12.5] });
-  strips[0].uv = [1, 1]; // the edge box keeps the plain tint
-  const sideStrips = new THREE.Mesh(mergeGeometries(strips), sideMat); sideStrips.receiveShadow = true; scene.add(sideStrips);
-  const chalkMat = new THREE.MeshStandardMaterial({ map: chalkTexture(), color: '#ffffff', roughness: .95, alphaTest: .5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const sideMat = new THREE.MeshStandardMaterial({ map: earthColor, normalMap: earthNormal, normalScale: new THREE.Vector2(.1, .1), roughnessMap: earthRoughness, color: '#c2b38c', roughness: 1 });
+  const pitchEdge = new THREE.Mesh(new THREE.BoxGeometry(3.05, PITCH_TOP, 24), sideMat); pitchEdge.position.set(0, PITCH_TOP / 2 - .003, -9); pitchEdge.receiveShadow = true; scene.add(pitchEdge);
+  // Neighbour lanes share the pitch material (default 0..1 uvs line the wear map up with their creases).
+  const sideStrips = new THREE.Mesh(mergeGeometries([-6.4, 6.4].map(x => ({ g: new THREE.PlaneGeometry(3.05, 24), m: mat4(x, PITCH_TOP - .002, -9, -Math.PI / 2) }))), pitchMat); sideStrips.receiveShadow = true; scene.add(sideStrips);
+  const chalkMat = new THREE.MeshStandardMaterial({ map: chalkTexture(), color: '#ffffff', roughness: .95, alphaTest: .3, alphaToCoverage: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   const chalkParts = [];
   const chalkLine = (x, z, w, d, ry) => chalkParts.push({ g: new THREE.PlaneGeometry(w, d), m: mat4(x, PITCH_TOP + .004, z, -Math.PI / 2, 0, ry), uv: [w / .8, 1] });
-  for (const x of [0, -6.4, 6.4]) { for (const z of [0, -17.68]) chalkLine(x, z, 3.7, .045, 0); for (const z of [1.22, -18.9]) { chalkLine(x, z, 2.64, .04, 0); for (const side of [-1, 1]) chalkLine(x + side * 1.32, z + (z < 0 ? .4 : -.4), 2.8, .04, Math.PI / 2); } }
+  for (const x of [0, -6.4, 6.4]) { for (const z of [0, -17.68]) chalkLine(x, z, 3.7, .05, 0); for (const z of [1.22, -18.9]) { chalkLine(x, z, 2.64, .05, 0); for (const side of [-1, 1]) chalkLine(x + side * 1.32, z + (z < 0 ? .4 : -.4), 2.8, .05, Math.PI / 2); } }
   const chalk = new THREE.Mesh(mergeGeometries(chalkParts), chalkMat); scene.add(chalk);
 
   // ---------------------------------------------------------------- nets
@@ -388,44 +410,41 @@ export async function createScene(canvas, onProgress = () => {}) {
 
   // ---------------------------------------------------------------- grass tufts
   const tuftGeo = mergeGeometries([{ g: new THREE.PlaneGeometry(.4, .28, 1, 3), m: mat4(0, .14, 0) }, { g: new THREE.PlaneGeometry(.4, .28, 1, 3), m: mat4(0, .14, 0, 0, Math.PI / 2) }]);
-  const tuftMat = new THREE.MeshStandardMaterial({ map: tuftTexture(), roughness: 1, side: THREE.DoubleSide, alphaTest: .42 });
+  const tuftMat = new THREE.MeshStandardMaterial({ map: tuftTexture(), roughness: 1, side: THREE.DoubleSide, alphaTest: .3, alphaToCoverage: true });
   tuftMat.onBeforeCompile = shader => {
     shader.uniforms.uWind = windUniform; shader.uniforms.uTime = timeUniform;
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWind;\nuniform float uTime;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.x += (0.02 + uWind * 0.6) * uv.y * uv.y * sin(uTime * 1.7 + instanceMatrix[3].x * 0.5 + instanceMatrix[3].z * 0.35);');
   };
-  const TUFTS = 2600, tufts = new THREE.InstancedMesh(tuftGeo, tuftMat, TUFTS); tufts.receiveShadow = true;
-  const lanes = [-6.4, 0, 6.4], nearStrip = x => lanes.some(l => Math.abs(x - l) < 1.85);
-  n = 0;
-  while (n < TUFTS) {
-    let cx, cz;
-    if (rng() < .6) { const lane = lanes[Math.floor(rng() * 3)], side = rng() < .5 ? -1 : 1; cx = lane + side * (1.9 + rng() * 1.3); cz = -25 + rng() * 29; } else { cx = (rng() - .5) * 56; cz = -38 + rng() * 48; }
-    for (let k = 0; k < 6 && n < TUFTS; k++) {
-      const x = cx + (rng() - .5) * 2.2, z = cz + (rng() - .5) * 2.2; if (nearStrip(x) && z > -22 && z < 4) continue; if (Math.abs(x) < 2.5 && z > 2) continue;
-      dummy.position.set(x, 0, z); dummy.rotation.set(0, rng() * TAU, 0); const s = .6 + rng() * .7; dummy.scale.set(s, s * (.8 + rng() * .4), s); dummy.updateMatrix(); tufts.setMatrixAt(n, dummy.matrix);
-      tufts.setColorAt(n, _c1.set('#5f7b39').lerp(_c1.clone().set('#8ba14e'), rng())); n++;
-    }
-  }
-  scene.add(tufts);
+  // Long grass only where the mower cannot reach: tight to both faces of every skirt, then sparse rough outside the nets.
+  const TUFTS = 1900, tufts = new THREE.InstancedMesh(tuftGeo, tuftMat, TUFTS); tufts.receiveShadow = true;
+  const tuftTip = new THREE.Color('#ffffff'); n = 0;
+  const tuft = (x, z, s) => { if (n >= TUFTS) return; dummy.position.set(x, 0, z); dummy.rotation.set(0, rng() * TAU, 0); dummy.scale.set(s, s * (.75 + rng() * .5), s); dummy.updateMatrix(); tufts.setMatrixAt(n, dummy.matrix); tufts.setColorAt(n, _c1.set('#dfe6c8').lerp(tuftTip, rng())); n++; };
+  for (const nx of [-9.6, -3.1, 3.1, 9.6]) for (const face of [-1, 1]) for (let z = -23.9; z < 3.5; z += .1 + rng() * .22) tuft(nx + face * (.04 + rng() * rng() * .3), z, .45 + rng() * .45);
+  for (const nz of [-24, 3.6]) for (const face of [-1, 1]) { if (nz > 0 && face < 0) continue; for (let x = -9.5; x < 9.5; x += .12 + rng() * .25) tuft(x, nz + face * (.05 + rng() * rng() * .3), .45 + rng() * .4); }
+  while (n < TUFTS) { const cx = (rng() - .5) * 70, cz = -44 + rng() * 60; if (Math.abs(cx) < 10.2 && cz > -24.6 && cz < 4.2) continue; for (let j = 0; j < 5; j++) tuft(cx + (rng() - .5) * .8, cz + (rng() - .5) * .8, .4 + rng() * .5); }
+  tufts.computeBoundingSphere(); scene.add(tufts);
 
   // ---------------------------------------------------------------- surroundings
   const creamMat = new THREE.MeshStandardMaterial({ color: '#ece8da', roughness: .85, bumpMap: weatherboardBump(), bumpScale: .012 });
-  const slateMat = new THREE.MeshStandardMaterial({ color: '#3f4a44', roughness: .78 });
+  const slateMat = new THREE.MeshStandardMaterial({ color: '#2f4a3c', roughness: .78 });
   const deckMat = new THREE.MeshStandardMaterial({ color: '#8a7658', roughness: .9 });
-  const glassMat = new THREE.MeshPhysicalMaterial({ color: '#8fa7a0', roughness: .12, metalness: .1, envMapIntensity: 1.2 });
-  const cream = [], slate = [], deck = [], glass = [];
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: '#1e2a2a', roughness: .06, metalness: 0, envMapIntensity: 1 });
+  const timberMat = new THREE.MeshStandardMaterial({ color: '#5e4c3a', roughness: .9, bumpMap: creamMat.bumpMap, bumpScale: .012 });
+  const cream = [], slate = [], deck = [], glass = [], timber = [];
   const roofPitch = Math.atan2(1.41, 3.5);
-  const building = (cx, cz, w, h, d, roofY) => {
+  const building = (cx, cz, w, h, d, walls = cream) => {
     const bump = [w / 2.4, h / 2.4];
-    cream.push({ g: new THREE.PlaneGeometry(w, h), m: mat4(cx, h / 2, cz + d / 2), uv: bump }, { g: new THREE.PlaneGeometry(w, h), m: mat4(cx, h / 2, cz - d / 2, 0, Math.PI), uv: bump });
-    cream.push({ g: new THREE.PlaneGeometry(d, h), m: mat4(cx + w / 2, h / 2, cz, 0, Math.PI / 2), uv: [d / 2.4, h / 2.4] }, { g: new THREE.PlaneGeometry(d, h), m: mat4(cx - w / 2, h / 2, cz, 0, -Math.PI / 2), uv: [d / 2.4, h / 2.4] });
+    walls.push({ g: new THREE.PlaneGeometry(w, h), m: mat4(cx, h / 2, cz + d / 2), uv: bump }, { g: new THREE.PlaneGeometry(w, h), m: mat4(cx, h / 2, cz - d / 2, 0, Math.PI), uv: bump });
+    walls.push({ g: new THREE.PlaneGeometry(d, h), m: mat4(cx + w / 2, h / 2, cz, 0, Math.PI / 2), uv: [d / 2.4, h / 2.4] }, { g: new THREE.PlaneGeometry(d, h), m: mat4(cx - w / 2, h / 2, cz, 0, -Math.PI / 2), uv: [d / 2.4, h / 2.4] });
     const rise = d / 2 * Math.tan(roofPitch), slab = d / 2 / Math.cos(roofPitch) + .5;
     slate.push({ g: new THREE.BoxGeometry(w + .8, .12, slab), m: mat4(cx, h + rise / 2 - .02, cz + d / 4 + .1, roofPitch) }, { g: new THREE.BoxGeometry(w + .8, .12, slab), m: mat4(cx, h + rise / 2 - .02, cz - d / 4 - .1, -roofPitch) });
     slate.push({ g: new THREE.BoxGeometry(w + .9, .14, .16), m: mat4(cx, h + rise, cz) });
-    for (const sx of [-1, 1]) { const gable = new THREE.Shape(); gable.moveTo(-d / 2, 0); gable.lineTo(d / 2, 0); gable.lineTo(0, rise); gable.closePath(); cream.push({ g: new THREE.ShapeGeometry(gable), m: mat4(cx + sx * w / 2, h, cz, 0, sx * Math.PI / 2), uv: [d / 2.4, rise / 2.4] }); }
-    void roofY;
+    for (const sx of [-1, 1]) { const gable = new THREE.Shape(); gable.moveTo(-d / 2, 0); gable.lineTo(d / 2, 0); gable.lineTo(0, rise); gable.closePath(); walls.push({ g: new THREE.ShapeGeometry(gable), m: mat4(cx + sx * w / 2, h, cz, 0, sx * Math.PI / 2), uv: [d / 2.4, rise / 2.4] }); }
+    // White fascia boards under the eaves on both long sides.
+    for (const sz of [-1, 1]) cream.push({ g: new THREE.BoxGeometry(w + .8, .16, .04), m: mat4(cx, h - .13, cz + sz * (d / 2 + .35)) });
   };
   // Pavilion: 19 x 7 m, veranda with six posts, glazed windows, a clock on the gable.
-  building(24, -37, 19, 3.6, 7, 3.6);
+  building(24, -37, 19, 3.6, 7);
   deck.push({ g: new THREE.BoxGeometry(19.4, .28, 2.4), m: mat4(24, .3, -32.4) }, { g: new THREE.BoxGeometry(3, .16, .8), m: mat4(24, .1, -30.9) });
   for (let i = 0; i < 6; i++) { const x = 15.2 + i * 3.52; cream.push({ g: new THREE.CylinderGeometry(.07, .07, 3.1, 8), m: mat4(x, 1.95, -31.35) }); }
   slate.push({ g: new THREE.BoxGeometry(19.6, .1, 2.9), m: mat4(24, 3.55, -32.2, .2) });
@@ -433,14 +452,14 @@ export async function createScene(canvas, onProgress = () => {}) {
   for (let i = 0; i < 6; i++) { const x = 16.4 + i * 2.9; glass.push({ g: new THREE.PlaneGeometry(1.7, 1.5), m: mat4(x, 2.0, -33.47) }); cream.push({ g: new THREE.BoxGeometry(1.9, .08, .08), m: mat4(x, 2.8, -33.45) }, { g: new THREE.BoxGeometry(1.9, .08, .08), m: mat4(x, 1.2, -33.45) }, { g: new THREE.BoxGeometry(.08, 1.6, .08), m: mat4(x - .9, 2, -33.45) }, { g: new THREE.BoxGeometry(.08, 1.6, .08), m: mat4(x + .9, 2, -33.45) }, { g: new THREE.BoxGeometry(.05, 1.5, .06), m: mat4(x, 2, -33.46) }); }
   slate.push({ g: new THREE.BoxGeometry(1.0, 2.2, .1), m: mat4(24, 1.1, -33.44) });
   const clockFace = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), new THREE.MeshStandardMaterial({ map: clockTexture(), roughness: .6 })); clockFace.position.set(14.44, 4.2, -37); clockFace.rotation.y = -Math.PI / 2; scene.add(clockFace);
-  // Groundsman's shed on the other side for balance.
-  building(-21, -35, 6, 2.8, 4, 2.8);
+  // Groundsman's shed on the other side for balance, in dark-stained timber.
+  building(-21, -35, 6, 2.8, 4, timber);
   slate.push({ g: new THREE.BoxGeometry(.9, 1.9, .1), m: mat4(-21, .95, -32.95) });
   // Benches beside the lanes and a hedge behind the pavilion.
   for (const x of [-13.5, 13.5]) { for (let i = 0; i < 3; i++) deck.push({ g: new THREE.BoxGeometry(2.6, .05, .1), m: mat4(x, .48, -13.15 + i * .12) }); for (let j = 0; j < 2; j++) deck.push({ g: new THREE.BoxGeometry(2.6, .1, .05), m: mat4(x, .72 + j * .13, -13.32 - j * .035, -.25) }); for (const s of [-1, 1]) slate.push({ g: new THREE.BoxGeometry(.06, .46, .5), m: mat4(x + s * 1.2, .23, -13.05) }, { g: new THREE.BoxGeometry(.06, .45, .05), m: mat4(x + s * 1.2, .7, -13.3, -.25) }); }
   const hedge = new THREE.Mesh(new THREE.BoxGeometry(40, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: '#2f4a2a', roughness: 1, bumpMap: leatherBump(), bumpScale: .05 })); hedge.position.set(20, .8, -42.5); scene.add(hedge);
   const addMerged = (parts, material, shadow = true) => { if (!parts.length) return null; const m = new THREE.Mesh(mergeGeometries(parts), material); m.castShadow = shadow; m.receiveShadow = true; scene.add(m); return m; };
-  addMerged(cream, creamMat); addMerged(slate, slateMat); addMerged(deck, deckMat); addMerged(glass, glassMat, false);
+  addMerged(cream, creamMat); addMerged(timber, timberMat); addMerged(slate, slateMat); addMerged(deck, deckMat); addMerged(glass, glassMat, false);
   // Sight screen: slatted 7 x 4 m board on a steel A-frame with wheels, behind the back net.
   const slats = slatTextures();
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(7, 4), new THREE.MeshStandardMaterial({ map: slats.map, bumpMap: slats.bump, bumpScale: .02, color: '#ffffff', roughness: .7 })); screen.position.set(0, 2.25, -26.5); screen.castShadow = true; screen.receiveShadow = true; scene.add(screen);
@@ -689,7 +708,8 @@ export async function createScene(canvas, onProgress = () => {}) {
   // The title screen looks along the real nets from beside the crease. Give
   // that view its own camera and viewport so the paper never covers its subject.
   const menuCamera = new THREE.PerspectiveCamera(52, 1, .035, 400);
-  menuCamera.position.set(2.15, 1.7, 2.35); menuCamera.lookAt(-.15, .75, -10);
+  // Tilted so the right-hand floodlight head sits just above the frame at every aspect (its NDC y does not depend on aspect).
+  menuCamera.position.set(2.15, 1.7, 2.35); menuCamera.lookAt(-.15, .5, -10);
   let menuFrame = null;
   const batterMeshes = [batGroup, ...gloves, ...pads, ...arms.flatMap(arm => [arm.fore, arm.upper])];
   function setMenuFrame(frame) {
@@ -750,19 +770,19 @@ export async function createScene(canvas, onProgress = () => {}) {
     const over = c.weather === 'overcast', evening = c.weather === 'evening';
     setHand(c.hand);
     windUniform.value = Math.min(.06, Math.abs(c.wind) * .0025);
-    renderer.toneMappingExposure = over ? .9 : evening ? 1.02 : 1.05;
-    if (evening) { sun.color.set('#ffa25c'); sun.intensity = 3.4; sun.position.set(-17, 7.5, -30); ambient.color.set('#8d84a3'); ambient.groundColor.set('#55483a'); ambient.intensity = .42; scene.environmentIntensity = .5; scene.backgroundIntensity = .42; scene.fog.color.set('#b98f6a'); scene.fog.near = 40; scene.fog.far = 220; }
-    else if (over) { sun.color.set('#e8ecec'); sun.intensity = .55; sun.position.set(-14, 30, -10); ambient.color.set('#cfd3d0'); ambient.groundColor.set('#59614c'); ambient.intensity = .95; scene.environmentIntensity = .95; scene.backgroundIntensity = .95; scene.fog.color.set('#c5cbc6'); scene.fog.near = 30; scene.fog.far = 180; }
-    else { sun.color.set('#fff4de'); sun.intensity = 4.2; sun.position.set(-24, 30, -6); ambient.color.set('#d7e6f5'); ambient.groundColor.set('#4f5d36'); ambient.intensity = .32; scene.environmentIntensity = .5; scene.backgroundIntensity = 1; scene.fog.color.set('#cdd9e2'); scene.fog.near = 45; scene.fog.far = 260; }
-    const cam = sun.shadow.camera; cam.left = -17; cam.right = 16; cam.top = evening ? 9 : 13; cam.bottom = evening ? -3 : -10; cam.near = 5; cam.far = 90; cam.updateProjectionMatrix();
+    renderer.toneMappingExposure = over ? .8 : evening ? .93 : .88;
+    if (evening) { sun.color.set('#ffa25c'); sun.intensity = 3.8; sun.position.set(-17, 7.5, -30); ambient.color.set('#a08ea0'); ambient.groundColor.set('#55483a'); ambient.intensity = .6; scene.environmentIntensity = .5; scene.backgroundIntensity = .6; scene.fog.color.set('#b98f6a'); scene.fog.near = 60; scene.fog.far = 380; }
+    else if (over) { sun.color.set('#e8ecec'); sun.intensity = .55; sun.position.set(-14, 30, -10); ambient.color.set('#cfd3d0'); ambient.groundColor.set('#59614c'); ambient.intensity = .95; scene.environmentIntensity = .95; scene.backgroundIntensity = .95; scene.fog.color.set('#c5cbc6'); scene.fog.near = 40; scene.fog.far = 300; }
+    else { sun.color.set('#fff4de'); sun.intensity = 4.2; sun.position.set(-22, 30, 12); ambient.color.set('#d7e6f5'); ambient.groundColor.set('#4f5d36'); ambient.intensity = .9; scene.environmentIntensity = .7; scene.backgroundIntensity = 1; scene.fog.color.set('#b9c7b4'); scene.fog.near = 60; scene.fog.far = 420; }
+    const cam = sun.shadow.camera; cam.left = evening ? -17 : -18; cam.right = evening ? 16 : 18; cam.top = evening ? 9 : 16; cam.bottom = evening ? -3 : -14; cam.near = 5; cam.far = evening ? 90 : 100; cam.updateProjectionMatrix();
     scene.background = scene.environment = over ? overcastLight : evening ? eveningLight : daylight;
     const worldAz = Math.atan2(sun.position.z, sun.position.x) * 180 / Math.PI, theta = THREE.MathUtils.degToRad(worldAz - HDR_SUN_AZIMUTH[c.weather]);
-    scene.backgroundRotation.set(0, theta, 0); scene.environmentRotation.set(0, theta, 0); scene.backgroundBlurriness = .04;
-    lampMat.emissiveIntensity = evening ? 3 : 0; for (const g of glows) g.material.opacity = evening ? .9 : 0; for (const s of spots) s.intensity = evening ? 1.3 : 0;
+    scene.backgroundRotation.set(0, theta, 0); scene.environmentRotation.set(0, theta, 0); scene.backgroundBlurriness = 0;
+    lampMat.emissiveIntensity = evening ? 3 : 0; for (const g of glows) g.material.opacity = evening ? .9 : 0; for (const s of spots) s.intensity = evening ? 4.2 : 0;
     sunGlow.position.copy(sun.position).normalize().multiplyScalar(300); sunGlow.scale.setScalar(evening ? 46 : 0); sunGlow.material.opacity = evening ? .8 : 0;
     wearUniform.value = pitchTexture(c.pitch);
-    pitchMat.color.set(c.pitch === 'green' ? '#8e956f' : c.pitch === 'soft' ? '#847862' : c.pitch === 'dry' ? '#b4a483' : '#a3946e');
-    pitchMat.normalScale.setScalar(c.pitch === 'dry' ? .2 : c.pitch === 'soft' ? .08 : .1);
+    pitchMat.color.set(c.pitch === 'green' ? '#c4c79c' : c.pitch === 'soft' ? '#aaa386' : c.pitch === 'dry' ? '#e8d6ab' : '#d6cba6');
+    pitchMat.normalScale.setScalar(c.pitch === 'dry' ? .45 : c.pitch === 'soft' ? .2 : .3);
     pitchMat.roughness = c.pitch === 'soft' ? (over ? .5 : .45) : .95; pitchMat.clearcoat = c.pitch === 'soft' ? .25 : 0;
     ballMat.roughness = .3 + c.age / 200; ballMat.clearcoat = Math.max(0, 1 - c.age / 50); ballMat.color.set(c.age > 40 ? '#6e1519' : '#a3131f');
   }
