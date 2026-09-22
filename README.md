@@ -6,9 +6,9 @@ A first-person cricket nets simulator. Aim a contact point and swipe through dri
 
 [Play CricSim](https://cricsim-nets.soldoutbudokan.chatgpt.site). Public access; no account or sign-in required.
 
-An optional GitHub Pages mirror can use https://soldoutbudokan.github.io/CricSim/ once Pages is enabled in the repository settings.
+A GitHub Pages mirror runs at https://soldoutbudokan.github.io/CricSim/.
 
-The `Deploy Production` workflow publishes `dist` to `gh-pages` after tests pass. For first-time activation, select **Settings → Pages → Deploy from a branch → gh-pages → / (root)**. Later pushes to `main` publish automatically.
+The `Deploy Production` workflow publishes `dist` to `gh-pages` after tests pass, and Pages serves **Deploy from a branch → gh-pages → / (root)**. Every push to `main` publishes automatically. The ChatGPT-hosted site is published separately from its own repository, so it updates only when that repository takes the new `main` and publishes.
 
 ## Run
 
@@ -18,7 +18,7 @@ Serve `dist` with any static HTTP server. For example:
 python3 -m http.server 8000 --directory dist
 ```
 
-Open `http://localhost:8000`. WebGL 2 is required. Three.js 0.180.0 is vendored with its MIT license, and the two web fonts are served from `dist/fonts`, so the game makes no third-party requests and works offline once cached.
+Open `http://localhost:8000`. WebGL 2 is required. Three.js 0.180.0 is vendored with its MIT license, and the three web fonts are served from `dist/fonts`, so the game makes no third-party requests and works offline once cached.
 
 For development with automatic reload, use Node 22.12 or newer:
 
@@ -61,23 +61,25 @@ The game remains plain static files. Vite is a development-only dependency.
 
 Every key is listed in the shortcuts sidebar with a switch. Turn off any that clash with your setup; the buttons and menus keep working. Choices are saved on the device. A key that changes a condition shows a short notice under the scorebug and applies to the next ball.
 
-On touch, put a finger at the contact point and swipe up or across. Select Defend and hold for a block. All shot choices work without a keyboard. **Learn at half speed** starts with slower play and middle-stump deliveries.
+On touch, put a finger at the contact point and swipe up or across. Select Defend and hold for a block. All shot choices work without a keyboard. **Practise at half speed** on the opening screen starts with slower play and middle-stump deliveries.
 
 Aim before pressing: the contact ring stays anchored during the swipe. Holding without moving prepares the backlift; it does not swing. The backlift follows the hand both ways until the swing commits a quarter of the way through; from there the blade keeps the pace the hand gave it, eases off rather than stopping dead when the pointer stalls, and never runs backwards. Letting go after the commit point finishes the stroke with the blade live; letting go before it pulls out. The middle section of the stroke meter shows the contact portion of the arc. The bat's path is shaped by your gesture, never by the incoming ball. Guard, cancelled strokes and the return to guard cannot score accidental hits. **Swipe length** in Practice tools sets how far the hand travels for a full stroke.
 
 ## Interface
 
-- The opening screen pairs a warm paper session sheet with a live view along the practice wicket. A serif CricSim masthead, ruled condition rows and a cricket-red Take guard button give it the character of a club scorebook. Bowling, release speed, surface and practice speed reflect the actual saved settings. Conditions, batting help, sound and fullscreen remain accessible before starting.
+- The opening screen pairs a warm paper session sheet with a live view along the practice wicket. A serif CricSim masthead, ruled condition rows and a cricket-red Take guard button give it the character of a club scorebook. Bowling, release speed, surface, length and line, crosswind, ball age and practice speed reflect the actual saved settings. Half-speed practice sits under Take guard as a secondary button. On a landscape phone the Take guard block stays pinned to the bottom of the sheet. Conditions, batting help, sound and fullscreen remain accessible before starting.
 - The menu uses its own camera and renders inside the visible ground panel; the batting rig stays hidden until taking guard. On phones, the ground sits above the session sheet and the menu scrolls when needed. The in-play camera and controls are unchanged by the menu composition.
-- The 3D view fills the window. Conditions, session statistics and delivery information stay at the edges. Shot intent, stroke name and a compact stroke meter replace the three constantly changing angle readouts; fine adjustments appear only when used.
-- Taking guard leaves you at the crease; Space or **Next ball** starts the bowler. Short coaching lines appear under the readout for the first three balls.
+- The in-play HUD shares the menu's type and paper: the CricSim wordmark and the panel, dialog and pause titles use the same serif, the primary buttons are paper on ink, and lime marks only interactive state.
+- The 3D view fills the window. Conditions, session statistics and delivery information stay at the edges. The scorebug keeps fixed widths, so it does not shift as figures change. Shot intent, stroke name and a compact stroke meter replace the three constantly changing angle readouts; fine adjustments appear only when used.
+- Taking guard leaves you at the crease; Space or **Next ball** starts the bowler. Short coaching lines appear under the readout for the first three balls. On phones and tablets the readout sits on a glass panel so it stays legible over the pitch.
+- On desktop the result card rises as a lower third in place of the delivery readout, clear of the bowler and the ball's path; on phones and short landscape screens it stays compact under the scorebug. On smaller screens, a notice that arrives while the card is up moves above the stroke panel.
 - Results show outcome, shot, timing, exit speed and contact location on the blade. Timing and whether the pointer is held are sampled at contact or as the ball passes the contact plane, so later pointer input cannot rewrite the feedback. Early, late, pulled-out, missed-line and leave feedback have different advice. Releasing before the ball passes, including after a click or committed swipe, reads **Left alone** if it makes no contact and misses the stumps; holding through a committed swing that misses reads **Played & missed**. Being bowled flashes the frame edge red and always remains a dismissal.
 - The **Control** figure in the scorebug is the share of balls the bat met or that were left alone safely, including strokes you started and backed off. Holding through a committed swing or defensive block that misses, or being bowled, is not control. **Clean** counts contact through the middle of the blade. A released flick that hits still counts as a shot. A held block that misses reads **Played & missed**, with **Beaten** timing and the gap diagram; releasing the block before the ball passes is a leave. This applies to right-click defence and the Defend mode.
 - A full miss gets a larger diagram showing the ball relative to the rotated blade from the batter's side, with left/right and above/below labels and the closest surface gap in centimetres. The diagram fits both the ball and bat without clipping wide misses. Distance is measured across each physics step, including the ball radius and blade thickness, and freezes when the delivery resolves. Safe leaves say **Safe leave**, without a miss-distance label.
 - A shortcuts sidebar (the keyboard button or `/`) lists every key, grouped by what it changes, each with its own switch and a master switch.
-- Conditions open in a drawer over the scene at every size (a bottom sheet on phones), pausing play while you make changes and restoring the previous pause state when closed.
+- Conditions open in a drawer over the scene at every size (a bottom sheet with a grabber on phones), pausing play while you make changes and restoring the previous pause state when closed. The pause card stays hidden behind an open panel or the help dialog.
 - The ring marks the aimed contact point, fills an arc as the stroke moves, squares off while blocking and flashes on contact. Camera-ray aiming places it under the pointer within the bat's reach. Swipe distance uses screen coordinates, so camera movement or clamping at the edge cannot change a stroke.
-- Dark theme only, self-hosted Barlow Condensed and DM Sans, reduced-motion support, keyboard focus rings throughout.
+- Self-hosted Newsreader (serif), Barlow Condensed (numerals and verdicts) and DM Sans (text), reduced-motion support, keyboard focus rings throughout. The help dialog lists touch controls first on touch screens.
 
 ## Simulation
 
@@ -94,11 +96,11 @@ Aim before pressing: the contact ring stays anchored during the swipe. Holding w
 
 ### Scene
 
-- Poly Haven ground colour, normal and roughness maps and three HDR skies (clear, overcast, evening). Each sky is rotated so its photographed sun sits where the shadow-casting light is. ACES tone mapping with per-weather exposure, sun colour and fog.
-- Everything else is procedural, generated on canvases at load: knotted netting on sagging panels, grass tufts that lean with the crosswind, lawn mottle and mowing stripes, pitch wear per surface (footmarks, roller lines, cracks on a dry deck), chalk creases, a slatted sight screen, a gabled pavilion with veranda and clock, a groundsman's shed, benches, hedge, fence and floodlights that glow in the evening.
-- The batter: a lofted willow blade with a back spine, splice and painted grain; a ribbed rubber grip; padded batting gloves; two-bone arms with elbows, sleeves and cuffs; pads at the bottom of frame. The bat stays on the physics pose. Low shots transfer weight onto the front foot, higher shots sit back, and cross-bat shots turn the shoulders. Both arm segments retain their length, with the shoulder girdle translating on long reaches. Head movement stays small and contact produces a subtle kick.
-- The bowler runs in, gathers, bowls and follows through, and idles at the top of the mark between balls. Bails fly and the middle stump leans when bowled.
-- Ball trail as a fading ribbon, a bounce puff, marks that accumulate on the strip, and a small glow that keeps a distant ball legible.
+- Poly Haven ground colour, normal and roughness maps and three HDR skies (clear, overcast, evening). Each sky is rotated so its photographed sun sits where the shadow-casting light is. Khronos PBR Neutral tone mapping with per-weather exposure, sun colour and fog. In clear weather the sun sits behind the batter's left shoulder, so the bowler and sight screen are front-lit. The lawn shader remaps the photographed sparse-grass map to mown-lawn greens, and the ground runs out far enough to meet the sky without a seam.
+- Everything else is procedural, generated on canvases at load: knotted netting on sagging panels, long grass along the net skirts that leans with the crosswind, lawn mottle and mowing stripes, pitch wear per surface (soil grain, grassy edges, soft roller bands, crease scuffs and footmarks, live grass on a green top, a crack network on a dry deck, damp patches on a soft one), chalk creases, a slatted sight screen, a gabled pavilion with veranda and clock, a timber groundsman's shed, benches, hedge, fence and floodlights that glow and light the strip in the evening.
+- The batter: a lofted willow blade with a back spine, splice, oiled edges and painted grain; a ribbed rubber grip; padded batting gloves with closed cuffs; ribbed-knit forearm sleeves that fade out toward the elbow; pads that come into frame on portrait phones and while the view follows a struck ball. The physics grip sits about a metre in front of the eye, beyond a real arm's reach, so only the forearms are drawn and the arms never fill the frame; an elbow solve still aims each forearm and glove cuff. The bat stays on the physics pose. Low shots transfer weight onto the front foot, higher shots sit back, and cross-bat shots turn the shoulders. Head movement stays small and contact produces a subtle kick.
+- The bowler runs in, gathers, brings the arm back, up and over, follows through across the body, and idles at the top of the mark between balls. Bails fly and the middle stump leans when bowled.
+- Ball trail as a fading ribbon, a lime bounce ring when the guide is on, a bounce puff, marks that accumulate on the strip, a single contact shadow under the ball, and a small glow that keeps a distant ball legible.
 - Asset sources and licenses are listed in `ASSETS.md`.
 
 ### Audio
@@ -120,7 +122,7 @@ This remains a simulation foundation, **not a finished photorealistic or validat
 - `dist/shot-feedback.js`: feedback from the stroke sampled at contact or at the crease, the control rule for leaves, result headlines and miss-diagram geometry.
 - `dist/audio.js`: generated impact sound and ambience.
 - `dist/assets`: CC0 ground maps and HDR environments (about 9.8 MB total).
-- `dist/fonts`: Barlow Condensed and DM Sans, latin subsets (about 50 KB).
+- `dist/fonts`: Newsreader (regular and italic), Barlow Condensed and DM Sans, latin subsets (about 130 KB). All three are under the SIL Open Font License; Newsreader's is in `dist/fonts/NEWSREADER-OFL.txt`.
 - `dist/index.html` / `dist/style.css`: the interface; `dist/menu.css` isolates the scorebook-style opening screen from the in-play HUD.
 - `tests/physics.test.mjs`: trajectory, speed, pace variation, bounce, contact, near-miss, outcome, and determinism checks.
 - `tests/bat-control.test.mjs`: swipe shape, handedness, displacement, commit and momentum, direction reading, swipe length, speed and acceleration limits, ground clearance, defence and release safety.
