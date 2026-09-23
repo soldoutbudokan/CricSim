@@ -25,8 +25,9 @@ const TRIM_KEYS={KeyA:'a',KeyD:'d',KeyW:'w',KeyS:'s',KeyQ:'q',KeyE:'e'};
 let contactFlash=0;
 const audio=new NetsAudio();audio.setEnabled(config.audio);
 const viewport=$('viewport'),coarsePointer=matchMedia('(pointer:coarse)').matches;
-// The result card and notices hang from the top HUD's measured height, so they never sit on the scorebug when it wraps.
+// The result card and notices are placed from the HUD's measured heights, so they never sit on the scorebug when it wraps or on the stroke panel.
 new ResizeObserver(entries=>viewport.style.setProperty('--hud-top',Math.round(entries[0].contentRect.height)+'px')).observe(document.querySelector('.hud-top'));
+new ResizeObserver(entries=>viewport.style.setProperty('--hud-bottom',Math.round(entries[0].contentRect.height)+'px')).observe(document.querySelector('.hud-bottom'));
 function savePreferences(){try{localStorage.setItem('cricsim-preferences',JSON.stringify(config));}catch{}}
 function saveShortcuts(){try{localStorage.setItem('cricsim-shortcuts',JSON.stringify(serializeShortcutState(shortcutState)));}catch{}}
 function unlockAudio(){audio.setEnabled(config.audio);audio.unlock();}
@@ -34,13 +35,12 @@ function sound(type,position=delivery?.p,strength=1,detail={}){audio.play(type,p
 // The stylesheet choreographs the HUD from these two attributes.
 function setPhase(next){phase=next;viewport.dataset.phase=next;if(next!=='intro')view?.setMenuFrame(null);coach();}
 function setState(text){$('delivery-state').textContent=text;}
-// Short, phase-aware coaching lines for the first few balls only.
+// Short, phase-aware coaching lines for the first few balls only; the result card carries its own advice.
 function coach(){
   let tip='';
   if(ballsFaced<3){
     if(phase==='ready')tip=coarsePointer?'Touch the line of the ball, then swipe up to drive or sideways to cut or pull.':'Aim the ring. Hold and swipe up to drive, sideways to cut or pull. Space bowls.';
     else if(phase==='runup')tip='Watch the hand.';
-    else if(phase==='result'&&delivery)tip=describeShot(delivery.stroke,delivery.contact,delivery.result==='Bowled').detail;
   }
   $('coach-tip').textContent=tip;
 }
@@ -71,6 +71,9 @@ function syncMenu(){
   $('menu-bowling').textContent=`${config.arm==='left'?'Left':'Right'}-arm ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;
   $('menu-speed').innerHTML=`${Math.round(config.speed)} <small>km/h</small>`;
   $('menu-surface').textContent=PITCHES[config.pitch].name;
+  $('menu-length').textContent=(config.length==='mixed'?'Mixed length':optionText('length',config.length))+' · '+(config.line==='mixed'?'mixed line':optionText('line',config.line).toLowerCase());
+  $('menu-wind').textContent=config.wind?(config.wind<0?`← ${-config.wind} km/h`:`${config.wind} km/h →`):'Still air';
+  $('menu-age').textContent=config.age?`${config.age} over${config.age===1?'':'s'}`:'New ball';
   $('menu-tempo').textContent=config.timeScale===1?'Real time':config.timeScale===.75?'¾ speed':'½ speed';
   $('menu-weather').textContent=optionText('weather',config.weather);
   $('menu-sound-button').textContent=config.audio?'Sound on':'Sound off';
@@ -124,7 +127,7 @@ function onResult(event){
   setPhase('result');resultRealTime=0;
   const bowled=event.result==='Bowled',title=delivery.hit?event.result:missTitle(delivery,event.result);
   const card=$('shot-feedback');card.dataset.outcome=title.toLowerCase();card.classList.remove('hidden');
-  $('feedback-label').textContent='Delivery '+String(ballsFaced).padStart(2,'0');$('feedback-title').textContent=title;
+  $('feedback-label').textContent='Delivery '+String(ballsFaced).padStart(2,'0')+' · '+Math.round(delivery.speed)+' km/h';$('feedback-title').textContent=title;
   const feedback=describeShot(delivery.stroke,delivery.contact,bowled);
   $('feedback-detail').textContent=feedback.detail;
   $('feedback-timing').textContent=feedback.timing;
@@ -140,6 +143,7 @@ function onResult(event){
   $('contact-map').classList.toggle('has-contact',delivery.hit);
   $('contact-map').classList.toggle('hidden',!delivery.hit);
   $('contact-review').classList.toggle('no-contact',!delivery.hit);
+  $('contact-review').hidden=!delivery.hit&&!played&&!bowled;
   $('contact-map').setAttribute('aria-label',delivery.hit?`Bat contact: ${delivery.contact.edge?'edge':delivery.contact.quality>.7?'middle':'off centre'}.`:'No bat contact.');
   $('miss-review').hidden=!miss;
   if(miss){

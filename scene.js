@@ -117,8 +117,9 @@ function gloveGeometry(thumbUp, mirror) {
   const ty = thumbUp ? 1 : -1;
   a.set(0.036, ty * 0.03, 0.03); b.set(-0.014, ty * 0.05, 0.024);
   add(new THREE.CapsuleGeometry(0.0125, 0.04, 3, 8), betweenMat(a, b), cream);
-  add(new THREE.CylinderGeometry(0.05, 0.045, 0.046, 14, 1, true), mat4(0.034, 0, 0.076, Math.PI / 2), green);
-  add(new THREE.TorusGeometry(0.045, 0.005, 6, 20), mat4(0.034, 0, 0.099, 0, 0, 0), cream); // thin seam at the wrist opening
+  add(new THREE.CylinderGeometry(0.047, 0.045, 0.046, 16, 1, true), mat4(0.034, 0, 0.076, Math.PI / 2), green);
+  add(new THREE.RingGeometry(0.036, 0.047, 20), mat4(0.034, 0, 0.098), '#0f1d15'); // dark lining closes the gap round the wrist
+  add(new THREE.TorusGeometry(0.047, 0.004, 6, 24), mat4(0.034, 0, 0.099), '#2d5840'); // piped edge at the opening
   add(new THREE.BoxGeometry(0.028, 0.012, 0.006), mat4(0.082, 0, 0.078), cream); // strap tab
   return mergeGeometries(parts);
 }
@@ -127,8 +128,8 @@ export async function createScene(canvas, onProgress = () => {}) {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
   renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
-  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.NeutralToneMapping; renderer.toneMappingExposure = .88;
+  const maxAniso = renderer.capabilities.getMaxAnisotropy(), gl = renderer.getContext();
   const loader = new THREE.TextureLoader(), hdrLoader = new HDRLoader();
   let loaded = 0;
   const track = promise => promise.then(asset => { onProgress(`Loading the ground and light · ${++loaded}/9`); return asset; });
@@ -153,15 +154,16 @@ export async function createScene(canvas, onProgress = () => {}) {
 
   const rng = random(478293);
   const scene = new THREE.Scene();
-  scene.background = daylight; scene.environment = daylight; scene.environmentIntensity = .5; scene.backgroundIntensity = 1;
-  scene.fog = new THREE.Fog('#cdd9e2', 45, 260);
+  scene.background = daylight; scene.environment = daylight; scene.environmentIntensity = .7; scene.backgroundIntensity = 1;
+  scene.fog = new THREE.Fog('#b9c7b4', 60, 420);
   const camera = new THREE.PerspectiveCamera(BATTING_VIEW.fov, 1, 0.035, 400);
   const cameraBase = new THREE.Vector3().copy(BATTING_VIEW.eye); camera.position.copy(cameraBase); camera.lookAt(BATTING_VIEW.look.x, BATTING_VIEW.look.y, BATTING_VIEW.look.z);
-  const ambient = new THREE.HemisphereLight('#d7e6f5', '#4f5d36', .32); scene.add(ambient);
-  const sun = new THREE.DirectionalLight('#fff4de', 4.2); sun.position.set(-24, 30, -6); sun.castShadow = true;
+  const ambient = new THREE.HemisphereLight('#d7e6f5', '#4f5d36', .9); scene.add(ambient);
+  // Clear sun sits front-left, behind the batter's shoulder, so the bowler and sight screen are front-lit.
+  const sun = new THREE.DirectionalLight('#fff4de', 4.2); sun.position.set(-22, 30, 12); sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -.0004; sun.shadow.normalBias = .02; sun.target.position.set(0, 0, -10); scene.add(sun, sun.target);
   const spots = [];
-  for (const x of [-16, 16]) { const s = new THREE.SpotLight('#dfe8ff', 0, 70, .55, .6, 0); s.position.set(x, 13.5, 9); s.target.position.set(0, 0, -8); scene.add(s, s.target); spots.push(s); }
+  for (const x of [-16, 16]) { const s = new THREE.SpotLight('#f0f3ff', 0, 70, .6, .8, 0); s.position.set(x, 13.5, 9); s.target.position.set(0, 0, -8); scene.add(s, s.target); spots.push(s); }
 
   // ---------------------------------------------------------------- texture helpers
   const texOf = (c, { srgb = false, repeat = null, clampEdge = false, aniso = 8 } = {}) => {
@@ -197,21 +199,23 @@ export async function createScene(canvas, onProgress = () => {}) {
     const col = makeCanvas(128, 128), msk = makeCanvas(128, 128); const cx = col.getContext('2d'); cx.fillStyle = '#26492f'; cx.fillRect(0, 0, 128, 128); draw(cx, true); draw(msk.getContext('2d'), false);
     return maskedTexture(col, msk);
   }
+  // Woven windbreak skirt: mid green with a fine horizontal weave, so the shaded side stays readable.
   function skirtTexture() {
-    const c = makeCanvas(256, 64), x = c.getContext('2d'); const g = x.createLinearGradient(0, 0, 0, 64); g.addColorStop(0, '#1b3d2c'); g.addColorStop(.12, '#224a36'); g.addColorStop(1, '#152e21'); x.fillStyle = g; x.fillRect(0, 0, 256, 64);
-    x.fillStyle = '#2a5a41'; x.fillRect(0, 0, 256, 4); x.fillStyle = '#0f2218'; x.fillRect(0, 4, 256, 1.5);
+    const c = makeCanvas(256, 64), x = c.getContext('2d'); const g = x.createLinearGradient(0, 0, 0, 64); g.addColorStop(0, '#2e5a44'); g.addColorStop(.12, '#35664d'); g.addColorStop(1, '#264c39'); x.fillStyle = g; x.fillRect(0, 0, 256, 64);
+    x.fillStyle = '#3f7658'; x.fillRect(0, 0, 256, 4); x.fillStyle = '#1a3326'; x.fillRect(0, 4, 256, 1.5);
+    for (let y = 6; y < 64; y += 2) { x.fillStyle = `rgba(0,0,0,${.06 + rng() * .04})`; x.fillRect(0, y, 256, 1); }
     noiseOn(x, 256, 64, 900, () => `rgba(${120 + rng() * 60},${130 + rng() * 40},${100 + rng() * 40},${.04 + rng() * .08})`, 1.5);
-    for (let i = 0; i < 14; i++) { x.strokeStyle = `rgba(160,170,140,${.05 + rng() * .1})`; x.lineWidth = .8 + rng() * 2; x.beginPath(); const y = 8 + rng() * 54; x.moveTo(rng() * 256, y); x.lineTo(rng() * 256, y + (rng() - .5) * 8); x.stroke(); }
     return texOf(c, { srgb: true });
   }
-  // Grass tuft: 13 tapered blades fanning from the base; colour on one canvas, coverage on another.
+  // Grass tuft: 34 fine blades, tall to short, a fifth of them straw; colour on one canvas, coverage on another.
   function tuftTexture() {
-    const blades = []; for (let i = 0; i < 13; i++) blades.push({ x0: 128 + (rng() - .5) * 70, lean: (rng() - .5) * 190, h: 150 + rng() * 100, w: 9 + rng() * 9, tone: rng() });
+    const blades = []; for (let i = 0; i < 34; i++) blades.push({ x0: 128 + (rng() - .5) * 120, lean: (rng() - .5) * 110, h: 90 + rng() * 150, w: 2.5 + rng() * 2.5, tone: rng(), dry: rng() < .22 });
+    blades.sort((a, b) => b.h - a.h);
     const draw = (x, colored) => { for (const b of blades) {
-      const cx = b.x0 + b.lean * .55, top = 256 - b.h;
-      if (colored) { const g = x.createLinearGradient(0, 256, 0, top); g.addColorStop(0, `rgb(${52 + b.tone * 20},${78 + b.tone * 20},${34})`); g.addColorStop(.7, `rgb(${96 + b.tone * 35},${138 + b.tone * 30},${58 + b.tone * 10})`); g.addColorStop(1, `rgb(${150 + b.tone * 40},${178 + b.tone * 30},${92})`); x.fillStyle = g; } else x.fillStyle = '#fff';
-      x.beginPath(); x.moveTo(b.x0 - b.w / 2, 258); x.quadraticCurveTo(cx - b.w * .2, 256 - b.h * .55, b.x0 + b.lean, top); x.quadraticCurveTo(cx + b.w * .2, 256 - b.h * .55, b.x0 + b.w / 2, 258); x.closePath(); x.fill(); } };
-    const col = makeCanvas(256, 256), msk = makeCanvas(256, 256); const cx = col.getContext('2d'); cx.fillStyle = '#5d7a3a'; cx.fillRect(0, 0, 256, 256); draw(cx, true); draw(msk.getContext('2d'), false);
+      const top = 256 - b.h, tipX = b.x0 + b.lean, midX = b.x0 + b.lean * .35;
+      if (colored) { const g = x.createLinearGradient(0, 256, 0, top); if (b.dry) { g.addColorStop(0, 'rgb(96,104,52)'); g.addColorStop(1, `rgb(${178 + b.tone * 30},${168 + b.tone * 20},104)`); } else { g.addColorStop(0, `rgb(${58 + b.tone * 14},${84 + b.tone * 16},30)`); g.addColorStop(.6, `rgb(${92 + b.tone * 26},${128 + b.tone * 24},50)`); g.addColorStop(1, `rgb(${136 + b.tone * 30},${160 + b.tone * 24},76)`); } x.fillStyle = g; } else x.fillStyle = '#fff';
+      x.beginPath(); x.moveTo(b.x0 - b.w / 2, 258); x.quadraticCurveTo(midX - b.w * .3, 256 - b.h * .5, tipX, top); x.quadraticCurveTo(midX + b.w * .3, 256 - b.h * .5, b.x0 + b.w / 2, 258); x.closePath(); x.fill(); } };
+    const col = makeCanvas(256, 256), msk = makeCanvas(256, 256); const cx = col.getContext('2d'); cx.fillStyle = '#6a8a3c'; cx.fillRect(0, 0, 256, 256); draw(cx, true); draw(msk.getContext('2d'), false);
     return maskedTexture(col, msk, { clampEdge: true });
   }
   // Large-scale lawn mottle x mowing stripes, sampled by world position in the lawn shader.
@@ -222,23 +226,38 @@ export async function createScene(canvas, onProgress = () => {}) {
     x.fillStyle = 'rgba(0,0,0,0.07)'; for (let i = 0; i < 25; i++) x.fillRect(i * 10.24 - 1, 0, 2, 256);
     const t = texOf(c); return t;
   }
-  // Pitch wear layer blended over the dirt map: straw tint, roller lines, worn good-length band,
-  // spike scuffs at both creases, bowler footmarks, plus cracks / grass / damp per pitch type.
+  // Pitch wear layer blended over the dirt map, 512 x 2048 (6 mm across, 12 mm along; soft marks are sized and
+  // rotated in metres so scuffs stay oval): a thin wash that leaves the soil grain showing, grassy edges, soft roller
+  // bands, grain speckle, a worn good-length band, crease scuffs and footmarks, then per type a live grass cover
+  // (green), bleached crust and a crack network (dry) or damp blotches and deep footholes (soft).
   const pitchTextures = new Map();
   function pitchTexture(kind) {
     if (pitchTextures.has(kind)) return pitchTextures.get(kind);
-    const c = makeCanvas(1024, 1024), x = c.getContext('2d');
-    const py = z => 1024 * (z + 21) / 24, px = xx => 512 + xx * 1024 / 3.05;
-    x.fillStyle = kind === 'soft' ? 'rgba(110,96,74,0.55)' : kind === 'dry' ? 'rgba(184,164,124,0.5)' : kind === 'green' ? 'rgba(150,148,104,0.45)' : 'rgba(172,152,110,0.5)'; x.fillRect(0, 0, 1024, 1024);
-    if (kind === 'green') { x.globalAlpha = .38; for (let ty = 0; ty < 1024; ty += 85) for (let tx = 0; tx < 1024; tx += 671) x.drawImage(turfColor.image, tx, ty, 671, 85); x.globalAlpha = 1; }
-    for (let i = 0; i < 10; i++) { x.fillStyle = i % 2 ? 'rgba(0,0,0,0.03)' : 'rgba(255,255,255,0.025)'; x.fillRect(i * 100.7, 0, 100.7, 1024); }
-    const soft = (cx, cy, rx, ry, rot, col, a) => { const g = x.createRadialGradient(0, 0, 0, 0, 0, 1); g.addColorStop(0, col.replace('A', a)); g.addColorStop(1, col.replace('A', 0)); x.save(); x.translate(cx, cy); x.rotate(rot); x.scale(rx, ry); x.fillStyle = g; x.fillRect(-1, -1, 2, 2); x.restore(); };
-    soft(px(0), py(-4.8), 380, 130, 0, 'rgba(112,92,60,A)', .22); soft(px(0.15), py(-16.4), 170, 60, 0, 'rgba(112,92,60,A)', .14);
-    for (let i = 0; i < 46; i++) soft(px((rng() - .5) * 1.3), py(0.55 + (rng() - .5) * 2.4), 10 + rng() * 22, 4 + rng() * 8, rng() * 3, 'rgba(96,78,48,A)', .18 + rng() * .2);
-    for (let i = 0; i < 30; i++) soft(px((rng() - .5) * 1.1), py(-17.2 + (rng() - .5) * 2.2), 8 + rng() * 18, 3 + rng() * 6, rng() * 3, 'rgba(96,78,48,A)', .16 + rng() * .18);
-    for (let i = 0; i < 9; i++) { const side = i % 2 ? 1 : -1; soft(px(side * (0.25 + rng() * .3) + .35), py(-16.2 + i * .22 + rng() * .1), 22 + rng() * 10, 7 + rng() * 3, .3, 'rgba(90,72,44,A)', .28); }
-    if (kind === 'dry') { x.strokeStyle = 'rgba(107,90,60,0.4)'; x.lineWidth = 1; for (let i = 0; i < 70; i++) { let cx = rng() * 1024, cy = rng() * 1024; x.beginPath(); x.moveTo(cx, cy); for (let j = 0; j < 8; j++) { cx += (rng() - .5) * 26; cy += (rng() - .3) * 20; x.lineTo(cx, cy); } x.stroke(); } }
-    if (kind === 'soft') noiseOn(x, 1024, 1024, 2200, () => `rgba(70,62,44,${.05 + rng() * .1})`, 2);
+    const W = 512, H = 2048, c = makeCanvas(W, H), x = c.getContext('2d'), green = kind === 'green', dry = kind === 'dry', damp = kind === 'soft';
+    const py = z => H * (z + 21) / 24, px = xx => W / 2 + xx * W / 3.05;
+    x.fillStyle = damp ? 'rgba(92,88,66,0.48)' : dry ? 'rgba(190,170,128,0.4)' : green ? 'rgba(116,134,78,0.36)' : 'rgba(182,166,124,0.36)'; x.fillRect(0, 0, W, H);
+    for (const side of [0, 1]) { const e = W * (green ? .26 : .2), g = x.createLinearGradient(side ? W : 0, 0, side ? W - e : e, 0); g.addColorStop(0, `rgba(98,118,62,${green ? .6 : dry ? .36 : .46})`); g.addColorStop(.35, 'rgba(116,128,74,0.18)'); g.addColorStop(1, 'rgba(116,128,74,0)'); x.fillStyle = g; x.fillRect(side ? W - e : 0, 0, e, H); }
+    for (let i = 0; i < 6; i++) { const x0 = i * W / 6, w = W / 6, g = x.createLinearGradient(x0, 0, x0 + w, 0), a = (i % 2 ? .045 : .03) * (green ? 1.6 : 1), col = i % 2 ? '0,0,0' : '255,248,230'; g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(.3, `rgba(${col},${a})`); g.addColorStop(.7, `rgba(${col},${a})`); g.addColorStop(1, `rgba(${col},0)`); x.fillStyle = g; x.fillRect(x0, 0, w, H); }
+    const soft = (cx, cy, rx, ry, rot, col, a) => { const g = x.createRadialGradient(0, 0, 0, 0, 0, 1); g.addColorStop(0, col.replace('A', a)); g.addColorStop(1, col.replace('A', 0)); x.save(); x.translate(cx, cy); x.scale(W / 3.05, H / 24); x.rotate(rot); x.scale(rx, ry); x.fillStyle = g; x.fillRect(-1, -1, 2, 2); x.restore(); };
+    if (green) { // live grass: short green blades everywhere, thinning where the ball and the feet wear it
+      for (let i = 0; i < 26000; i++) { const u = rng(), v = rng(), z = v * 24 - 21, worn = Math.max(Math.exp(-(((z + 4.8) / 2.6) ** 2)) * .55, Math.exp(-(((z - .5) / 1.3) ** 2)) * .7, Math.exp(-(((z + 17.4) / 1.5) ** 2)) * .7) * (1 - Math.abs(u - .5) * 1.6); if (rng() < worn) continue; const t = rng(); x.fillStyle = `rgba(${62 + t * 50},${96 + t * 48},${34 + t * 22},${.16 + rng() * .24})`; x.fillRect(u * W, v * H, 1 + rng() * 1.5, 1 + rng() * 2); }
+    }
+    for (let i = 0; i < 9000; i++) { const u = rng(), edge = Math.pow(Math.abs(u - .5) * 2, 2); if (rng() > .3 + edge * .7) continue; const light = rng() < (dry ? .8 : damp ? .3 : .55); x.fillStyle = light ? `rgba(${196 + rng() * 30},${180 + rng() * 26},${130 + rng() * 20},${.08 + rng() * .12})` : `rgba(${80 + rng() * 30},${96 + rng() * 30},52,${.08 + rng() * .14})`; x.fillRect(u * W, rng() * H, 1 + rng() * 2, 1 + rng()); }
+    if (damp) for (let i = 0; i < 26; i++) soft(px((rng() - .5) * 2.4), py(-20 + rng() * 22), .25 + rng() * .4, .4 + rng() * .8, rng() * 3, 'rgba(70,58,42,A)', .14 + rng() * .14);
+    const mark = damp ? 1.35 : dry ? 1.2 : 1;
+    soft(px(0), py(-4.8), 1.13, 3.05, 0, dry ? 'rgba(200,178,132,A)' : 'rgba(112,92,60,A)', green ? .3 : .18); soft(px(0.15), py(-16.4), .5, 1.4, 0, 'rgba(112,92,60,A)', .14 * mark);
+    for (let i = 0; i < 46; i++) soft(px((rng() - .5) * 1.3), py(0.55 + (rng() - .5) * 2.4), .04 + rng() * .06, .07 + rng() * .1, rng() * 3, 'rgba(96,78,48,A)', (.12 + rng() * .16) * mark);
+    for (let i = 0; i < 30; i++) soft(px((rng() - .5) * 1.1), py(-17.2 + (rng() - .5) * 2.2), .035 + rng() * .05, .06 + rng() * .09, rng() * 3, 'rgba(96,78,48,A)', (.14 + rng() * .16) * mark);
+    for (let i = 0; i < 9; i++) { const side = i % 2 ? 1 : -1; soft(px(side * (0.25 + rng() * .3) + .35), py(-16.2 + i * .22 + rng() * .1), .05 + rng() * .02, .12 + rng() * .03, .3, damp ? 'rgba(66,52,34,A)' : 'rgba(90,72,44,A)', .28 * mark); }
+    if (dry) { // polygonal crack network, densest on the good length and at the crease ends; a light lip beside each crack
+      for (let i = 0; i < 260; i++) {
+        const z = rng() < .55 ? -4.8 + (rng() - .5) * 7 : -21 + rng() * 24; let cx = px((rng() - .5) * 2.7), cy = py(z), a = rng() * TAU; const path = [[cx, cy]];
+        for (let j = 0, n = 6 + rng() * 8; j < n; j++) { a += (rng() < .5 ? -1 : 1) * (.5 + rng() * .9); const l = .025 + rng() * .045; cx += Math.cos(a) * l * W / 3.05; cy += Math.sin(a) * l * H / 24; path.push([cx, cy]); }
+        for (const [dx, dy, style, lw] of [[1, 1, 'rgba(240,226,190,0.14)', .8], [0, 0, `rgba(84,68,44,${.28 + rng() * .2})`, .6 + rng() * .4]]) { x.strokeStyle = style; x.lineWidth = lw; x.beginPath(); path.forEach(([ax, ay], k) => k ? x.lineTo(ax + dx, ay + dy) : x.moveTo(ax + dx, ay + dy)); x.stroke(); }
+      }
+      noiseOn(x, W, H, 2600, () => `rgba(${220 + rng() * 30},${204 + rng() * 26},${160 + rng() * 20},${.12 + rng() * .16})`, 1.5);
+    }
+    if (damp) noiseOn(x, W, H, 2200, () => `rgba(70,62,44,${.05 + rng() * .1})`, 1.5);
     const t = texOf(c, { srgb: true, clampEdge: true, aniso: 16 }); pitchTextures.set(kind, t); return t;
   }
   function chalkTexture() {
@@ -250,8 +269,9 @@ export async function createScene(canvas, onProgress = () => {}) {
   // Willow: left half = face (grain, sticker, ball marks, toe guard), right half = back (spine stain).
   function willowTextures() {
     const c = makeCanvas(512, 1024), x = c.getContext('2d'), b = makeCanvas(512, 1024), bx = b.getContext('2d');
-    x.fillStyle = '#e8d5ae'; x.fillRect(0, 0, 512, 1024); bx.fillStyle = '#808080'; bx.fillRect(0, 0, 512, 1024);
-    const g = x.createLinearGradient(0, 0, 512, 0); g.addColorStop(0, 'rgba(255,240,210,0.18)'); g.addColorStop(.5, 'rgba(160,120,70,0.10)'); g.addColorStop(1, 'rgba(255,240,210,0.18)'); x.fillStyle = g; x.fillRect(0, 0, 512, 1024);
+    x.fillStyle = '#dcc08e'; x.fillRect(0, 0, 512, 1024); bx.fillStyle = '#808080'; bx.fillRect(0, 0, 512, 1024);
+    // Darker oiled edges on both halves keep the blade's outline against a pale pitch.
+    for (const ox of [0, 256]) { const g = x.createLinearGradient(ox, 0, ox + 256, 0); g.addColorStop(0, 'rgba(120,80,40,0.3)'); g.addColorStop(.12, 'rgba(120,80,40,0.08)'); g.addColorStop(.5, 'rgba(160,120,70,0.06)'); g.addColorStop(.88, 'rgba(120,80,40,0.08)'); g.addColorStop(1, 'rgba(120,80,40,0.3)'); x.fillStyle = g; x.fillRect(ox, 0, 256, 1024); }
     for (let half = 0; half < 2; half++) for (let i = 0; i < 15; i++) {
       let gx = half * 256 + 10 + i * 16.5 + rng() * 6; const w = .5 + rng() * 1.1, a = .12 + rng() * .18;
       x.strokeStyle = `rgba(120,88,48,${a})`; x.lineWidth = w; bx.strokeStyle = `rgba(60,60,60,${a * 1.5})`; bx.lineWidth = w;
@@ -260,7 +280,7 @@ export async function createScene(canvas, onProgress = () => {}) {
     for (let i = 0; i < 30; i++) { const sx = rng() * 512, sy = rng() * 1024; x.fillStyle = `rgba(90,60,30,${.12 + rng() * .2})`; x.fillRect(sx, sy, 1 + rng() * 2, 4 + rng() * 26); }
     // Ball marks near the sweet spot on the face and a darker stain along the spine.
     for (let i = 0; i < 6; i++) { const cy = 1024 - (0.31 - 0.10 + (rng() - .5) * .2) / .62 * 1024, cx = 128 + (rng() - .5) * 90; x.fillStyle = `rgba(150,60,40,${.08 + rng() * .1})`; x.beginPath(); x.ellipse(cx, cy, 12 + rng() * 16, 9 + rng() * 10, rng() * 3, 0, TAU); x.fill(); }
-    const sg = x.createLinearGradient(256, 0, 512, 0); sg.addColorStop(0, 'rgba(120,80,40,0)'); sg.addColorStop(.5, 'rgba(120,80,40,0.16)'); sg.addColorStop(1, 'rgba(120,80,40,0)'); x.fillStyle = sg; x.fillRect(256, 0, 256, 1024);
+    const sg = x.createLinearGradient(256, 0, 512, 0); sg.addColorStop(0, 'rgba(120,80,40,0)'); sg.addColorStop(.5, 'rgba(120,80,40,0.22)'); sg.addColorStop(1, 'rgba(120,80,40,0)'); x.fillStyle = sg; x.fillRect(256, 0, 256, 1024);
     // Splice V at the shoulders (both sides) and the rubber toe guard.
     for (const ox of [0, 256]) { x.fillStyle = 'rgba(110,78,40,0.35)'; x.beginPath(); x.moveTo(ox + 82, 0); x.lineTo(ox + 174, 0); x.lineTo(ox + 128, 150); x.closePath(); x.fill(); x.strokeStyle = 'rgba(60,40,20,0.5)'; x.lineWidth = 1.5; x.stroke(); }
     x.fillStyle = '#2b2a28'; x.fillRect(0, 1024 - 25, 512, 25); x.fillStyle = 'rgba(255,255,255,0.08)'; x.fillRect(0, 1024 - 25, 512, 3); bx.fillStyle = '#606060'; bx.fillRect(0, 1024 - 25, 512, 25);
@@ -286,10 +306,13 @@ export async function createScene(canvas, onProgress = () => {}) {
     x.strokeStyle = '#505050'; x.lineWidth = 2; for (let i = 0; i <= 4; i++) { x.beginPath(); x.moveTo(i * 32, 0); x.lineTo(i * 32, 128); x.moveTo(0, i * 32); x.lineTo(128, i * 32); x.stroke(); }
     return texOf(c, { repeat: [3, 3] });
   }
+  // Sweater rib: four raised columns per tile with a V stitch in each, grooves between (24 ribs round a sleeve).
   function knitBump() {
-    const c = makeCanvas(64, 64), x = c.getContext('2d'); x.fillStyle = '#909090'; x.fillRect(0, 0, 64, 64); x.strokeStyle = '#606060'; x.lineWidth = 1.2;
-    for (let y = 0; y < 64; y += 6) for (let i = 0; i < 64; i += 6) { x.beginPath(); x.moveTo(i, y); x.lineTo(i + 3, y + 4); x.lineTo(i + 6, y); x.stroke(); }
-    return texOf(c, { repeat: [10, 10] });
+    const c = makeCanvas(64, 64), x = c.getContext('2d');
+    for (let i = 0; i < 4; i++) { const g = x.createLinearGradient(i * 16, 0, i * 16 + 16, 0); g.addColorStop(0, '#484848'); g.addColorStop(.3, '#a8a8a8'); g.addColorStop(.7, '#a8a8a8'); g.addColorStop(1, '#484848'); x.fillStyle = g; x.fillRect(i * 16, 0, 16, 64); }
+    x.strokeStyle = 'rgba(64,64,64,0.6)'; x.lineWidth = 1.4;
+    for (let i = 0; i < 4; i++) for (let y = 0; y < 64; y += 8) { x.beginPath(); x.moveTo(i * 16 + 3, y); x.lineTo(i * 16 + 8, y + 5); x.lineTo(i * 16 + 13, y); x.stroke(); }
+    return texOf(c, { repeat: [6, 4] });
   }
   function leatherBump() {
     const c = makeCanvas(256, 256), x = c.getContext('2d'); x.fillStyle = '#909090'; x.fillRect(0, 0, 256, 256);
@@ -319,19 +342,24 @@ export async function createScene(canvas, onProgress = () => {}) {
   }
   // ---------------------------------------------------------------- lawn
   const mottle = mottleTexture();
-  for (const tex of [turfColor, turfNormal, turfRoughness]) tex.repeat.set(100, 100);
-  const groundMat = new THREE.MeshStandardMaterial({ map: turfColor, normalMap: turfNormal, normalScale: new THREE.Vector2(.45, .45), roughnessMap: turfRoughness, color: '#a9bf80', roughness: 1 });
+  for (const tex of [turfColor, turfNormal, turfRoughness]) tex.repeat.set(410, 410);
+  const groundMat = new THREE.MeshStandardMaterial({ map: turfColor, normalMap: turfNormal, normalScale: new THREE.Vector2(.6, .6), roughnessMap: turfRoughness, color: '#ffffff', roughness: 1 });
+  // The sparse-grass photo is mostly soil: keep its luminance detail but remap it to mown-lawn greens (linear).
   groundMat.onBeforeCompile = shader => {
     shader.uniforms.mottleMap = { value: mottle };
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vMottle;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvMottle = (modelMatrix * vec4(transformed, 1.0)).xz * 0.0166;');
-    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D mottleMap;\nvarying vec2 vMottle;').replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb *= texture2D(mottleMap, vMottle).r * 1.08;');
+    shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D mottleMap;\nvarying vec2 vMottle;').replace('#include <map_fragment>', `#include <map_fragment>
+float lum = dot(sampledDiffuseColor.rgb, vec3(.2126, .7152, .0722));
+vec3 lawn = mix(vec3(.024, .052, .013), vec3(.105, .17, .05), smoothstep(.02, .16, lum));
+lawn = mix(lawn, sampledDiffuseColor.rgb * vec3(1.0, 1.1, .7), .15);
+diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   };
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(220, 220), groundMat); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(900, 900), groundMat); ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
 
   // ---------------------------------------------------------------- pitch strips, chalk
   for (const tex of [earthColor, earthNormal, earthRoughness]) tex.repeat.set(1.525, 12);
   const wearUniform = { value: pitchTexture('hard') };
-  const pitchMat = new THREE.MeshPhysicalMaterial({ map: earthColor, normalMap: earthNormal, normalScale: new THREE.Vector2(.12, .12), roughnessMap: earthRoughness, color: '#a3946e', roughness: 1, clearcoat: 0, clearcoatRoughness: .5 });
+  const pitchMat = new THREE.MeshPhysicalMaterial({ map: earthColor, normalMap: earthNormal, normalScale: new THREE.Vector2(.3, .3), roughnessMap: earthRoughness, color: '#d6cba6', roughness: 1, clearcoat: 0, clearcoatRoughness: .5 });
   pitchMat.onBeforeCompile = shader => {
     shader.uniforms.wearMap = wearUniform;
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vWear;').replace('#include <uv_vertex>', '#include <uv_vertex>\nvWear = uv;');
@@ -339,15 +367,14 @@ export async function createScene(canvas, onProgress = () => {}) {
   };
   const PITCH_TOP = 0.03;
   const pitch = new THREE.Mesh(new THREE.PlaneGeometry(3.05, 24), pitchMat); pitch.rotation.x = -Math.PI / 2; pitch.position.set(0, PITCH_TOP, -9); pitch.receiveShadow = true; scene.add(pitch);
-  const strips = [{ g: new THREE.BoxGeometry(3.05, PITCH_TOP, 24), m: mat4(0, PITCH_TOP / 2 - .003, -9) }];
-  const sideMat = new THREE.MeshStandardMaterial({ map: earthColor, normalMap: earthNormal, normalScale: new THREE.Vector2(.1, .1), roughnessMap: earthRoughness, color: '#9f9574', roughness: 1 });
-  for (const x of [-6.4, 6.4]) strips.push({ g: new THREE.PlaneGeometry(3.05, 25), m: mat4(x, PITCH_TOP - .005, -9, -Math.PI / 2), uv: [1.525, 12.5] });
-  strips[0].uv = [1, 1]; // the edge box keeps the plain tint
-  const sideStrips = new THREE.Mesh(mergeGeometries(strips), sideMat); sideStrips.receiveShadow = true; scene.add(sideStrips);
-  const chalkMat = new THREE.MeshStandardMaterial({ map: chalkTexture(), color: '#ffffff', roughness: .95, alphaTest: .5, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+  const sideMat = new THREE.MeshStandardMaterial({ map: earthColor, normalMap: earthNormal, normalScale: new THREE.Vector2(.1, .1), roughnessMap: earthRoughness, color: '#c2b38c', roughness: 1 });
+  const pitchEdge = new THREE.Mesh(new THREE.BoxGeometry(3.05, PITCH_TOP, 24), sideMat); pitchEdge.position.set(0, PITCH_TOP / 2 - .003, -9); pitchEdge.receiveShadow = true; scene.add(pitchEdge);
+  // Neighbour lanes share the pitch material (default 0..1 uvs line the wear map up with their creases).
+  const sideStrips = new THREE.Mesh(mergeGeometries([-6.4, 6.4].map(x => ({ g: new THREE.PlaneGeometry(3.05, 24), m: mat4(x, PITCH_TOP - .002, -9, -Math.PI / 2) }))), pitchMat); sideStrips.receiveShadow = true; scene.add(sideStrips);
+  const chalkMat = new THREE.MeshStandardMaterial({ map: chalkTexture(), color: '#ffffff', roughness: .95, alphaTest: .3, alphaToCoverage: true, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
   const chalkParts = [];
   const chalkLine = (x, z, w, d, ry) => chalkParts.push({ g: new THREE.PlaneGeometry(w, d), m: mat4(x, PITCH_TOP + .004, z, -Math.PI / 2, 0, ry), uv: [w / .8, 1] });
-  for (const x of [0, -6.4, 6.4]) { for (const z of [0, -17.68]) chalkLine(x, z, 3.7, .045, 0); for (const z of [1.22, -18.9]) { chalkLine(x, z, 2.64, .04, 0); for (const side of [-1, 1]) chalkLine(x + side * 1.32, z + (z < 0 ? .4 : -.4), 2.8, .04, Math.PI / 2); } }
+  for (const x of [0, -6.4, 6.4]) { for (const z of [0, -17.68]) chalkLine(x, z, 3.7, .05, 0); for (const z of [1.22, -18.9]) { chalkLine(x, z, 2.64, .05, 0); for (const side of [-1, 1]) chalkLine(x + side * 1.32, z + (z < 0 ? .4 : -.4), 2.8, .05, Math.PI / 2); } }
   const chalk = new THREE.Mesh(mergeGeometries(chalkParts), chalkMat); scene.add(chalk);
 
   // ---------------------------------------------------------------- nets
@@ -355,12 +382,13 @@ export async function createScene(canvas, onProgress = () => {}) {
   const windUniform = { value: 0 }, timeUniform = { value: 0 };
   netMat.onBeforeCompile = shader => {
     shader.uniforms.uWind = windUniform; shader.uniforms.uTime = timeUniform;
-    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWind;\nuniform float uTime;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normal * uWind * uv.y * sin(uTime * 1.9 + position.x * 0.45 + position.y * 0.7);');
+    shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWind;\nuniform float uTime;\nattribute float aSway;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed += normal * uWind * aSway * sin(uTime * 1.9 + position.x * 0.45 + position.y * 0.7);');
   };
-  const netPanel = (w, h, segsW, segsH, sag) => {
-    const g = new THREE.PlaneGeometry(w, h, segsW, segsH), pos = g.attributes.position, uvs = g.attributes.uv;
-    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i); const s = sag(x / w + .5, y / h + .5); pos.setXYZ(i, x + s[0], y + s[1], s[2]); uvs.setXY(i, uvs.getX(i) * w / .045, uvs.getY(i) * h / .045); }
-    g.computeVertexNormals(); return g;
+  // aSway weights the wind flutter 0-1 across a panel; the uvs are tiled per net cell, so they cannot.
+  const netPanel = (w, h, segsW, segsH, sag, sway = (u, v) => v) => {
+    const g = new THREE.PlaneGeometry(w, h, segsW, segsH), pos = g.attributes.position, uvs = g.attributes.uv, aSway = new Float32Array(pos.count);
+    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i), y = pos.getY(i), u = x / w + .5, v = y / h + .5; const s = sag(u, v); aSway[i] = sway(u, v); pos.setXYZ(i, x + s[0], y + s[1], s[2]); uvs.setXY(i, uvs.getX(i) * w / .045, uvs.getY(i) * h / .045); }
+    g.setAttribute('aSway', new THREE.BufferAttribute(aSway, 1)); g.computeVertexNormals(); return g;
   };
   const bayFrac = (u, len, bay) => { const b = u * len / bay; return b - Math.floor(b); };
   const netMeshes = [];
@@ -369,7 +397,7 @@ export async function createScene(canvas, onProgress = () => {}) {
   for (const x of [-9.6, -3.1, 3.1, 9.6]) addNet(sideGeo, x, 2.9, -10, Math.PI / 2);
   const endGeo = netPanel(19.2, 5.8, 20, 6, (u, v) => { const xx = (u - .5) * 19.2; const f = xx < -3.1 ? (xx + 9.6) / 6.5 : xx < 3.1 ? (xx + 3.1) / 6.2 : (xx - 3.1) / 6.5; return [0, -0.07 * Math.sin(Math.PI * f) * v, 0]; });
   addNet(endGeo, 0, 2.9, -24, 0); addNet(endGeo, 0, 2.9, 3.6, 0);
-  const roofGeo = netPanel(19.2, 28, 20, 28, (u, v) => { const xx = (u - .5) * 19.2; const f = xx < -3.1 ? (xx + 9.6) / 6.5 : xx < 3.1 ? (xx + 3.1) / 6.2 : (xx - 3.1) / 6.5; return [0, 0, 0.14 * Math.sin(Math.PI * f) * Math.sin(Math.PI * bayFrac(v, 28, 7))]; });
+  const roofGeo = netPanel(19.2, 28, 20, 28, (u, v) => { const xx = (u - .5) * 19.2; const f = xx < -3.1 ? (xx + 9.6) / 6.5 : xx < 3.1 ? (xx + 3.1) / 6.2 : (xx - 3.1) / 6.5; return [0, 0, 0.14 * Math.sin(Math.PI * f) * Math.sin(Math.PI * bayFrac(v, 28, 7))]; }, (u, v) => .5 * Math.sin(Math.PI * bayFrac(v, 28, 7)));
   const roofNet = addNet(roofGeo, 0, 5.8, -10, 0, Math.PI / 2); void roofNet;
   const skirtMat = new THREE.MeshStandardMaterial({ map: skirtTexture(), roughness: .72, side: THREE.DoubleSide });
   const skirtParts = [];
@@ -388,44 +416,41 @@ export async function createScene(canvas, onProgress = () => {}) {
 
   // ---------------------------------------------------------------- grass tufts
   const tuftGeo = mergeGeometries([{ g: new THREE.PlaneGeometry(.4, .28, 1, 3), m: mat4(0, .14, 0) }, { g: new THREE.PlaneGeometry(.4, .28, 1, 3), m: mat4(0, .14, 0, 0, Math.PI / 2) }]);
-  const tuftMat = new THREE.MeshStandardMaterial({ map: tuftTexture(), roughness: 1, side: THREE.DoubleSide, alphaTest: .42 });
+  const tuftMat = new THREE.MeshStandardMaterial({ map: tuftTexture(), roughness: 1, side: THREE.DoubleSide, alphaTest: .3, alphaToCoverage: true });
   tuftMat.onBeforeCompile = shader => {
     shader.uniforms.uWind = windUniform; shader.uniforms.uTime = timeUniform;
     shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform float uWind;\nuniform float uTime;').replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed.x += (0.02 + uWind * 0.6) * uv.y * uv.y * sin(uTime * 1.7 + instanceMatrix[3].x * 0.5 + instanceMatrix[3].z * 0.35);');
   };
-  const TUFTS = 2600, tufts = new THREE.InstancedMesh(tuftGeo, tuftMat, TUFTS); tufts.receiveShadow = true;
-  const lanes = [-6.4, 0, 6.4], nearStrip = x => lanes.some(l => Math.abs(x - l) < 1.85);
-  n = 0;
-  while (n < TUFTS) {
-    let cx, cz;
-    if (rng() < .6) { const lane = lanes[Math.floor(rng() * 3)], side = rng() < .5 ? -1 : 1; cx = lane + side * (1.9 + rng() * 1.3); cz = -25 + rng() * 29; } else { cx = (rng() - .5) * 56; cz = -38 + rng() * 48; }
-    for (let k = 0; k < 6 && n < TUFTS; k++) {
-      const x = cx + (rng() - .5) * 2.2, z = cz + (rng() - .5) * 2.2; if (nearStrip(x) && z > -22 && z < 4) continue; if (Math.abs(x) < 2.5 && z > 2) continue;
-      dummy.position.set(x, 0, z); dummy.rotation.set(0, rng() * TAU, 0); const s = .6 + rng() * .7; dummy.scale.set(s, s * (.8 + rng() * .4), s); dummy.updateMatrix(); tufts.setMatrixAt(n, dummy.matrix);
-      tufts.setColorAt(n, _c1.set('#5f7b39').lerp(_c1.clone().set('#8ba14e'), rng())); n++;
-    }
-  }
-  scene.add(tufts);
+  // Long grass only where the mower cannot reach: tight to both faces of every skirt, then sparse rough outside the nets.
+  const TUFTS = 1900, tufts = new THREE.InstancedMesh(tuftGeo, tuftMat, TUFTS); tufts.receiveShadow = true;
+  const tuftTip = new THREE.Color('#ffffff'); n = 0;
+  const tuft = (x, z, s) => { if (n >= TUFTS) return; dummy.position.set(x, 0, z); dummy.rotation.set(0, rng() * TAU, 0); dummy.scale.set(s, s * (.75 + rng() * .5), s); dummy.updateMatrix(); tufts.setMatrixAt(n, dummy.matrix); tufts.setColorAt(n, _c1.set('#dfe6c8').lerp(tuftTip, rng())); n++; };
+  for (const nx of [-9.6, -3.1, 3.1, 9.6]) for (const face of [-1, 1]) for (let z = -23.9; z < 3.5; z += .1 + rng() * .22) tuft(nx + face * (.04 + rng() * rng() * .3), z, .45 + rng() * .45);
+  for (const nz of [-24, 3.6]) for (const face of [-1, 1]) { if (nz > 0 && face < 0) continue; for (let x = -9.5; x < 9.5; x += .12 + rng() * .25) tuft(x, nz + face * (.05 + rng() * rng() * .3), .45 + rng() * .4); }
+  while (n < TUFTS) { const cx = (rng() - .5) * 70, cz = -44 + rng() * 60; if (Math.abs(cx) < 10.2 && cz > -24.6 && cz < 4.2) continue; for (let j = 0; j < 5; j++) tuft(cx + (rng() - .5) * .8, cz + (rng() - .5) * .8, .4 + rng() * .5); }
+  tufts.computeBoundingSphere(); scene.add(tufts);
 
   // ---------------------------------------------------------------- surroundings
   const creamMat = new THREE.MeshStandardMaterial({ color: '#ece8da', roughness: .85, bumpMap: weatherboardBump(), bumpScale: .012 });
-  const slateMat = new THREE.MeshStandardMaterial({ color: '#3f4a44', roughness: .78 });
+  const slateMat = new THREE.MeshStandardMaterial({ color: '#2f4a3c', roughness: .78 });
   const deckMat = new THREE.MeshStandardMaterial({ color: '#8a7658', roughness: .9 });
-  const glassMat = new THREE.MeshPhysicalMaterial({ color: '#8fa7a0', roughness: .12, metalness: .1, envMapIntensity: 1.2 });
-  const cream = [], slate = [], deck = [], glass = [];
+  const glassMat = new THREE.MeshPhysicalMaterial({ color: '#1e2a2a', roughness: .06, metalness: 0, envMapIntensity: 1 });
+  const timberMat = new THREE.MeshStandardMaterial({ color: '#5e4c3a', roughness: .9, bumpMap: creamMat.bumpMap, bumpScale: .012 });
+  const cream = [], slate = [], deck = [], glass = [], timber = [];
   const roofPitch = Math.atan2(1.41, 3.5);
-  const building = (cx, cz, w, h, d, roofY) => {
+  const building = (cx, cz, w, h, d, walls = cream) => {
     const bump = [w / 2.4, h / 2.4];
-    cream.push({ g: new THREE.PlaneGeometry(w, h), m: mat4(cx, h / 2, cz + d / 2), uv: bump }, { g: new THREE.PlaneGeometry(w, h), m: mat4(cx, h / 2, cz - d / 2, 0, Math.PI), uv: bump });
-    cream.push({ g: new THREE.PlaneGeometry(d, h), m: mat4(cx + w / 2, h / 2, cz, 0, Math.PI / 2), uv: [d / 2.4, h / 2.4] }, { g: new THREE.PlaneGeometry(d, h), m: mat4(cx - w / 2, h / 2, cz, 0, -Math.PI / 2), uv: [d / 2.4, h / 2.4] });
+    walls.push({ g: new THREE.PlaneGeometry(w, h), m: mat4(cx, h / 2, cz + d / 2), uv: bump }, { g: new THREE.PlaneGeometry(w, h), m: mat4(cx, h / 2, cz - d / 2, 0, Math.PI), uv: bump });
+    walls.push({ g: new THREE.PlaneGeometry(d, h), m: mat4(cx + w / 2, h / 2, cz, 0, Math.PI / 2), uv: [d / 2.4, h / 2.4] }, { g: new THREE.PlaneGeometry(d, h), m: mat4(cx - w / 2, h / 2, cz, 0, -Math.PI / 2), uv: [d / 2.4, h / 2.4] });
     const rise = d / 2 * Math.tan(roofPitch), slab = d / 2 / Math.cos(roofPitch) + .5;
     slate.push({ g: new THREE.BoxGeometry(w + .8, .12, slab), m: mat4(cx, h + rise / 2 - .02, cz + d / 4 + .1, roofPitch) }, { g: new THREE.BoxGeometry(w + .8, .12, slab), m: mat4(cx, h + rise / 2 - .02, cz - d / 4 - .1, -roofPitch) });
     slate.push({ g: new THREE.BoxGeometry(w + .9, .14, .16), m: mat4(cx, h + rise, cz) });
-    for (const sx of [-1, 1]) { const gable = new THREE.Shape(); gable.moveTo(-d / 2, 0); gable.lineTo(d / 2, 0); gable.lineTo(0, rise); gable.closePath(); cream.push({ g: new THREE.ShapeGeometry(gable), m: mat4(cx + sx * w / 2, h, cz, 0, sx * Math.PI / 2), uv: [d / 2.4, rise / 2.4] }); }
-    void roofY;
+    for (const sx of [-1, 1]) { const gable = new THREE.Shape(); gable.moveTo(-d / 2, 0); gable.lineTo(d / 2, 0); gable.lineTo(0, rise); gable.closePath(); walls.push({ g: new THREE.ShapeGeometry(gable), m: mat4(cx + sx * w / 2, h, cz, 0, sx * Math.PI / 2), uv: [d / 2.4, rise / 2.4] }); }
+    // White fascia boards under the eaves on both long sides.
+    for (const sz of [-1, 1]) cream.push({ g: new THREE.BoxGeometry(w + .8, .16, .04), m: mat4(cx, h - .13, cz + sz * (d / 2 + .35)) });
   };
   // Pavilion: 19 x 7 m, veranda with six posts, glazed windows, a clock on the gable.
-  building(24, -37, 19, 3.6, 7, 3.6);
+  building(24, -37, 19, 3.6, 7);
   deck.push({ g: new THREE.BoxGeometry(19.4, .28, 2.4), m: mat4(24, .3, -32.4) }, { g: new THREE.BoxGeometry(3, .16, .8), m: mat4(24, .1, -30.9) });
   for (let i = 0; i < 6; i++) { const x = 15.2 + i * 3.52; cream.push({ g: new THREE.CylinderGeometry(.07, .07, 3.1, 8), m: mat4(x, 1.95, -31.35) }); }
   slate.push({ g: new THREE.BoxGeometry(19.6, .1, 2.9), m: mat4(24, 3.55, -32.2, .2) });
@@ -433,14 +458,14 @@ export async function createScene(canvas, onProgress = () => {}) {
   for (let i = 0; i < 6; i++) { const x = 16.4 + i * 2.9; glass.push({ g: new THREE.PlaneGeometry(1.7, 1.5), m: mat4(x, 2.0, -33.47) }); cream.push({ g: new THREE.BoxGeometry(1.9, .08, .08), m: mat4(x, 2.8, -33.45) }, { g: new THREE.BoxGeometry(1.9, .08, .08), m: mat4(x, 1.2, -33.45) }, { g: new THREE.BoxGeometry(.08, 1.6, .08), m: mat4(x - .9, 2, -33.45) }, { g: new THREE.BoxGeometry(.08, 1.6, .08), m: mat4(x + .9, 2, -33.45) }, { g: new THREE.BoxGeometry(.05, 1.5, .06), m: mat4(x, 2, -33.46) }); }
   slate.push({ g: new THREE.BoxGeometry(1.0, 2.2, .1), m: mat4(24, 1.1, -33.44) });
   const clockFace = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), new THREE.MeshStandardMaterial({ map: clockTexture(), roughness: .6 })); clockFace.position.set(14.44, 4.2, -37); clockFace.rotation.y = -Math.PI / 2; scene.add(clockFace);
-  // Groundsman's shed on the other side for balance.
-  building(-21, -35, 6, 2.8, 4, 2.8);
+  // Groundsman's shed on the other side for balance, in dark-stained timber.
+  building(-21, -35, 6, 2.8, 4, timber);
   slate.push({ g: new THREE.BoxGeometry(.9, 1.9, .1), m: mat4(-21, .95, -32.95) });
   // Benches beside the lanes and a hedge behind the pavilion.
   for (const x of [-13.5, 13.5]) { for (let i = 0; i < 3; i++) deck.push({ g: new THREE.BoxGeometry(2.6, .05, .1), m: mat4(x, .48, -13.15 + i * .12) }); for (let j = 0; j < 2; j++) deck.push({ g: new THREE.BoxGeometry(2.6, .1, .05), m: mat4(x, .72 + j * .13, -13.32 - j * .035, -.25) }); for (const s of [-1, 1]) slate.push({ g: new THREE.BoxGeometry(.06, .46, .5), m: mat4(x + s * 1.2, .23, -13.05) }, { g: new THREE.BoxGeometry(.06, .45, .05), m: mat4(x + s * 1.2, .7, -13.3, -.25) }); }
   const hedge = new THREE.Mesh(new THREE.BoxGeometry(40, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: '#2f4a2a', roughness: 1, bumpMap: leatherBump(), bumpScale: .05 })); hedge.position.set(20, .8, -42.5); scene.add(hedge);
   const addMerged = (parts, material, shadow = true) => { if (!parts.length) return null; const m = new THREE.Mesh(mergeGeometries(parts), material); m.castShadow = shadow; m.receiveShadow = true; scene.add(m); return m; };
-  addMerged(cream, creamMat); addMerged(slate, slateMat); addMerged(deck, deckMat); addMerged(glass, glassMat, false);
+  addMerged(cream, creamMat); addMerged(timber, timberMat); addMerged(slate, slateMat); addMerged(deck, deckMat); addMerged(glass, glassMat, false);
   // Sight screen: slatted 7 x 4 m board on a steel A-frame with wheels, behind the back net.
   const slats = slatTextures();
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(7, 4), new THREE.MeshStandardMaterial({ map: slats.map, bumpMap: slats.bump, bumpScale: .02, color: '#ffffff', roughness: .7 })); screen.position.set(0, 2.25, -26.5); screen.castShadow = true; screen.receiveShadow = true; scene.add(screen);
@@ -499,14 +524,20 @@ export async function createScene(canvas, onProgress = () => {}) {
   const limbs = [];
   function limb(x, y, isArm, parent) {
     const pivot = new THREE.Group(); pivot.position.set(x, y, 0); parent.add(pivot);
-    addPart(new THREE.CylinderGeometry(isArm ? .062 : .09, isArm ? .052 : .072, isArm ? .28 : .41, 10), isArm ? shirt : trousers, 0, isArm ? -.12 : -.2, 0, pivot);
+    // Rounded shoulder caps; shins run .035 longer than the joint spacing so the soles meet the pitch.
+    if (isArm) addPart(new THREE.SphereGeometry(.064, 14, 10), shirt, 0, 0, 0, pivot);
+    addPart(new THREE.CylinderGeometry(isArm ? .062 : .09, isArm ? .052 : .072, isArm ? .28 : .41, 14), isArm ? shirt : trousers, 0, isArm ? -.12 : -.2, 0, pivot);
     const lower = new THREE.Group(); lower.position.y = isArm ? -.27 : -.41; pivot.add(lower);
-    addPart(new THREE.SphereGeometry(isArm ? .05 : .07, 10, 8), isArm ? skin : trousers, 0, 0, 0, lower);
-    addPart(new THREE.CylinderGeometry(isArm ? .05 : .068, isArm ? .034 : .05, isArm ? .29 : .42, 10), isArm ? skin : trousers, 0, isArm ? -.14 : -.2, 0, lower);
-    if (isArm) { const hand = addPart(new THREE.SphereGeometry(.047, 10, 8), skin, 0, -.3, 0, lower); hand.scale.set(.7, 1.15, .7); } else { addPart(new THREE.BoxGeometry(.12, .08, .25), shoe, 0, -.43, .05, lower); addPart(new THREE.BoxGeometry(.123, .021, .255), sole, 0, -.473, .05, lower, false); }
+    const dz = isArm ? 0 : .035;
+    addPart(new THREE.SphereGeometry(isArm ? .053 : .075, 14, 10), isArm ? skin : trousers, 0, 0, 0, lower);
+    addPart(new THREE.CylinderGeometry(isArm ? .05 : .07, isArm ? .034 : .05, (isArm ? .29 : .42) + dz, 14), isArm ? skin : trousers, 0, (isArm ? -.14 : -.2) - dz / 2, 0, lower);
+    if (isArm) { const hand = addPart(new THREE.SphereGeometry(.047, 10, 8), skin, 0, -.3, 0, lower); hand.scale.set(.7, 1.15, .7); } else { addPart(new THREE.BoxGeometry(.12, .08, .25), shoe, 0, -.43 - dz, .05, lower); addPart(new THREE.BoxGeometry(.123, .021, .255), sole, 0, -.473 - dz, .05, lower, false); }
     limbs.push({ pivot, lower }); return { pivot, lower };
   }
   const rightArm = limb(-.225, .47, true, body), leftArm = limb(.225, .47, true, body), rightLeg = limb(-.105, 0, false, hips), leftLeg = limb(.105, 0, false, hips);
+  // Pelvis and belt under the shirt hem, so a twisting torso never shows the tops of the legs.
+  const pelvis = addPart(lathe([[.1, -.13], [.14, -.09], [.158, -.02], [.155, .05], [.148, .09]], 20), trousers, 0, 0, 0, hips); pelvis.scale.z = .74;
+  const belt = addPart(new THREE.TorusGeometry(.152, .012, 6, 24), capMat, 0, .07, 0, hips); belt.rotation.x = Math.PI / 2; belt.scale.y = .74;
   const ballMat = new THREE.MeshPhysicalMaterial({ color: '#a3131f', roughness: .35, clearcoat: 1, clearcoatRoughness: .12, bumpMap: leatherBump(), bumpScale: .0006 });
   const heldBall = addPart(new THREE.SphereGeometry(.036, 14, 10), ballMat, 0, -.31, .035, rightArm.lower);
   const setLimb = (l, upper, low, z = 0) => { l.pivot.rotation.x = upper; l.pivot.rotation.z = z; l.lower.rotation.x = low; };
@@ -531,13 +562,14 @@ export async function createScene(canvas, onProgress = () => {}) {
         const u = (t - 1.62) / .23; z = -18.3 + .3 * u; twist = 1.1; lean = -.16 * u;
         setLimb(back, .15, .55 - .3 * u); setLimb(front, lerp(-.6, .55, smooth(u)), lerp(1.2, .1, u)); setLimb(bowling, lerp(.6, 1.0, u), -.2); setLimb(other, lerp(-.9, -2.6, smooth(u)), -.3, 0);
       } else {
-        const u = smooth((t - 1.85) / .35); z = -18 + .3 * u; twist = 1.1 * (1 - u); lean = lerp(-.16, .25, u); y = (spin ? .13 : .18) * u;
-        setLimb(back, lerp(.15, -.55, u), .25 * (1 - u)); setLimb(front, lerp(.55, .35, u), 0); setLimb(bowling, lerp(1.0, -Math.PI, u), 0); setLimb(other, lerp(-2.6, -.4, u), -.3, 0);
+        const u = smooth((t - 1.85) / .35), a = clamp((t - 1.85) / .35, 0, 1); z = -18 + .3 * u; twist = 1.1 * (1 - u); lean = lerp(-.16, .25, u); y = (spin ? .13 : .18) * u;
+        // The bowling arm goes back, up and over, speeding into release; at t = 2.2 it is exactly vertical (the physics release pose).
+        setLimb(back, lerp(.15, -.55, u), .25 * (1 - u)); setLimb(front, lerp(.55, .35, u), 0); setLimb(bowling, lerp(1.0, Math.PI, a * a + .28 * a * (1 - a)), 0); setLimb(other, lerp(-2.6, -.4, u), -.3, 0);
       }
     } else if (phase === 'flight' || phase === 'result') {
       const p = Math.min(t / .5, 1), k = 1 - Math.exp(-t * 2.2); z = -17.7 + 3.2 * k; y = (spin ? .13 : .18) * Math.max(0, 1 - t / .22); lean = .25 * Math.max(0, 1 - t / .8) + .08 * Math.min(1, t / .8);
       const stride = Math.sin(t * 9) * .55 * Math.exp(-t * .9); setLimb(back, -.55 * (1 - p) + stride * p, Math.max(0, -stride) * .8); setLimb(front, .35 * (1 - p) - stride * p, Math.max(0, stride) * .8);
-      setLimb(bowling, -Math.PI - p * 2.6 + stride * .3 * p, -.2 * p); setLimb(other, lerp(-.4, .3, p) + stride * .4 * p, -.4, 0);
+      setLimb(bowling, Math.PI + 2.6 * p * (2 - p) + stride * .3 * p, -.2 * p); setLimb(other, lerp(-.4, .3, p) + stride * .4 * p, -.4, 0);
     } else {
       // Idle at the top of the mark: weight shift, ball flipped in the bowling hand.
       const ic = idleClock; sway = .025 * Math.sin(ic * 1.9); lean = .03 + .02 * Math.sin(ic * .9);
@@ -550,7 +582,7 @@ export async function createScene(canvas, onProgress = () => {}) {
 
   // ---------------------------------------------------------------- ball, trail, markers
   const ballGroup = new THREE.Group(); ballGroup.scale.setScalar(1.2); scene.add(ballGroup); ballGroup.visible = false;
-  const ball = addPart(new THREE.SphereGeometry(.036, 24, 18), ballMat, 0, 0, 0, ballGroup);
+  const ball = addPart(new THREE.SphereGeometry(.036, 24, 18), ballMat, 0, 0, 0, ballGroup, false); // the blob below is its only shadow, straight under it
   const seamMat = new THREE.MeshStandardMaterial({ color: '#f1e5cf', roughness: .7 }), grooveMat = new THREE.MeshStandardMaterial({ color: '#5a0d14', roughness: .5 });
   for (const off of [-.0038, .0038]) { const s = new THREE.Mesh(new THREE.TorusGeometry(Math.sqrt(.036 ** 2 - off ** 2) + .0004, .0009, 5, 64), seamMat); s.position.z = off; ballGroup.add(s); }
   const groove = new THREE.Mesh(new THREE.TorusGeometry(.0362, .0012, 4, 64), grooveMat); ballGroup.add(groove);
@@ -563,19 +595,20 @@ export async function createScene(canvas, onProgress = () => {}) {
   const trailGeo = new THREE.BufferGeometry(); trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPos, 3)); trailGeo.setAttribute('aFade', new THREE.BufferAttribute(trailFade, 1)); trailGeo.setIndex(trailIndex); trailGeo.setDrawRange(0, 0);
   const trailMat = new THREE.ShaderMaterial({ uniforms: { uColor: { value: new THREE.Color('#fff2c6') } }, vertexShader: 'attribute float aFade;varying float vFade;void main(){vFade=aFade;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}', fragmentShader: 'uniform vec3 uColor;varying float vFade;void main(){gl_FragColor=vec4(uColor*vFade*0.75,vFade*0.75);}', transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide });
   const trail = new THREE.Mesh(trailGeo, trailMat); trail.frustumCulled = false; scene.add(trail); trail.visible = false;
-  const bounceTex = radialTexture(128, [[0, 'rgba(230,252,175,0.9)'], [.55, 'rgba(230,252,175,0.35)'], [1, 'rgba(230,252,175,0)']]);
-  const bounceMarker = new THREE.Mesh(new THREE.PlaneGeometry(.26, .26), new THREE.MeshBasicMaterial({ map: bounceTex, transparent: true, opacity: .85, depthWrite: false })); bounceMarker.rotation.x = -Math.PI / 2; bounceMarker.visible = false; scene.add(bounceMarker);
+  // Bounce guide: a lime ring (the UI accent) with a faint dark outline, so it reads on every pitch tint.
+  const bounceTex = radialTexture(128, [[0, 'rgba(201,242,107,0)'], [.6, 'rgba(201,242,107,0)'], [.74, 'rgba(201,242,107,0.95)'], [.86, 'rgba(20,40,20,0.35)'], [1, 'rgba(20,40,20,0)']]);
+  const bounceMarker = new THREE.Mesh(new THREE.PlaneGeometry(.22, .22), new THREE.MeshBasicMaterial({ map: bounceTex, transparent: true, opacity: .85, depthWrite: false })); bounceMarker.rotation.x = -Math.PI / 2; bounceMarker.visible = false; scene.add(bounceMarker);
   const MARKS = 40, marks = new THREE.InstancedMesh(new THREE.PlaneGeometry(.09, .09), new THREE.MeshBasicMaterial({ map: radialTexture(64, [[0, 'rgba(122,104,66,0.5)'], [.6, 'rgba(122,104,66,0.25)'], [1, 'rgba(122,104,66,0)']]), transparent: true, depthWrite: false }), MARKS);
   for (let i = 0; i < MARKS; i++) { dummy.position.set(0, -5, 0); dummy.rotation.set(-Math.PI / 2, 0, 0); dummy.scale.setScalar(1); dummy.updateMatrix(); marks.setMatrixAt(i, dummy.matrix); }
   scene.add(marks); let markIndex = 0;
   const DUST = 24, dustPos = new Float32Array(DUST * 3), dustVel = new Float32Array(DUST * 3), dustGeo = new THREE.BufferGeometry(); dustGeo.setAttribute('position', new THREE.BufferAttribute(dustPos, 3));
-  const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ map: radialTexture(32, [[0, 'rgba(214,196,150,0.7)'], [1, 'rgba(214,196,150,0)']]), size: .12, transparent: true, opacity: 0, depthWrite: false, sizeAttenuation: true })); dust.frustumCulled = false; scene.add(dust);
+  const dust = new THREE.Points(dustGeo, new THREE.PointsMaterial({ map: radialTexture(32, [[0, 'rgba(150,128,90,0.75)'], [1, 'rgba(150,128,90,0)']]), size: .12, transparent: true, opacity: 0, depthWrite: false, sizeAttenuation: true })); dust.frustumCulled = false; scene.add(dust);
   let dustTime = 9, bounceTime = 9, markedDelivery = null, hitDelivery = null;
   function updateBall(d, guide) {
     ballGroup.visible = !!d; ballShadow.visible = !!d; trail.visible = guide && !!d; bounceMarker.visible = Boolean(d && d.bounce) && guide;
     if (!d) { ballGlow.visible = false; return; }
     ballGroup.position.set(d.p.x, d.p.y, d.p.z); ballGroup.rotation.set(d.time * d.spin * .21, d.time * d.spin, d.time * 14);
-    ballShadow.position.set(d.p.x, PITCH_TOP + .004, d.p.z); ballShadow.scale.setScalar(.5 + d.p.y * .45); ballShadow.material.opacity = Math.max(.05, .34 - d.p.y * .05);
+    ballShadow.position.set(d.p.x, PITCH_TOP + .004, d.p.z); ballShadow.scale.setScalar(.5 + d.p.y * .45); ballShadow.material.opacity = Math.max(.05, .34 - d.p.y * .05) * (.55 + .45 * Math.min(1, sun.intensity / 4.2)); // softer under cloud
     const dist = camera.position.distanceTo(ballGroup.position);
     ballGlow.visible = !d.hit && dist > 3; if (ballGlow.visible) { ballGlow.position.copy(ballGroup.position); ballGlow.scale.setScalar(Math.max(.1, dist * .011)); ballGlow.material.opacity = .5 * smooth((dist - 3) / 4); }
     if (d.bounce && markedDelivery !== d) {
@@ -597,38 +630,46 @@ export async function createScene(canvas, onProgress = () => {}) {
     } else trailGeo.setDrawRange(0, 0);
   }
   function animateEffects(dt) {
-    if (bounceTime < 9) { bounceTime += dt; bounceMarker.scale.setScalar(.2 + .8 * smooth(bounceTime / .12)); }
+    if (bounceTime < 9) { bounceTime += dt; const k = smooth(bounceTime / .12); bounceMarker.scale.setScalar(.2 + .8 * k + .35 * k * Math.max(0, 1 - bounceTime / .5)); bounceMarker.material.opacity = .95 - .35 * smooth((bounceTime - .4) / .6); }
     if (dustTime < .45) { dustTime += dt; for (let i = 0; i < DUST; i++) { dustPos[i * 3] += dustVel[i * 3] * dt; dustPos[i * 3 + 1] += dustVel[i * 3 + 1] * dt; dustPos[i * 3 + 2] += dustVel[i * 3 + 2] * dt; dustVel[i * 3 + 1] -= 3 * dt; } dustGeo.attributes.position.needsUpdate = true; dust.material.size = .1 + dustTime * .7; dust.material.opacity = .55 * (1 - dustTime / .45); dust.visible = true; } else dust.visible = false;
   }
 
   // ---------------------------------------------------------------- bat, gloves, arms, body
   const batGroup = new THREE.Group(); scene.add(batGroup);
   const willow = willowTextures();
-  const wood = new THREE.MeshPhysicalMaterial({ map: willow.map, bumpMap: willow.bump, bumpScale: .0008, roughness: .55, clearcoat: .35, clearcoatRoughness: .45 });
+  const wood = new THREE.MeshPhysicalMaterial({ map: willow.map, bumpMap: willow.bump, bumpScale: .4, roughness: .55, clearcoat: .35, clearcoatRoughness: .45 });
   const blade = new THREE.Mesh(bladeGeometry(), wood); blade.castShadow = true; blade.receiveShadow = true; batGroup.add(blade);
   const gripTex = gripTextures();
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(.0165, .018, .29, 20), new THREE.MeshStandardMaterial({ map: gripTex.map, bumpMap: gripTex.bump, bumpScale: .0015, roughness: .92 })); handle.position.y = .455; handle.scale.z = .85; handle.castShadow = true; batGroup.add(handle);
-  const gloveMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8, bumpMap: quiltBump(), bumpScale: .0025 });
+  const handle = new THREE.Mesh(new THREE.CylinderGeometry(.0165, .018, .29, 20), new THREE.MeshStandardMaterial({ map: gripTex.map, bumpMap: gripTex.bump, bumpScale: 1, roughness: .92 })); handle.position.y = .455; handle.scale.z = .85; handle.castShadow = true; batGroup.add(handle);
+  const gloveMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8, bumpMap: quiltBump(), bumpScale: .7 });
   const gloveGeos = { right: gloveGeometry(true, false), rightTop: gloveGeometry(false, false), left: gloveGeometry(true, true), leftTop: gloveGeometry(false, true) };
   const gloves = [new THREE.Mesh(gloveGeos.right, gloveMat), new THREE.Mesh(gloveGeos.rightTop, gloveMat)];
-  for (const g of gloves) { g.castShadow = true; scene.add(g); }
-  const armMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .75, bumpMap: knitBump(), bumpScale: .0012 });
-  const SKIN = '#b5865f', SWEATER = '#ece6d3', TRIM = '#1f3a2c', L_UPPER = .5, L_FORE = .36;
+  for (const g of gloves) { g.castShadow = true; g.receiveShadow = true; scene.add(g); }
+  // The physics grip sits a metre in front of the eye, beyond any real reach, so full arms would fill the
+  // frame. Draw gloves plus forearm sleeves that fade out toward the elbow instead (local y: wrist 0, elbow .36).
+  const fadeArm = (sh, cut) => {
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vArmY;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvArmY = position.y;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vArmY;').replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\n' + cut);
+  };
+  const armMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, bumpMap: knitBump(), bumpScale: 1.2, transparent: true });
+  armMat.onBeforeCompile = sh => fadeArm(sh, 'diffuseColor.a *= 1.0 - smoothstep(0.15, 0.28, vArmY);\nif (diffuseColor.a < 0.02) discard;'); // no depth writes from faded texels
+  const armDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+  armDepth.onBeforeCompile = sh => fadeArm(sh, 'if (vArmY > 0.22) discard;'); // shadow only from the part you can see
+  const SKIN = '#b5865f', SWEATER = '#d8cfb6', TRIM = '#1f3a2c', L_UPPER = .5, L_FORE = .36;
   const forearmGeo = mergeGeometries([
-    { g: lathe([[.038, -.01], [.039, 0], [.041, .06], [.043, .12], [.042, .15]], 18), c: SKIN },
-    { g: lathe([[.041, .13], [.044, .16], [.045, .26], [.044, L_FORE]], 18), c: SWEATER },
-    { g: new THREE.TorusGeometry(.042, .009, 8, 20), m: mat4(0, .135, 0, Math.PI / 2), c: TRIM },
-    { g: new THREE.SphereGeometry(.046, 14, 10), m: mat4(0, L_FORE, 0), c: SWEATER },
+    { g: lathe([[.036, -.01], [.038, 0], [.040, .035], [.041, .055]], 18), c: SKIN, uv: [0, 0] },
+    { g: lathe([[.043, .042], [.046, .065], [.046, .26], [.046, .31]], 18), c: SWEATER },
+    { g: new THREE.TorusGeometry(.044, .008, 8, 20), m: mat4(0, .046, 0, Math.PI / 2), c: TRIM },
+    { g: new THREE.SphereGeometry(.045, 18, 8, 0, TAU, 0, Math.PI / 2), m: mat4(0, .07, 0, 0, 0, 0, 1, 2, 1), c: SWEATER }, // solid end seen down the sleeve, shaded like its walls
   ]);
-  const upperGeo = mergeGeometries([{ g: lathe([[.04, 0], [.043, .12], [.046, .3], [.048, .42], [.045, L_UPPER]], 18), c: SWEATER }]);
-  const arms = [0, 1].map(() => ({ fore: new THREE.Mesh(forearmGeo, armMat), upper: new THREE.Mesh(upperGeo, armMat) }));
-  for (const a of arms) { a.fore.castShadow = true; a.upper.material = armMat; a.upper.material.side = THREE.DoubleSide; scene.add(a.fore, a.upper); }
-  const padMat = new THREE.MeshStandardMaterial({ color: '#f4f1e6', roughness: .85, bumpMap: quiltBump(), bumpScale: .004 });
+  const arms = [0, 1].map(() => ({ fore: new THREE.Mesh(forearmGeo, armMat) }));
+  for (const a of arms) { a.fore.castShadow = true; a.fore.receiveShadow = true; a.fore.customDepthMaterial = armDepth; scene.add(a.fore); }
+  const padMat = new THREE.MeshStandardMaterial({ color: '#ebe7da', roughness: .85, bumpMap: quiltBump(), bumpScale: 1 });
   const padGeo = mergeGeometries([
     { g: lathe([[.06, 0], [.095, .04], [.1, .3], [.095, .5], [.08, .62]], 16), m: mat4(0, 0, 0, 0, 0, 0, 1, 1, .55) },
     { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .4, .04, 0, 0, Math.PI / 2) }, { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .47, .05, 0, 0, Math.PI / 2) }, { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .54, .045, 0, 0, Math.PI / 2) },
   ]);
-  const pads = [new THREE.Mesh(padGeo, padMat), new THREE.Mesh(padGeo, padMat)]; for (const p of pads) scene.add(p);
+  const pads = [new THREE.Mesh(padGeo, padMat), new THREE.Mesh(padGeo, padMat)]; for (const p of pads) { p.receiveShadow = true; scene.add(p); } // seen at the foot of a portrait screen and while the gaze follows a struck ball
   let hand = 'right', handSign = 1, lastBatX = .25, lastBatY = .48, lastBatZ = .06, batSpeed = 0;
   const wristLocal = new THREE.Vector3(.034, 0, .105), gloveY = [.40, .51];
   const kick = new THREE.Vector3(), headOffset = new THREE.Vector3(), headVel = new THREE.Vector3(); let kickRoll = 0, headRoll = 0, headRollVel = 0, flash = 0;
@@ -637,6 +678,7 @@ export async function createScene(canvas, onProgress = () => {}) {
     gloves[0].geometry = h === 'left' ? gloveGeos.left : gloveGeos.right; gloves[1].geometry = h === 'left' ? gloveGeos.leftTop : gloveGeos.rightTop;
   }
   // Two-bone analytic IK: fixed bone lengths, elbow pole out-and-down, torso lean absorbs overreach.
+  // Only the forearm is drawn; the solved elbow aims it and orients the glove cuff.
   function solveArm(i, wristW, shoulderW) {
     const side = (i === 0 ? 1 : -1) * handSign, S = _v[3].copy(shoulderW), axis = _v[4].subVectors(wristW, S);
     let d = Math.max(axis.length(), .001); const reach = L_UPPER + L_FORE - .01; axis.divideScalar(d);
@@ -649,10 +691,8 @@ export async function createScene(canvas, onProgress = () => {}) {
       const a = (L_UPPER * L_UPPER - L_FORE * L_FORE + d * d) / (2 * d), h = Math.sqrt(Math.max(0, L_UPPER * L_UPPER - a * a));
       const pole = _v[5].crossVectors(UP, axis).multiplyScalar(side); pole.y -= .55; pole.addScaledVector(axis, -pole.dot(axis)).normalize();
       E.copy(S).addScaledVector(axis, a).addScaledVector(pole, h);
-      arm.upper.scale.y = 1;
     }
     arm.fore.position.copy(wristW); arm.fore.quaternion.setFromUnitVectors(UP, _v[2].subVectors(E, wristW).normalize());
-    arm.upper.position.copy(E); arm.upper.quaternion.setFromUnitVectors(UP, _v[2].subVectors(S, E).normalize());
     return E;
   }
   function updateBat(b) {
@@ -672,7 +712,7 @@ export async function createScene(canvas, onProgress = () => {}) {
       for (let pass = 0; pass < 2; pass++) {
         const zAxis = _v[12].copy(toward).addScaledVector(handleAxis, -toward.dot(handleAxis)).normalize(), xAxis = _v[13].crossVectors(handleAxis, zAxis).normalize();
         glove.quaternion.setFromRotationMatrix(_m2.makeBasis(xAxis, handleAxis, zAxis)); glove.position.copy(centre); glove.updateMatrixWorld(true);
-        const wrist = _v[7].copy(wristLocal).applyMatrix4(glove.matrixWorld);
+        const wrist = _v[7].set(wristLocal.x * handSign, wristLocal.y, wristLocal.z).applyMatrix4(glove.matrixWorld); // left-hand gloves are mirrored in x
         const elbow = solveArm(i, wrist, shoulder);
         toward = _v[11].subVectors(elbow, centre);
       }
@@ -689,9 +729,10 @@ export async function createScene(canvas, onProgress = () => {}) {
   // The title screen looks along the real nets from beside the crease. Give
   // that view its own camera and viewport so the paper never covers its subject.
   const menuCamera = new THREE.PerspectiveCamera(52, 1, .035, 400);
-  menuCamera.position.set(2.15, 1.7, 2.35); menuCamera.lookAt(-.15, .75, -10);
+  // Tilted so the right-hand floodlight head sits just above the frame at every aspect (its NDC y does not depend on aspect).
+  menuCamera.position.set(2.15, 1.7, 2.35); menuCamera.lookAt(-.15, .5, -10);
   let menuFrame = null;
-  const batterMeshes = [batGroup, ...gloves, ...pads, ...arms.flatMap(arm => [arm.fore, arm.upper])];
+  const batterMeshes = [batGroup, ...gloves, ...pads, ...arms.map(arm => arm.fore)];
   function setMenuFrame(frame) {
     menuFrame = frame;
     for (const mesh of batterMeshes) mesh.visible = !frame;
@@ -707,6 +748,8 @@ export async function createScene(canvas, onProgress = () => {}) {
     } else {
       renderer.setScissorTest(false); renderer.setViewport(0, 0, width, height); renderer.render(scene, camera);
     }
+    // Alpha-to-coverage grass and chalk leave partial alpha in the canvas; make it opaque so the page behind never tints their edges.
+    gl.colorMask(false, false, false, true); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); gl.colorMask(true, true, true, true); renderer.resetState();
   }
   let lastBallTime = -1, followUntil = 0, frameDt = 0, clock = 0;
   function updateGaze(d, dt, isPaused) {
@@ -750,22 +793,26 @@ export async function createScene(canvas, onProgress = () => {}) {
     const over = c.weather === 'overcast', evening = c.weather === 'evening';
     setHand(c.hand);
     windUniform.value = Math.min(.06, Math.abs(c.wind) * .0025);
-    renderer.toneMappingExposure = over ? .9 : evening ? 1.02 : 1.05;
-    if (evening) { sun.color.set('#ffa25c'); sun.intensity = 3.4; sun.position.set(-17, 7.5, -30); ambient.color.set('#8d84a3'); ambient.groundColor.set('#55483a'); ambient.intensity = .42; scene.environmentIntensity = .5; scene.backgroundIntensity = .42; scene.fog.color.set('#b98f6a'); scene.fog.near = 40; scene.fog.far = 220; }
-    else if (over) { sun.color.set('#e8ecec'); sun.intensity = .55; sun.position.set(-14, 30, -10); ambient.color.set('#cfd3d0'); ambient.groundColor.set('#59614c'); ambient.intensity = .95; scene.environmentIntensity = .95; scene.backgroundIntensity = .95; scene.fog.color.set('#c5cbc6'); scene.fog.near = 30; scene.fog.far = 180; }
-    else { sun.color.set('#fff4de'); sun.intensity = 4.2; sun.position.set(-24, 30, -6); ambient.color.set('#d7e6f5'); ambient.groundColor.set('#4f5d36'); ambient.intensity = .32; scene.environmentIntensity = .5; scene.backgroundIntensity = 1; scene.fog.color.set('#cdd9e2'); scene.fog.near = 45; scene.fog.far = 260; }
-    const cam = sun.shadow.camera; cam.left = -17; cam.right = 16; cam.top = evening ? 9 : 13; cam.bottom = evening ? -3 : -10; cam.near = 5; cam.far = 90; cam.updateProjectionMatrix();
+    renderer.toneMappingExposure = over ? .8 : evening ? .93 : .88;
+    if (evening) { sun.color.set('#ffa25c'); sun.intensity = 3.8; sun.position.set(-17, 7.5, -30); ambient.color.set('#a08ea0'); ambient.groundColor.set('#55483a'); ambient.intensity = .6; scene.environmentIntensity = .5; scene.backgroundIntensity = .6; scene.fog.color.set('#b98f6a'); scene.fog.near = 60; scene.fog.far = 380; }
+    else if (over) { sun.color.set('#e8ecec'); sun.intensity = .55; sun.position.set(-14, 30, -10); ambient.color.set('#cfd3d0'); ambient.groundColor.set('#59614c'); ambient.intensity = .95; scene.environmentIntensity = .95; scene.backgroundIntensity = .95; scene.fog.color.set('#c5cbc6'); scene.fog.near = 40; scene.fog.far = 300; }
+    else { sun.color.set('#fff4de'); sun.intensity = 4.2; sun.position.set(-22, 30, 12); ambient.color.set('#d7e6f5'); ambient.groundColor.set('#4f5d36'); ambient.intensity = .9; scene.environmentIntensity = .7; scene.backgroundIntensity = 1; scene.fog.color.set('#b9c7b4'); scene.fog.near = 60; scene.fog.far = 420; }
+    const cam = sun.shadow.camera; cam.left = evening ? -17 : -18; cam.right = evening ? 16 : 18; cam.top = evening ? 9 : 16; cam.bottom = evening ? -3 : -14; cam.near = 5; cam.far = evening ? 90 : 100; cam.updateProjectionMatrix();
     scene.background = scene.environment = over ? overcastLight : evening ? eveningLight : daylight;
     const worldAz = Math.atan2(sun.position.z, sun.position.x) * 180 / Math.PI, theta = THREE.MathUtils.degToRad(worldAz - HDR_SUN_AZIMUTH[c.weather]);
-    scene.backgroundRotation.set(0, theta, 0); scene.environmentRotation.set(0, theta, 0); scene.backgroundBlurriness = .04;
-    lampMat.emissiveIntensity = evening ? 3 : 0; for (const g of glows) g.material.opacity = evening ? .9 : 0; for (const s of spots) s.intensity = evening ? 1.3 : 0;
+    scene.backgroundRotation.set(0, theta, 0); scene.environmentRotation.set(0, theta, 0); scene.backgroundBlurriness = 0;
+    lampMat.emissiveIntensity = evening ? 3 : 0; for (const g of glows) g.material.opacity = evening ? .9 : 0; for (const s of spots) s.intensity = evening ? 4.2 : 0;
     sunGlow.position.copy(sun.position).normalize().multiplyScalar(300); sunGlow.scale.setScalar(evening ? 46 : 0); sunGlow.material.opacity = evening ? .8 : 0;
     wearUniform.value = pitchTexture(c.pitch);
-    pitchMat.color.set(c.pitch === 'green' ? '#8e956f' : c.pitch === 'soft' ? '#847862' : c.pitch === 'dry' ? '#b4a483' : '#a3946e');
-    pitchMat.normalScale.setScalar(c.pitch === 'dry' ? .2 : c.pitch === 'soft' ? .08 : .1);
+    pitchMat.color.set(c.pitch === 'green' ? '#c4c79c' : c.pitch === 'soft' ? '#aaa386' : c.pitch === 'dry' ? '#e8d6ab' : '#d6cba6');
+    pitchMat.normalScale.setScalar(c.pitch === 'dry' ? .45 : c.pitch === 'soft' ? .2 : .3);
     pitchMat.roughness = c.pitch === 'soft' ? (over ? .5 : .45) : .95; pitchMat.clearcoat = c.pitch === 'soft' ? .25 : 0;
     ballMat.roughness = .3 + c.age / 200; ballMat.clearcoat = Math.max(0, 1 - c.age / 50); ballMat.color.set(c.age > 40 ? '#6e1519' : '#a3131f');
   }
   setEnvironment({ weather: 'clear', pitch: 'hard', age: 8, wind: 0, hand: 'right' });
+  // The other surfaces' wear textures take a moment to paint; do it while the browser is idle rather than on a click or at run-up.
+  const idle = window.requestIdleCallback || (fn => setTimeout(fn, 200)), warm = ['hard', 'green', 'dry', 'soft'];
+  const warmNext = () => { const kind = warm.shift(); if (!kind) return; pitchTexture(kind); idle(warmNext); };
+  idle(warmNext);
   return { renderer, scene, camera, setEnvironment, setMenuFrame, updateBat, updateBall, updateGaze, animateBowler, getReleasePosition, pointerWorld, project, render, resetWicket, hitWicket };
 }

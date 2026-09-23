@@ -9,6 +9,7 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%230b120e'/%3E%3Cpath d='M20 46V20m12 26V20m12 26V20M18 17h28' stroke='%23c9f26b' stroke-width='5' stroke-linecap='round'/%3E%3C/svg%3E">
   <link rel="preload" href="./fonts/barlow-condensed-700.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="./fonts/newsreader-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="./style.css">
   <link rel="stylesheet" href="./menu.css">
 </head>
@@ -22,11 +23,11 @@
 
       <header class="hud hud-top">
         <div class="hud-cluster hud-left">
-          <a class="brand" href="./" aria-label="CricSim home"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M7 23V7m7 16V7m7 16V7M5 4h18"/></svg><span>Cric<b>Sim</b></span></a>
+          <a class="brand" href="./" aria-label="CricSim home"><svg viewBox="0 0 28 28" aria-hidden="true"><path d="M7 23V7m7 16V7m7 16V7M5 4h18"/></svg><span>CricSim<i aria-hidden="true">.</i></span></a>
           <div class="chips conditions-label"><span class="chip" id="scene-weather">Clear afternoon</span><span class="chip" id="scene-pitch">Hard &amp; true</span><span class="chip chip-mode" id="clock-label">Real time · 1×</span></div>
         </div>
         <div class="scorebug" role="group" aria-label="This session">
-          <div class="scorebug-time"><span class="live-dot" aria-hidden="true"></span><span id="session-time">00:00</span></div>
+          <div class="metric scorebug-time"><strong id="session-time">00:00</strong><span><i class="live-dot" aria-hidden="true"></i>Session</span></div>
           <div class="metric"><strong id="stat-balls">0</strong><span>Balls</span></div>
           <div class="metric"><strong id="stat-control">—</strong><span>Control</span></div>
           <div class="metric"><strong id="stat-clean">0</strong><span>Clean</span></div>
@@ -35,7 +36,7 @@
         <div class="hud-cluster hud-right">
           <button id="shortcuts-button" class="icon-button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (/)" aria-controls="shortcuts" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="2.75" y="6" width="18.5" height="12" rx="2.5"/><path d="M6.5 9.5h.01M10 9.5h.01M13.5 9.5h.01M17 9.5h.01M6.5 13h.01M17 13h.01M9 14.5h6"/></svg></button>
           <button id="help-button" class="icon-button" aria-label="How to play" title="How to play (?)"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.25"/><path d="M9.4 9.5a2.6 2.6 0 1 1 3.7 2.4c-.8.4-1.1.9-1.1 1.7M12 17h.01"/></svg></button>
-          <button id="sound-button" class="icon-button" aria-label="Mute sound" title="Toggle sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4V5Zm4 3a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></svg></button>
+          <button id="sound-button" class="icon-button" aria-label="Mute sound" title="Toggle sound"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-6 4H2v6h3l6 4V5Z"/><path class="waves" d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/><path class="mute-x" d="m16 9.5 5 5m0-5-5 5"/></svg></button>
           <button id="fullscreen-button" class="icon-button" aria-label="Enter fullscreen" title="Fullscreen"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg></button>
           <button id="settings-button" class="hud-button" aria-controls="setup" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10m4 0h2M4 17h4m4 0h8M4 12h16"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg><span>Conditions</span></button>
           <button id="pause-button" class="hud-button" aria-label="Pause"><span class="when-playing"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14M16 5v14"/></svg><span>Pause</span></span><span class="when-paused"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12-7.5Z"/></svg><span>Resume</span></span></button>
@@ -96,16 +97,19 @@
               <div><dt>Bowling</dt><dd id="menu-bowling">Right-arm pace</dd></div>
               <div><dt>Release</dt><dd id="menu-speed">140 <small>km/h</small></dd></div>
               <div><dt>Surface</dt><dd id="menu-surface">Hard &amp; true</dd></div>
+              <div class="menu-extra"><dt>Length · line</dt><dd id="menu-length">Good length · off stump</dd></div>
+              <div class="menu-extra"><dt>Crosswind</dt><dd id="menu-wind">Still air</dd></div>
+              <div class="menu-extra"><dt>Ball age</dt><dd id="menu-age">8 overs</dd></div>
               <div><dt>Practice speed</dt><dd id="menu-tempo">Real time</dd></div>
             </dl>
-            <button id="menu-conditions-button" class="menu-text-button" aria-controls="setup" aria-expanded="false">Change conditions <span aria-hidden="true">↗</span></button>
+            <button id="menu-conditions-button" class="menu-text-button" aria-controls="setup" aria-expanded="false"><span class="label">Change conditions</span><span aria-hidden="true">↗</span></button>
           </section>
           <div class="menu-start">
             <button id="start-button" class="menu-play" disabled><span>Take guard</span><kbd>Space</kbd></button>
-            <button id="start-slow-button" class="menu-learn" disabled>First time? Practise at half speed.</button>
+            <button id="start-slow-button" class="menu-learn" disabled><span>Practise at half speed</span><em>First time?</em></button>
           </div>
           <footer class="menu-foot">
-            <div class="menu-links"><button id="menu-help-button" class="menu-text-button">How to bat <span aria-hidden="true">?</span></button><button id="menu-shortcuts-button" class="menu-text-button" aria-controls="shortcuts" aria-expanded="false">Keyboard shortcuts <span aria-hidden="true">/</span></button></div>
+            <div class="menu-links"><button id="menu-help-button" class="menu-text-button"><span class="label">How to bat</span><span aria-hidden="true">?</span></button><button id="menu-shortcuts-button" class="menu-text-button" aria-controls="shortcuts" aria-expanded="false"><span class="label">Keyboard shortcuts</span><span aria-hidden="true">/</span></button></div>
             <p id="menu-gesture">Move to aim. Hold, then swipe.</p>
             <p id="asset-status" class="menu-status" role="status">Preparing the nets…</p>
           </footer>
@@ -213,15 +217,16 @@
     <div class="dialog-body">
       <p>Aim the ring at the point where you want to meet the ball. Hold to prepare the bat, then swipe. Your aim stays in place while the blade moves through it. The middle of the stroke meter is the contact zone.</p>
       <div class="help-grid">
-        <b><kbd>Mouse</kbd></b><span>Move the contact ring across the crease and up or down. Place it before you start the stroke.</span>
-        <b><kbd>LMB</kbd> + swipe</b><span>Swipe up for a drive; diagonally to angle it; sideways for a cut, pull or low sweep. A quicker swipe gives more bat speed. Once the swing is a quarter of the way the blade commits and carries through on its own, so a flick works. Let go before that to pull out of the shot.</span>
-        <b><kbd>RMB</kbd></b><span>Hold for a soft-handed block. Move the blade to meet the ball. Release before the ball passes to leave; a held block that misses is a missed shot.</span>
-        <b><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></b><span>Choose Grounded, Lofted or Defend. With Defend selected, hold the mouse or touch to block. You can also use the three buttons beside Next ball.</span>
-        <b>Fine adjustment</b><span><kbd>A</kbd><kbd>D</kbd> adjust the face, <kbd>W</kbd><kbd>S</kbd> adjust loft, and <kbd>Q</kbd><kbd>E</kbd> adjust blade roll. <kbd>C</kbd> clears these adjustments. Shot shape works without them.</span>
-        <b><kbd>Space</kbd> <kbd>P</kbd></b><span>Bowl the next ball · pause or resume. Conditions apply to the next delivery.</span>
-        <b><kbd>/</kbd></b><span>Open the shortcuts list. Every condition has a key (bowler, length, line, surface, speed and more) and each key can be switched off.</span>
+        <b class="pointer-coarse"><kbd>Touch</kbd></b><span class="pointer-coarse">Place a finger on the contact point, then swipe up for a drive or across for a cut or pull. A quicker swipe gives more bat speed. Once the swing is a quarter of the way the blade commits and carries through on its own. Lift off before that to pull out of the shot. Select Defend and hold for a block.</span>
+        <b class="pointer-fine"><kbd>Mouse</kbd></b><span class="pointer-fine">Move the contact ring across the crease and up or down. Place it before you start the stroke.</span>
+        <b class="pointer-fine"><kbd>LMB</kbd> + swipe</b><span class="pointer-fine">Swipe up for a drive; diagonally to angle it; sideways for a cut, pull or low sweep. A quicker swipe gives more bat speed. Once the swing is a quarter of the way the blade commits and carries through on its own, so a flick works. Let go before that to pull out of the shot.</span>
+        <b class="pointer-fine"><kbd>RMB</kbd></b><span class="pointer-fine">Hold for a soft-handed block. Move the blade to meet the ball. Release before the ball passes to leave; a held block that misses is a missed shot.</span>
+        <b class="pointer-fine"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></b><b class="pointer-coarse">Stroke buttons</b><span>Choose Grounded, Lofted or Defend. With Defend selected, hold the mouse or touch to block. You can also use the three buttons beside Next ball.</span>
+        <b class="pointer-fine">Fine adjustment</b><span class="pointer-fine"><kbd>A</kbd><kbd>D</kbd> adjust the face, <kbd>W</kbd><kbd>S</kbd> adjust loft, and <kbd>Q</kbd><kbd>E</kbd> adjust blade roll. <kbd>C</kbd> clears these adjustments. Shot shape works without them.</span>
+        <b class="pointer-fine"><kbd>Space</kbd> <kbd>P</kbd></b><span class="pointer-fine">Bowl the next ball · pause or resume. Conditions apply to the next delivery.</span>
+        <b class="pointer-fine"><kbd>/</kbd></b><span class="pointer-fine">Open the shortcuts list. Every condition has a key (bowler, length, line, surface, speed and more) and each key can be switched off.</span>
       </div>
-      <p class="help-note">Touch: place a finger at the contact point, then swipe up or across. Select Defend for a block. Try half speed and middle-stump deliveries while learning. Release before the ball passes to leave, including after starting a swipe. A safe leave counts as control; holding through a swing that misses does not. The bat keeps its momentum after a committed flick, so any contact still counts as a shot. Being bowled is always a dismissal. On a full miss, the result card shows the ball’s direction and closest gap from the blade. The ball and bat keep their physical width; the game does not aim for you.</p>
+      <p class="help-note">Try half speed and middle-stump deliveries while learning. Release before the ball passes to leave, including after starting a swipe. A safe leave counts as control; holding through a swing that misses does not. The bat keeps its momentum after a committed flick, so any contact still counts as a shot. Being bowled is always a dismissal. On a full miss, the result card shows the ball’s direction and closest gap from the blade. The ball and bat keep their physical width; the game does not aim for you.</p>
     </div>
     <div class="dialog-foot"><button id="help-done" class="primary-button">Got it. Let’s bat.</button></div>
   </dialog>
