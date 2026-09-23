@@ -127,7 +127,7 @@ function onResult(event){
   setPhase('result');resultRealTime=0;
   const bowled=event.result==='Bowled',title=delivery.hit?event.result:missTitle(delivery,event.result);
   const card=$('shot-feedback');card.dataset.outcome=title.toLowerCase();card.classList.remove('hidden');
-  $('feedback-label').textContent='Delivery '+String(ballsFaced).padStart(2,'0');$('feedback-title').textContent=title;
+  $('feedback-label').textContent='Delivery '+String(ballsFaced).padStart(2,'0')+' · '+Math.round(delivery.speed)+' km/h';$('feedback-title').textContent=title;
   const feedback=describeShot(delivery.stroke,delivery.contact,bowled);
   $('feedback-detail').textContent=feedback.detail;
   $('feedback-timing').textContent=feedback.timing;

@@ -133,7 +133,7 @@ body.paused .live-dot{background:var(--fg-3)}
 /* Phase choreography: the eye is free in flight, the HUD returns for the result. */
 [data-phase=flight] :is(.conditions-label,.scorebug){opacity:.35}
 [data-phase=flight] .delivery-readout{opacity:.5}
-[data-phase=flight] .batting-panel{background:#0b151080;border-color:#ffffff12}
+[data-phase=flight] .batting-panel{background:#0b151080;border-color:#ffffff12;backdrop-filter:none;-webkit-backdrop-filter:none}
 [data-phase=flight] .shot-intents button:not([aria-pressed=true]){opacity:.55}
 .batting-panel{transition:background var(--d-base),border-color var(--d-base)}
 .shot-intents button{transition:opacity var(--d-base),background var(--d-fast)}
@@ -319,12 +319,18 @@ body:has(#viewport[data-phase=intro]) dialog::backdrop{background:#263a3180}
   .viewport:has(.shot-feedback:not(.hidden)) .delivery-info{opacity:0;visibility:hidden}
   .viewport:has(.shot-feedback:not(.hidden)) .notice{top:calc(var(--pad-t) + var(--hud-top,60px) + 14px);bottom:auto}
 }
-@media(max-width:1100px){
+@media(max-width:1280px){
   .metric{padding:2px 10px;min-width:56px}
   .metric-exit{min-width:84px}
   .metric.scorebug-time{min-width:64px}
   .metric>span{letter-spacing:.08em}
   .metric strong{font-size:22px}
+}
+/* Small laptops and tablets: the stroke panel stacks above Next ball at the right edge, clear of the off-stump contact point. */
+@media(max-width:1280px) and (min-width:921px){
+  .hud-bottom-right{flex-direction:column;align-items:flex-end;gap:8px}
+}
+@media(max-width:1100px){
   .hud-button span:not(.when-playing):not(.when-paused){display:none}
   .hud-button{padding:0 10px}
   .chip-mode{display:none}
@@ -392,7 +398,7 @@ body:has(#viewport[data-phase=intro]) dialog::backdrop{background:#263a3180}
   .help-grid{grid-template-columns:1fr;gap:6px 0}
   .help-grid span{margin-bottom:8px}
 }
-@media(max-height:520px) and (min-width:600px){
+@media(max-height:520px) and (min-width:560px){
   .conditions-label{display:none}
   [data-timescale="0.5"] .conditions-label,[data-timescale="0.75"] .conditions-label{display:flex}
   .conditions-label .chip:not(.chip-mode){display:none}
@@ -400,9 +406,10 @@ body:has(#viewport[data-phase=intro]) dialog::backdrop{background:#263a3180}
   .hud-bottom-right{display:flex;flex-direction:column;align-items:stretch;gap:8px;width:250px;flex:0 0 auto}
   .batting-panel{width:auto;padding:8px}
   .next-button{justify-content:center}
-  [data-phase=flight] .batting-panel{backdrop-filter:none;-webkit-backdrop-filter:none}
   #delivery-state{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .viewport:has(.shot-feedback:not(.hidden)) .delivery-info{opacity:0;visibility:hidden}
+  .viewport:has(.shot-feedback:not(.hidden)) .notice{left:auto;right:var(--pad-r);transform:none;bottom:calc(var(--pad-b) + var(--hud-bottom,150px) + 8px);animation:fade-in var(--d-base) var(--ease-out)}
+  .setup-panel :is(.panel-heading,.settings-scroll,.settings-footer){padding-right:max(20px,env(safe-area-inset-right,0px))}
   .stroke-heading span,.coach-tip,.scorebug-time,.metric-exit{display:none}
   .scorebug-time+.metric{border-left:0}
   .stroke-heading strong{font-size:19px}
@@ -421,6 +428,12 @@ body:has(#viewport[data-phase=intro]) dialog::backdrop{background:#263a3180}
   .dialog-foot{padding:8px 24px 12px}
   .panel-heading{padding:14px 20px 8px}
   .panel-heading h2{font-size:28px}
+}
+@media(max-height:520px) and (min-width:560px) and (max-width:820px){
+  .hud-top{flex-wrap:nowrap}
+  .scorebug{order:0;width:auto;flex:0 1 auto;padding:3px 2px}
+  .metric,.metric-exit,.metric.scorebug-time{min-width:0;padding:1px 12px}
+  .metric strong{font-size:19px}
 }
 @media(pointer:coarse){.primary-button kbd,.next-button kbd,.shot-intents kbd{display:none}}
 @media(max-height:520px) and (max-width:780px),(max-width:340px){.delivery-separator,#delivery-style{display:none}}
