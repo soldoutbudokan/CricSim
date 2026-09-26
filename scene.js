@@ -1,12 +1,12 @@
 // CricSim scene: procedural textures, merged/instanced geometry, first-person batter rig.
 // Every texture in here is generated on a canvas at load time; the only files loaded are
 // the CC0 Poly Haven ground maps and HDR skies. No per-frame allocations in hot paths.
-import * as THREE from './vendor/three.module.js?v=85c5bf6cbdfe4cef';
-import { HDRLoader } from './vendor/HDRLoader.js?v=85c5bf6cbdfe4cef';
-import { createBowler } from './bowler.js?v=85c5bf6cbdfe4cef';
-import { batBasis, random } from './physics.js?v=85c5bf6cbdfe4cef';
-import { CONTACT_Z } from './bat-control.js?v=85c5bf6cbdfe4cef';
-import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js?v=85c5bf6cbdfe4cef';
+import * as THREE from './vendor/three.module.js?v=982a6fb85e6a87c6';
+import { HDRLoader } from './vendor/HDRLoader.js?v=982a6fb85e6a87c6';
+import { createBowler } from './bowler.js?v=982a6fb85e6a87c6';
+import { batBasis, random } from './physics.js?v=982a6fb85e6a87c6';
+import { CONTACT_Z } from './bat-control.js?v=982a6fb85e6a87c6';
+import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js?v=982a6fb85e6a87c6';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
@@ -174,7 +174,7 @@ export async function createScene(canvas, onProgress = () => {}, initialQuality 
   renderer.shadowMap.enabled = quality.shadows; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
   renderer.info.autoReset = false;
   renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.NeutralToneMapping; renderer.toneMappingExposure = .88;
-  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+  const maxAniso = renderer.capabilities.getMaxAnisotropy(), gl = renderer.getContext();
   const loader = new THREE.TextureLoader(), hdrLoader = new HDRLoader();
   let loaded = 0;
   const track = promise => promise.then(asset => { onProgress(`Loading the ground and light · ${++loaded}/9`); return asset; });
@@ -761,8 +761,11 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     } else {
       renderer.setScissorTest(false); renderer.setViewport(0, 0, width, height); renderer.render(scene, camera);
     }
-    // The opaque context owns canvas alpha. Keep Three's GL state cache intact
-    // instead of clearing and rebuilding it after every single frame.
+    // Three.js always requests an alpha drawing buffer, and alpha-to-coverage grass and chalk
+    // leave partial alpha in it, so fill the alpha channel or the page tints their edges. Only
+    // the mask changes here; the clear colour is Three's own opaque black, so its state cache
+    // stays valid without a full resetState() every frame.
+    gl.colorMask(false, false, false, true); gl.clear(gl.COLOR_BUFFER_BIT); gl.colorMask(true, true, true, true);
     renderedFrames++;
   }
   function setQuality(profile) {
