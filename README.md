@@ -6,7 +6,7 @@ A first-person cricket nets simulator. Aim a contact point and click or tap to p
 
 [Play CricSim on GitHub Pages](https://soldoutbudokan.github.io/CricSim/). Public access; no account or sign-in required. GitHub Pages is the primary and only public game host.
 
-The `Deploy Production` workflow publishes `dist` to `gh-pages` after tests pass, and Pages serves **Deploy from a branch → gh-pages → / (root)**. Every push to `main` publishes automatically. The old ChatGPT-hosted copy is retired from public use; development and publication use this repository. Preferences are stored per browser origin, so settings from the old address do not transfer automatically. The game has no server-side accounts or saved innings to migrate.
+The `Deploy Production` workflow tests the source, runs `npm run build:pages`, and publishes the generated `.pages-dist` folder to `gh-pages`. Pages serves **Deploy from a branch → gh-pages → / (root)**. Every push to `main` publishes automatically. The old ChatGPT-hosted copy is retired from public use; development and publication use this repository. Preferences are stored per browser origin, so settings from the old address do not transfer automatically. The game has no server-side accounts or saved innings to migrate.
 
 ## Run
 
@@ -26,6 +26,8 @@ npm run dev
 ```
 
 The game remains plain static files. Vite is a development-only dependency.
+
+For the production copy, run `npm run build:pages`. It copies `dist` into `.pages-dist` and gives local scripts, their imports and stylesheets one content-based release version. This prevents a fresh page from reusing older cached code. Fonts and textures keep their existing cache URLs. The source in `dist` stays unchanged.
 
 ## Graphics and multitasking
 
@@ -159,11 +161,11 @@ npm test
 npm run check
 ```
 
-`dist` is portable to any static host and uses relative asset paths, including under GitHub Pages' `/CricSim/` prefix. Publication is configured only by `.github/workflows/deploy-prod.yml`.
+`dist` is portable to any static host and uses relative asset paths, including under GitHub Pages' `/CricSim/` prefix. Publication is configured by `.github/workflows/deploy-prod.yml`; `scripts/build-pages.mjs` prepares the versioned static output.
 
 ### Verification status, 2026-09-26
 
-All 92 automated tests, 19 entrypoint lifecycle checks and JavaScript syntax checks pass. Standard coverage includes single-click release, aim correction and locking, no held-button repeats, cancellation, both stances, all lengths, bowling speeds and lines, distinct grounded/lofted launches, and unchanged physical contact dimensions. Manual tests continue to pass. Feedback tests preserve committed Standard misses and frozen results, and separate timing from line/height errors.
+All 95 automated tests, 19 entrypoint lifecycle checks and JavaScript syntax checks pass. Standard coverage includes single-click release, aim correction and locking, no held-button repeats, cancellation, both stances, all lengths, bowling speeds and lines, distinct grounded/lofted launches, and unchanged physical contact dimensions. Manual tests continue to pass. Three build tests check versioned imports, deterministic releases, unchanged static assets and loading fresh dependencies with older modules already cached. Feedback tests preserve committed Standard misses and frozen results, and separate timing from line/height errors.
 
 A deterministic 140 km/h reference delivery with exact arrival-point aim gives clean-contact timing windows of 150 ms grounded and 130 ms lofted, compared with about 20 ms for the previous fast swipe. These are simulation results, not measured player success rates. The player still has to read the ball and aim.
 

@@ -6,6 +6,7 @@
   "description": "First-person cricket nets practice simulator",
   "scripts": {
     "dev": "vite",
+    "build:pages": "node scripts/build-pages.mjs",
     "test": "node --test tests/*.test.mjs && npm run test:runtime",
     "test:runtime": "node --experimental-vm-modules tests/runtime-smoke.mjs",
     "check": "node --check dist/game.js && node --check dist/scene.js && node --check dist/bowler.js && node --check dist/render-policy.js && node --check dist/physics.js && node --check dist/bat-control.js && node --check dist/batter-motion.js && node --check dist/shot-feedback.js && node --check dist/shortcuts.js && node --check dist/audio.js"

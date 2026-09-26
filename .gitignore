@@ -5,6 +5,7 @@ node_modules/
 .env.*
 !.env.example
 artifacts/
+.pages-dist/
 
 # Local agent worktrees
 .claude/worktrees/
