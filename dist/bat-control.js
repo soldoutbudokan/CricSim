@@ -7,29 +7,32 @@ export const CONTACT_Z = -0.22;
 // momentum through contact, the way a real bat does once the hands go.
 export const COMMIT = 0.25;
 export const SWIPE_LENGTHS = { short: 0.7, standard: 1, long: 1.35 };
+// Standard input separates the player's decisions (aim, timing and intent)
+// from the physical motion. These times never depend on pointer speed or a ball.
+export const STANDARD_STROKE = Object.freeze({ contactTime: 0.10, aimLockTime: 0.065, duration: 0.32, activeFrom: 0.045, activeUntil: 0.22 });
 const LOCK_DISTANCE = 0.06, TRACK_TIME = 0.025, ACCEL = 360, CARRY_DECAY = 0.11, COMPLETE_RATE = 2.5, FOLLOW_RATE = 3.5, LIFT_TIME = 0.09;
 const mix = (a, b, t) => a + (b - a) * t;
 const smooth = t => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
 const curve = (a, b, start, end, t) => (2*t*t*t-3*t*t+1)*a+(t*t*t-2*t*t+t)*start+(-2*t*t*t+3*t*t)*b+(t*t*t-t*t)*end;
 
-export function createBatControl(hand = 'right') {
+export function createBatControl(hand = 'right', mode = 'manual') {
   const sign = hand === 'left' ? -1 : 1, x = sign * 0.25;
   return {
-    hand: sign, intent: 'grounded', phase: 'guard', swipe: 1,
+    hand: sign, intent: 'grounded', phase: 'guard', swipe: 1, mode: mode === 'standard' ? 'standard' : 'manual',
     pose: { x, y: 0.48, z: 0.06, yaw: 0, loft: -0.24, roll: -sign * 0.18,
-      defending: false, active: false, progress: 0, weight: 0, turn: 0 },
+      defending: false, active: false, progress: 0, strokeTime: 0, weight: 0, turn: 0 },
     target: { x, y: 0.48 }, pointer: { x, y: 0.48 }, origin: { x, y: 0.48 },
     trim: { yaw: 0, loft: 0, roll: 0 },
     direction: { x: 0, y: 1 }, directionLocked: false,
-    held: false, defending: false, attempted: false, committed: false,
+    held: false, defending: false, attempted: false, committed: false, cancelled: false,
     travel: 0, progress: 0, velocity: 0, carry: 0, lift: 0,
-    speed: 0, releaseTime: 0,
+    speed: 0, releaseTime: 0, strokeTime: 0, aimLocked: false,
   };
 }
 
 // Keep pose/target references stable for the renderer and game loop.
 export function resetBatControl(control, hand = control.hand < 0 ? 'left' : 'right') {
-  const fresh = createBatControl(hand), { pose, target, intent, swipe } = control;
+  const fresh = createBatControl(hand, control.mode), { pose, target, intent, swipe } = control;
   Object.assign(pose, fresh.pose); Object.assign(target, fresh.target);
   Object.assign(control, fresh, { pose, target, intent, swipe });
 }
@@ -41,6 +44,12 @@ export function setSwipeLength(control, factor) {
   if (Number.isFinite(factor)) control.swipe = clamp(factor, 0.4, 2.5);
 }
 
+export function setBatMode(control, mode) {
+  if (!['standard', 'manual'].includes(mode) || mode === control.mode) return;
+  releaseStroke(control, true);
+  control.mode = mode;
+}
+
 export function setBatIntent(control, intent) {
   if (!['grounded', 'lofted', 'defend'].includes(intent)) return;
   releaseStroke(control, true);
@@ -48,10 +57,13 @@ export function setBatIntent(control, intent) {
 }
 
 export function startStroke(control, defend = control.intent === 'defend') {
+  // A held button or repeated pointer-down cannot restart an automatic attack.
+  if (control.mode === 'standard' && (control.held || standardSwinging(control))) return;
   control.held = !defend; control.defending = defend; control.attempted = true;
+  control.cancelled = false; control.strokeTime = 0; control.aimLocked = false;
   control.phase = defend ? 'defend' : 'load';
   control.origin = { ...control.pointer };
-  control.direction = { x: 0, y: 1 }; control.directionLocked = false; control.committed = false;
+  control.direction = { x: 0, y: 1 }; control.directionLocked = false; control.committed = control.mode === 'standard' && !defend;
   control.travel = control.progress = control.velocity = control.carry = control.lift = control.releaseTime = 0;
 }
 
@@ -60,6 +72,13 @@ export function startStroke(control, defend = control.intent === 'defend') {
 export function moveBatTarget(control, x, y, pointer = { x, y }) {
   if (![x, y, pointer.x, pointer.y].every(Number.isFinite)) return;
   control.pointer = { ...pointer };
+  if (control.mode === 'standard') {
+    // Releasing a tap does not turn an in-flight swing back into free aiming.
+    if (standardSwinging(control) && control.aimLocked) return;
+    control.target.x = clamp(x, -BAT_LIMITS.x, BAT_LIMITS.x);
+    control.target.y = clamp(y, BAT_LIMITS.minY, BAT_LIMITS.maxY);
+    return;
+  }
   if (!control.held) {
     control.target.x = clamp(x, -BAT_LIMITS.x, BAT_LIMITS.x);
     control.target.y = clamp(y, BAT_LIMITS.minY, BAT_LIMITS.maxY);
@@ -78,6 +97,18 @@ export function moveBatTarget(control, x, y, pointer = { x, y }) {
 }
 
 export function releaseStroke(control, cancel = false) {
+  if (control.mode === 'standard') {
+    const swinging = standardSwinging(control), wasDefending = control.defending;
+    control.held = control.defending = false;
+    if (cancel) {
+      control.cancelled = true; control.phase = 'recover'; control.releaseTime = 0;
+      control.pose.active = false; control.velocity = control.carry = 0;
+    } else if (swinging) control.phase = 'follow';
+    else if (wasDefending) { control.phase = 'recover'; control.releaseTime = 0; control.pose.active = false; }
+    control.pose.defending = false;
+    return;
+  }
+  if (cancel) control.cancelled = true;
   if (!control.held && !control.defending) {
     if (cancel) { control.phase = 'recover'; control.releaseTime = 0; control.pose.active = false; }
     return;
@@ -106,7 +137,58 @@ export function shotName(control) {
 
 export function strokeSnapshot(control) {
   return { name: shotName(control), progress: control.pose.progress, phase: control.phase,
-    attempted: control.attempted, held: control.held, defending: control.defending, committed: control.committed, active: control.pose.active };
+    attempted: control.attempted, held: control.held, defending: control.defending, committed: control.committed, active: control.pose.active,
+    mode: control.mode, cancelled: control.cancelled, elapsed: control.pose.strokeTime, idealContactTime: STANDARD_STROKE.contactTime };
+}
+
+const standardSwinging = control => control.mode === 'standard' && control.committed && !control.cancelled && ['load', 'swing', 'follow'].includes(control.phase);
+
+// The preview uses the same finite blade, orientation and floor constraint as
+// the stroke. It receives no trajectory information and never seeks the ball.
+export function contactPreview(control) {
+  const defending = control.defending || control.intent === 'defend';
+  const pose = defending ? { ...guardPose(control), z: CONTACT_Z, loft: -0.04, roll: -control.hand * 0.04 }
+    : control.mode === 'standard' ? standardPose(control, STANDARD_STROKE.contactTime) : strokePose(control, 0.5);
+  for (const axis of ['yaw', 'loft', 'roll']) pose[axis] = clamp(pose[axis] + control.trim[axis], axis === 'roll' ? -2 : -1.2, axis === 'roll' ? 2 : 1.2);
+  const { u, w } = batBasis(pose);
+  pose.y = Math.max(pose.y, 0.068 + 0.31 * Math.abs(u.y) + 0.054 * Math.abs(w.y));
+  return pose;
+}
+
+function standardPose(control, time) {
+  const { target, hand, intent } = control;
+  const load = smooth(time / 0.06), finish = smooth((time - 0.18) / 0.14);
+  const contactLoft = intent === 'lofted' ? 0.32 : -0.08;
+  // The blade stays on its chosen line with a stable face through contact.
+  // Forward travel supplies real bat speed; no extra power or collision area is
+  // added in the physics engine. The late finish then lifts into the follow-through.
+  const z = time < 0.035 ? curve(0.06, 0.17, 0, 0, time / 0.035)
+    : time <= 0.18 ? 0.17 - (time - 0.035) * 6 : mix(-0.70, -0.43, finish);
+  return {
+    x: target.x - hand * 0.09 * (1 - load) + hand * 0.19 * finish,
+    y: target.y + 0.16 * (1 - load) + 0.48 * finish,
+    z,
+    yaw: mix(-hand * 0.1, 0, load) + hand * 0.20 * finish,
+    loft: mix(-0.80, contactLoft, load) + (0.95 - contactLoft) * finish,
+    roll: mix(-hand * 0.30, -hand * 0.04, load) + hand * 0.50 * finish,
+    weight: load * (target.y < 0.9 ? 1 : -0.45), turn: 0,
+  };
+}
+
+function advanceStandardStroke(control, dt) {
+  if (control.attempted && control.committed && !control.cancelled) control.strokeTime += dt;
+  if (!standardSwinging(control)) return;
+  const time = Math.min(STANDARD_STROKE.duration, control.strokeTime);
+  control.aimLocked = time >= STANDARD_STROKE.aimLockTime;
+  control.directionLocked = control.aimLocked;
+  control.progress = time <= STANDARD_STROKE.contactTime ? time / STANDARD_STROKE.contactTime * 0.5
+    : 0.5 + (time - STANDARD_STROKE.contactTime) / (STANDARD_STROKE.duration - STANDARD_STROKE.contactTime) * 0.5;
+  control.lift = 1;
+  control.phase = control.held ? time < STANDARD_STROKE.aimLockTime ? 'load' : 'swing' : 'follow';
+  if (time >= STANDARD_STROKE.duration) {
+    control.phase = 'recover'; control.releaseTime = 0; control.pose.active = false;
+    control.velocity = control.carry = 0;
+  }
 }
 
 function guardPose(control) {
@@ -149,6 +231,7 @@ function strokePose(control, progress) {
 // the swing is. Its velocity is bounded and its acceleration is bounded, so a
 // staircase of pointer events can never show up as a stutter in the bat.
 function advanceStroke(control, dt) {
+  if (control.mode === 'standard') { advanceStandardStroke(control, dt); return; }
   const limit = BAT_LIMITS.travel * control.swipe;
   let v = control.velocity;
   if (control.held) {
@@ -180,11 +263,11 @@ export function stepBat(control, dt, keys = new Set()) {
   trim.loft = clamp(trim.loft + direction('w', 's') * dt * 0.7, -0.45, 0.75);
   trim.roll = clamp(trim.roll + direction('e', 'q') * dt * 1.5, -1.5, 1.5);
   advanceStroke(control, dt);
-  const swinging = control.held || control.phase === 'follow';
+  const swinging = control.mode === 'standard' ? standardSwinging(control) : control.held || control.phase === 'follow';
   let goal;
   if (swinging) {
     // The backlift rises over a few frames after the press rather than snapping.
-    const guard = guardPose(control), stroke = strokePose(control, control.progress), lift = smooth(control.lift);
+    const guard = guardPose(control), stroke = control.mode === 'standard' ? standardPose(control, control.strokeTime) : strokePose(control, control.progress), lift = smooth(control.lift);
     goal = {}; for (const key of Object.keys(stroke)) goal[key] = mix(guard[key], stroke[key], lift);
   } else {
     goal = guardPose(control);
@@ -206,8 +289,9 @@ export function stepBat(control, dt, keys = new Set()) {
   p.x += dx * scale; p.y += dy * scale; p.z += dz * scale;
   p.y = Math.max(floor, p.y);
   p.weight = mix(p.weight, goal.weight, blend); p.turn = mix(p.turn, goal.turn, blend);
-  p.progress = control.progress; p.defending = control.defending;
-  p.active = control.defending || (swinging && control.progress > 0.08);
+  p.progress = control.progress; p.strokeTime = control.strokeTime; p.defending = control.defending;
+  p.active = control.defending || (swinging && (control.mode === 'standard'
+    ? control.strokeTime >= STANDARD_STROKE.activeFrom && control.strokeTime <= STANDARD_STROKE.activeUntil : control.progress > 0.08));
   control.speed = Math.hypot(p.x - before.x, p.y - before.y, p.z - before.z) / dt;
   return before;
 }
