@@ -1,14 +1,12 @@
 # CricSim
 
-A first-person cricket nets simulator. Aim a contact point and swipe through drives, cuts, pulls and sweeps with a regulation-width bat. Face pace or spin and change the pitch and conditions. Practice only: no teams, innings, runs, or match modes.
+A first-person cricket nets simulator. Aim a contact point and click or tap to play a complete attacking stroke with a regulation-width bat. Standard controls handle the swing; optional Manual controls keep gesture-driven drives, cuts, pulls and sweeps. Face pace or spin and change the pitch and conditions. Practice only: no teams, innings, runs, or match modes.
 
 ## Play
 
-[Play CricSim](https://cricsim-nets.soldoutbudokan.chatgpt.site). Public access; no account or sign-in required.
+[Play CricSim on GitHub Pages](https://soldoutbudokan.github.io/CricSim/). Public access; no account or sign-in required. GitHub Pages is the primary and only public game host.
 
-A GitHub Pages mirror runs at https://soldoutbudokan.github.io/CricSim/.
-
-The `Deploy Production` workflow publishes `dist` to `gh-pages` after tests pass, and Pages serves **Deploy from a branch → gh-pages → / (root)**. Every push to `main` publishes automatically. The ChatGPT-hosted site is published separately from its own repository, so it updates only when that repository takes the new `main` and publishes.
+The `Deploy Production` workflow publishes `dist` to `gh-pages` after tests pass, and Pages serves **Deploy from a branch → gh-pages → / (root)**. Every push to `main` publishes automatically. The old ChatGPT-hosted copy is retired from public use; development and publication use this repository. Preferences are stored per browser origin, so settings from the old address do not transfer automatically. The game has no server-side accounts or saved innings to migrate.
 
 ## Run
 
@@ -48,13 +46,18 @@ These are rendering budgets, not guaranteed frame rates. At a 1440×900 CSS-pixe
 
 ## Controls
 
+**Standard** is the default. Aim the blade outline where the ball will arrive, choose Grounded or Lofted, then click or tap. Each press commits one complete stroke with repeatable power; you do not need a swipe. The bat reaches the contact area about 100 ms after pressing at normal speed (200 ms at half speed). You can correct your aim during the first 65 ms, then it locks. Holding does not repeat the stroke. To leave a ball, do not start an attack.
+
+Choose **Conditions → Practice tools → Batting controls → Manual** for the original swipe controls. Your choice is saved on this device. Both modes use the same regulation-width bat and ball physics. Neither tracks the ball or enlarges the contact area.
+
 | Input | Action |
 | --- | --- |
-| Mouse movement | Aim the contact ring across the crease and vertically |
-| Left click + upward swipe | Lift the bat, then drive through the aimed point |
-| Left click + sideways swipe | Cut or pull a high ball; sweep a low ball |
-| Diagonal swipe | Angle a drive; swipe speed controls bat speed |
-| Release | Let go before the ball passes to leave. A committed flick still carries through and can hit the ball; if it makes no contact and the stumps survive, it counts as a leave. |
+| Mouse movement | Aim the blade outline across the crease and vertically |
+| Left click / tap (Standard) | Play one complete Grounded or Lofted stroke |
+| Left click + upward swipe (Manual) | Lift the bat, then drive through the aimed point |
+| Left click + sideways swipe (Manual) | Cut or pull a high ball; sweep a low ball |
+| Diagonal swipe (Manual) | Angle a drive; swipe speed controls bat speed |
+| Release | Standard attacks finish and remain shot attempts. Manual retains release-to-leave feedback; a committed flick can still hit. Release a held block to leave in either mode. |
 | Right click | Hold a soft-handed block and move it onto the ball's line. Release before the ball passes to leave. |
 | 1 / 2 / 3 or shot buttons | Choose Grounded, Lofted or Defend; Defend also works with left click or touch |
 | A / D | Fine adjustment of the bat face |
@@ -70,7 +73,7 @@ These are rendering budgets, not guaranteed frame rates. At a 1440×900 CSS-pixe
 | U · O | Cycle surface · sky and light |
 | − / = | Crosswind −5 / +5 km/h |
 | , / . | Ball age −10 / +10 overs |
-| T · V | Cycle simulation speed · swipe length |
+| T · V | Cycle simulation speed · Manual swipe length |
 | G · X | Toggle the bat guide and ball trail · continuous deliveries |
 | M · F · N | Sound · fullscreen · the conditions drawer |
 | / | The shortcuts sidebar, where every key above can be switched off |
@@ -78,9 +81,9 @@ These are rendering budgets, not guaranteed frame rates. At a 1440×900 CSS-pixe
 
 Every key is listed in the shortcuts sidebar with a switch. Turn off any that clash with your setup; the buttons and menus keep working. Choices are saved on the device. A key that changes a condition shows a short notice under the scorebug and applies to the next ball.
 
-On touch, put a finger at the contact point and swipe up or across. Select Defend and hold for a block. All shot choices work without a keyboard. **Practise at half speed** on the opening screen starts with slower play and middle-stump deliveries.
+On touch in Standard, tap the contact point to aim and swing. In Manual, put a finger at the contact point and swipe up or across. Select Defend and hold for a block. All shot choices work without a keyboard. **Practise at half speed** on the opening screen starts with slower play and middle-stump deliveries.
 
-Aim before pressing: the contact ring stays anchored during the swipe. Holding without moving prepares the backlift; it does not swing. The backlift follows the hand both ways until the swing commits a quarter of the way through; from there the blade keeps the pace the hand gave it, eases off rather than stopping dead when the pointer stalls, and never runs backwards. Letting go after the commit point finishes the stroke with the blade live; letting go before it pulls out. The middle section of the stroke meter shows the contact portion of the arc. The bat's path is shaped by your gesture, never by the incoming ball. Guard, cancelled strokes and the return to guard cannot score accidental hits. **Swipe length** in Practice tools sets how far the hand travels for a full stroke.
+In Manual, aim before pressing: the contact ring stays anchored during the swipe. Holding without moving prepares the backlift; it does not swing. The backlift follows the hand both ways until the swing commits a quarter of the way through; from there the blade keeps the pace the hand gave it, eases off rather than stopping dead when the pointer stalls, and never runs backwards. Letting go after the commit point finishes the stroke with the blade live; letting go before it pulls out. The middle section of the stroke meter shows the contact portion of the arc. The bat's path is shaped by your gesture, never by the incoming ball. Guard, cancelled strokes and the return to guard cannot score accidental hits. **Swipe length** in Practice tools sets how far the hand travels for a full stroke.
 
 ## Interface
 
@@ -90,12 +93,12 @@ Aim before pressing: the contact ring stays anchored during the swipe. Holding w
 - The 3D view fills the window. Conditions, session statistics and delivery information stay at the edges. The scorebug keeps fixed widths, so it does not shift as figures change. Shot intent, stroke name and a compact stroke meter replace the three constantly changing angle readouts; fine adjustments appear only when used.
 - Taking guard leaves you at the crease; Space or **Next ball** starts the bowler. Short coaching lines appear under the readout for the first three balls. On phones and tablets the readout sits on a glass panel so it stays legible over the pitch, and steps aside while the ball is in flight so it never hides the ball at the crease. On landscape phones, tablets and laptops up to 1280 px wide the stroke panel stacks above **Next ball** at the right edge, clear of the crease line and the off-stump contact point; on landscape phones the scorebug joins the top row so it never covers the bowler's release. The HUD keeps clear of notches and the home indicator.
 - On desktop the result card rises as a lower third in place of the delivery readout, with the delivered pace in its label, clear of the bowler and the ball's path; on phones and short landscape screens it stays compact under the scorebug. On smaller screens, a notice that arrives while the card is up moves above the stroke panel.
-- Results show outcome, shot, timing, exit speed and contact location on the blade. Timing and whether the pointer is held are sampled at contact or as the ball passes the contact plane, so later pointer input cannot rewrite the feedback. Early, late, pulled-out, missed-line and leave feedback have different advice. Releasing before the ball passes, including after a click or committed swipe, reads **Left alone** if it makes no contact and misses the stumps; holding through a committed swing that misses reads **Played & missed**. Being bowled flashes the frame edge red and always remains a dismissal.
-- The **Control** figure in the scorebug is the share of balls the bat met or that were left alone safely, including strokes you started and backed off. Holding through a committed swing or defensive block that misses, or being bowled, is not control. **Clean** counts contact through the middle of the blade. A released flick that hits still counts as a shot. A held block that misses reads **Played & missed**, with **Beaten** timing and the gap diagram; releasing the block before the ball passes is a leave. This applies to right-click defence and the Defend mode.
+- Results show outcome, shot, timing, exit speed and contact location on the blade. Stroke intent and timing are sampled at contact or as the ball passes the contact plane, so later pointer input cannot rewrite the feedback. Standard distinguishes early/late timing from line/height errors, and a committed click that misses reads **Played & missed** even after release or recovery. Manual retains **Left alone** for released misses and **Played & missed** for held committed misses. Being bowled flashes the frame edge red and always remains a dismissal.
+- The **Control** figure in the scorebug is the share of balls the bat met or that were left alone safely, including Manual strokes you started and backed off. A Standard attack that misses, a held Manual swing or defensive block that misses, or being bowled is not control. **Clean** counts contact through the middle of the blade. A released flick that hits still counts as a shot. A held block that misses reads **Played & missed**, with **Beaten** timing and the gap diagram; releasing the block before the ball passes is a leave. This applies to right-click defence and the Defend mode.
 - A full miss gets a larger diagram showing the ball relative to the rotated blade from the batter's side, with left/right and above/below labels and the closest surface gap in centimetres. The diagram fits both the ball and bat without clipping wide misses. Distance is measured across each physics step, including the ball radius and blade thickness, and freezes when the delivery resolves. Safe leaves say **Safe leave**, without a miss-distance label.
 - A shortcuts sidebar (the keyboard button or `/`) lists every key, grouped by what it changes, each with its own switch and a master switch.
 - Conditions open in a drawer over the scene at every size (a bottom sheet with a grabber on phones), pausing play while you make changes and restoring the previous pause state when closed. The pause card stays hidden behind an open panel or the help dialog.
-- The ring marks the aimed contact point, fills an arc as the stroke moves, squares off while blocking and flashes on contact. Camera-ray aiming places it under the pointer within the bat's reach. Swipe distance uses screen coordinates, so camera movement or clamping at the edge cannot change a stroke.
+- The blade outline projects the actual contact face and its orientation; the small ring marks its centre. The ring fills an arc as the stroke moves, squares off while blocking and flashes on contact. Camera-ray aiming places it under the pointer within the bat's reach. Swipe distance uses screen coordinates, so camera movement or clamping at the edge cannot change a stroke.
 - Self-hosted Newsreader (serif), Barlow Condensed (numerals and verdicts) and DM Sans (text), reduced-motion support, keyboard focus rings throughout. The help dialog lists touch controls first on touch screens.
 
 ## Simulation
@@ -107,7 +110,8 @@ Aim before pressing: the contact ring stays anchored during the swipe. Holding w
 - Right- and left-arm fast pace, inswing, outswing, off spin, and leg spin. Handedness changes off/leg line selection; bowling arm changes movement direction. Bowling style descriptions use right-arm/right-handed conventions.
 - Hard, green, dry, and damp surfaces; clear, overcast, and evening light; crosswind and ball wear. Cloud cover changes lighting and the air-density preset; it is not used as an arbitrary swing multiplier.
 - Continuous collision detection between a moving ball and oriented, finite-width bat face, including edge detection and bat-velocity-dependent rebound.
-- Swipe displacement advances a curved backlift, downswing and follow-through. The stroke's progress is one smooth state with bounded velocity and acceleration; the blade, the stroke meter, the timing feedback and the collision model all read it, so a staircase of pointer events cannot show up as a stutter. Past the commit point the stroke carries a decaying momentum floor, so it completes at the pace the hand set. Automatic face and wrist rotation distinguish vertical drives from horizontal cuts, pulls and sweeps. Cross-bat shots stay level through the contact area. Shared curve tangents preserve speed through impact. Gesture direction is read from the whole backlift and freezes at the commit point, so a hand that curls on its way up still plays the drive it meant, and jitter or reversals cannot accumulate power.
+- Standard uses a fixed backlift, stable face through contact and follow-through, driven only by the chosen target, intent and press time. Forward blade motion supplies its power through the existing collision physics.
+- In Manual, swipe displacement advances a curved backlift, downswing and follow-through. The stroke's progress is one smooth state with bounded velocity and acceleration; the blade, the stroke meter, the timing feedback and the collision model all read it, so a staircase of pointer events cannot show up as a stutter. Past the commit point the stroke carries a decaying momentum floor, so it completes at the pace the hand set. Automatic face and wrist rotation distinguish vertical drives from horizontal cuts, pulls and sweeps. Cross-bat shots stay level through the contact area. Shared curve tangents preserve speed through impact. Gesture direction is read from the whole backlift and freezes at the commit point, so a hand that curls on its way up still plays the drive it meant, and jitter or reversals cannot accumulate power.
 - Translation and rotation are smoothed and speed-limited. Blade corners remain above the pitch. Contact includes the surface velocity due to face rotation. Soft-handed defence uses a lower restitution coefficient; lofted intent changes the physical launch angle.
 - The ball starts at the animated bowling hand's world position. A steady eye-level view includes the release and contact area without diving after the incoming ball. It tracks a struck ball briefly, then settles back. Portrait screens preserve enough horizontal field of view for off-stump deliveries.
 
@@ -137,7 +141,7 @@ This remains a simulation foundation, **not a finished photorealistic or validat
 - `dist/render-policy.js`: quality budgets, frame pacing and sustained-load adaptation.
 - `tests/runtime-smoke.mjs`: actual game entrypoint with a simulated browser lifecycle and real bat/ball physics; run with `npm run test:runtime` (also included in `npm test`).
 - `dist/game.js`: input, delivery lifecycle, session state, HUD choreography, settings.
-- `dist/bat-control.js`: anchored aiming, gesture-shaped stroke arcs with a committed, momentum-carrying downswing, shot intent, swipe length and three-axis fine adjustment.
+- `dist/bat-control.js`: Standard timed strokes and early aim correction, Manual gesture-shaped stroke arcs, physical contact preview, shot intent, swipe length and three-axis fine adjustment.
 - `dist/shortcuts.js`: the keyboard shortcut table, key matching and the saved on/off state behind the shortcuts sidebar.
 - `dist/batter-motion.js`: stance, shoulder/foot placement and stable batting-camera geometry.
 - `dist/shot-feedback.js`: feedback from the stroke sampled at contact or at the crease, the control rule for leaves, result headlines and miss-diagram geometry.
@@ -155,13 +159,15 @@ npm test
 npm run check
 ```
 
-The `.openai/hosting.json` file configures static output. `dist` is portable to any static host.
+`dist` is portable to any static host and uses relative asset paths, including under GitHub Pages' `/CricSim/` prefix. Publication is configured only by `.github/workflows/deploy-prod.yml`.
 
 ### Verification status, 2026-09-26
 
-All 73 automated tests and JavaScript syntax checks pass. New coverage checks release-to-flight continuity, mirrored bowling arms, planted feet, valid poses across the full delivery, delivery length from the new animated hand, frame caps on 60–240 Hz displays, quality adaptation and audio suspension. The bat and ball simulation tests remain passing.
+All 92 automated tests, 19 entrypoint lifecycle checks and JavaScript syntax checks pass. Standard coverage includes single-click release, aim correction and locking, no held-button repeats, cancellation, both stances, all lengths, bowling speeds and lines, distinct grounded/lofted launches, and unchanged physical contact dimensions. Manual tests continue to pass. Feedback tests preserve committed Standard misses and frozen results, and separate timing from line/height errors.
 
-A separate entrypoint smoke check using the real game/physics modules with a simulated DOM, frame scheduler, renderer and audio confirms saved quality settings, menu/play frame caps, paused and hidden suspension, single redraws for paused changes, resume without time catch-up, panel/help behavior and Auto fallback. Geometry audits find finite coordinates in all quality modes and both stances. Software geometry previews were inspected for bowler anatomy, joints and equipment shape. These are not browser screenshots or GPU benchmarks: live WebGL rendering, final lighting and materials, mouse/touch feel, and playing alongside video on a work laptop still need an interactive check before release.
+A deterministic 140 km/h reference delivery with exact arrival-point aim gives clean-contact timing windows of 150 ms grounded and 130 ms lofted, compared with about 20 ms for the previous fast swipe. These are simulation results, not measured player success rates. The player still has to read the ball and aim.
+
+The entrypoint checks use the real game/physics modules with a simulated DOM, frame scheduler, renderer and audio. They cover saved controls and graphics, frame caps, paused and hidden suspension, resume without time catch-up, panels, Auto fallback, mouse/touch defence, and cancelled attacks. Earlier geometry audits cover finite coordinates, bowler anatomy, joints and equipment shape. GitHub Pages asset paths have been checked under `/CricSim/`. The available test browser has WebGL disabled, so final lighting/materials, subjective control feel, and multitasking performance on a work laptop still need a player check.
 
 ### Previous verification, 2026-09-23
 

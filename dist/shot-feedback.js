@@ -3,15 +3,16 @@
 
 import { BALL, batBasis, clamp } from './physics.js';
 
-// Misses use the button state sampled as the ball passes, even when a released
-// stroke still has momentum. Actual bat contact always remains a shot.
-export const isSwing = stroke => Boolean(stroke?.attempted && stroke.held && !stroke.defending && stroke.committed);
+// Standard clicks commit a full shot, including after release and recovery.
+// Manual mode retains its existing held/released leave convention.
+export const isSwing = stroke => Boolean(stroke?.attempted && !stroke.defending && stroke.committed &&
+  (stroke.mode === 'standard' ? !stroke.cancelled : stroke.held));
 // Defence has its own held state: it does not use swipe commitment or `held`.
 // A block kept up as the ball passes is still a shot attempt.
 export const isPlayingShot = stroke => Boolean(stroke?.attempted && stroke.defending) || isSwing(stroke);
 const isDismissal = result => result === 'Bowled' || result === 'LBW';
 
-export function describeShot(stroke, contact = null, bowled = false) {
+export function describeShot(stroke, contact = null, bowled = false, miss = null) {
   if (!stroke?.attempted) {
     return bowled
       ? { timing: 'Left', detail: 'That one was straight. Cover the stumps or play it.' }
@@ -20,6 +21,22 @@ export function describeShot(stroke, contact = null, bowled = false) {
   if (stroke.defending) {
     if (contact) return { timing: 'Soft hands', detail: 'A controlled block.' };
     return { timing: 'Beaten', detail: 'The block missed the ball. Move the contact ring onto its line.' };
+  }
+  if (stroke.mode === 'standard' && stroke.committed && !stroke.cancelled) {
+    // Sampled at contact or at the crease. A released button and a recovered
+    // animation cannot erase the intent or rewrite the stroke's timing.
+    const offset = (stroke.elapsed - stroke.idealContactTime) * 1000;
+    if (Number.isFinite(offset) && offset >= 35) return {
+      timing: 'Early', detail: contact ? 'You made contact, but started early. Click or tap a little later for the strongest stroke.' : 'The stroke arrived before the ball. Click or tap a little later.',
+    };
+    if (Number.isFinite(offset) && offset <= -35) return {
+      timing: 'Late', detail: contact ? 'You made contact late. Click or tap a little sooner for the strongest stroke.' : 'The ball arrived before the stroke. Click or tap a little sooner.',
+    };
+    if (contact) return { timing: 'Well timed', detail: contact.edge ? 'Good timing, but an edge. Move the blade outline closer to the ball’s line.' : contact.quality > .7 ? 'Through the middle of the blade.' : 'Good timing. Meet the ball nearer the middle of the blade.' };
+    const line = miss && Math.abs(miss.x) > .054 + BALL.radius;
+    const height = miss && Math.abs(miss.y) > .31 + BALL.radius;
+    if (height) return { timing: line ? 'Wrong line & height' : 'Wrong height', detail: line ? 'The swing was on time. Adjust both the line and height of the blade outline.' : 'The swing was on time. Move the blade outline to the ball’s arrival height.' };
+    return { timing: line ? 'Wrong line' : 'Missed line', detail: 'The swing was on time. Aim the blade outline where the ball will arrive, rather than following its distant screen position.' };
   }
   if (!contact && (!stroke.held || !stroke.committed)) {
     return bowled

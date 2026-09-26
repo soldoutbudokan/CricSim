@@ -16,9 +16,10 @@
 <body>
   <main>
     <section id="viewport" class="viewport" data-phase="intro" data-balls="0" aria-label="First-person cricket nets">
-      <canvas id="game" tabindex="0" aria-label="Cricket simulation. Aim the contact ring, hold and swipe up to drive or sideways to cut or pull; once the swing commits it carries through on its own. Right click to defend. Keys 1, 2, 3 select grounded, lofted or defence. Space bowls the next ball. Press slash for the list of keyboard shortcuts."></canvas>
+      <canvas id="game" tabindex="0" aria-label="Cricket simulation. Aim the blade outline and click or tap to play a complete stroke. Right click and hold to defend. Keys 1, 2, 3 select grounded, lofted or defence. Space bowls the next ball. Press slash for keyboard shortcuts."></canvas>
       <div class="scrim scrim-top" aria-hidden="true"></div>
       <div class="scrim scrim-bottom" aria-hidden="true"></div>
+      <svg id="bat-guide" class="bat-guide" aria-hidden="true"><polygon id="bat-guide-face" /></svg>
       <div id="reticle" class="reticle" aria-hidden="true"><i></i></div>
 
       <header class="hud hud-top">
@@ -51,7 +52,7 @@
         </div>
         <div class="hud-cluster hud-bottom-right">
           <div class="batting-panel">
-            <div class="stroke-heading"><strong id="shot-name">Straight drive</strong><span id="swing-state">Aim · hold · swipe</span></div>
+            <div class="stroke-heading"><strong id="shot-name">Straight drive</strong><span id="swing-state">Aim · click to swing</span></div>
             <div id="stroke-meter" class="stroke-meter" aria-hidden="true"><span class="contact-window"></span><i></i></div>
             <div class="shot-intents" role="group" aria-label="Shot intent">
               <button data-intent="grounded" aria-pressed="true"><kbd>1</kbd> Grounded</button>
@@ -101,6 +102,7 @@
               <div class="menu-extra"><dt>Crosswind</dt><dd id="menu-wind">Still air</dd></div>
               <div class="menu-extra"><dt>Ball age</dt><dd id="menu-age">8 overs</dd></div>
               <div><dt>Practice speed</dt><dd id="menu-tempo">Real time</dd></div>
+              <div><dt>Batting</dt><dd id="menu-batting">Standard · click to swing</dd></div>
             </dl>
             <button id="menu-conditions-button" class="menu-text-button" aria-controls="setup" aria-expanded="false"><span class="label">Change conditions</span><span aria-hidden="true">↗</span></button>
           </section>
@@ -110,7 +112,7 @@
           </div>
           <footer class="menu-foot">
             <div class="menu-links"><button id="menu-help-button" class="menu-text-button"><span class="label">How to bat</span><span aria-hidden="true">?</span></button><button id="menu-shortcuts-button" class="menu-text-button" aria-controls="shortcuts" aria-expanded="false"><span class="label">Keyboard shortcuts</span><span aria-hidden="true">/</span></button></div>
-            <p id="menu-gesture">Move to aim. Hold, then swipe.</p>
+            <p id="menu-gesture">Move to aim. Click to swing.</p>
             <p id="asset-status" class="menu-status" role="status">Preparing the nets…</p>
           </footer>
         </div>
@@ -203,11 +205,16 @@
         </section>
         <section class="setting-section">
           <div class="section-heading"><h3><span>04</span>Practice tools</h3></div>
+          <label for="batting-mode">Batting controls</label>
+          <select id="batting-mode" aria-describedby="batting-description"><option value="standard">Standard · click or tap to swing</option><option value="manual">Manual · hold and swipe</option></select>
+          <p id="batting-description" class="field-note">Aim, then click or tap for a complete stroke with repeatable power. You can correct your aim during the early backlift.</p>
           <label for="timeScale">Simulation speed</label>
           <select id="timeScale"><option value="1">Real time · 1×</option><option value="0.75">Read the ball · 0.75×</option><option value="0.5">Slow practice · 0.5×</option></select>
-          <label for="swipe">Swipe length</label>
-          <select id="swipe"><option value="short">Short · quick flicks</option><option value="standard">Standard</option><option value="long">Long · full arm swipes</option></select>
-          <p class="field-note">How far the hand travels for a full stroke. The swing commits a quarter of the way and carries through on its own.</p>
+          <div id="manual-controls" hidden>
+            <label for="swipe">Swipe length</label>
+            <select id="swipe"><option value="short">Short · quick flicks</option><option value="standard">Standard</option><option value="long">Long · full arm swipes</option></select>
+            <p class="field-note">How far the hand travels for a full stroke. The swing commits a quarter of the way and carries through on its own.</p>
+          </div>
           <label class="switch-row" for="guide"><span>Bat guide &amp; ball trail</span><input id="guide" type="checkbox" checked><span class="switch"></span></label>
           <label class="switch-row" for="auto"><span>Continuous deliveries</span><input id="auto" type="checkbox"><span class="switch"></span></label>
         </section>
@@ -222,18 +229,19 @@
       <button id="close-help" class="icon-button" aria-label="Close instructions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
     </div>
     <div class="dialog-body">
-      <p>Aim the ring at the point where you want to meet the ball. Hold to prepare the bat, then swipe. Your aim stays in place while the blade moves through it. The middle of the stroke meter is the contact zone.</p>
+      <p id="help-intro">Aim the blade outline where you expect to meet the ball, then click or tap to start a complete stroke. The outline shows the bat face at contact; the small ring marks its centre. Time your press so the ball arrives at the middle of the stroke meter.</p>
       <div class="help-grid">
-        <b class="pointer-coarse"><kbd>Touch</kbd></b><span class="pointer-coarse">Place a finger on the contact point, then swipe up for a drive or across for a cut or pull. A quicker swipe gives more bat speed. Once the swing is a quarter of the way the blade commits and carries through on its own. Lift off before that to pull out of the shot. Select Defend and hold for a block.</span>
-        <b class="pointer-fine"><kbd>Mouse</kbd></b><span class="pointer-fine">Move the contact ring across the crease and up or down. Place it before you start the stroke.</span>
-        <b class="pointer-fine"><kbd>LMB</kbd> + swipe</b><span class="pointer-fine">Swipe up for a drive; diagonally to angle it; sideways for a cut, pull or low sweep. A quicker swipe gives more bat speed. Once the swing is a quarter of the way the blade commits and carries through on its own, so a flick works. Let go before that to pull out of the shot.</span>
+        <b class="pointer-coarse"><kbd>Touch</kbd></b><span id="help-touch" class="pointer-coarse">Tap the point where you expect to meet the ball. Each tap starts a complete stroke; lifting your finger does not cancel it. Select Defend and hold for a block.</span>
+        <b class="pointer-fine"><kbd>Mouse</kbd></b><span id="help-aim" class="pointer-fine">Move the blade outline across the crease and up or down. You can correct your aim during the early backlift, then it locks for contact.</span>
+        <b class="pointer-fine"><kbd>LMB</kbd> <span id="help-gesture">click</span></b><span id="help-attack" class="pointer-fine">Click to play a full stroke with repeatable power. You do not need to hold or swipe, and releasing does not cancel the shot.</span>
         <b class="pointer-fine"><kbd>RMB</kbd></b><span class="pointer-fine">Hold for a soft-handed block. Move the blade to meet the ball. Release before the ball passes to leave; a held block that misses is a missed shot.</span>
         <b class="pointer-fine"><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd></b><b class="pointer-coarse">Stroke buttons</b><span>Choose Grounded, Lofted or Defend. With Defend selected, hold the mouse or touch to block. You can also use the three buttons beside Next ball.</span>
         <b class="pointer-fine">Fine adjustment</b><span class="pointer-fine"><kbd>A</kbd><kbd>D</kbd> adjust the face, <kbd>W</kbd><kbd>S</kbd> adjust loft, and <kbd>Q</kbd><kbd>E</kbd> adjust blade roll. <kbd>C</kbd> clears these adjustments. Shot shape works without them.</span>
         <b class="pointer-fine"><kbd>Space</kbd> <kbd>P</kbd></b><span class="pointer-fine">Bowl the next ball · pause or resume. Conditions apply to the next delivery.</span>
         <b class="pointer-fine"><kbd>/</kbd></b><span class="pointer-fine">Open the shortcuts list. Every condition has a key (bowler, length, line, surface, speed and more) and each key can be switched off.</span>
       </div>
-      <p class="help-note">Try half speed and middle-stump deliveries while learning. Release before the ball passes to leave, including after starting a swipe. A safe leave counts as control; holding through a swing that misses does not. The bat keeps its momentum after a committed flick, so any contact still counts as a shot. Being bowled is always a dismissal. On a full miss, the result card shows the ball’s direction and closest gap from the blade. The ball and bat keep their physical width; the game does not aim for you.</p>
+      <p id="help-mode-note" class="help-note">Try half speed and middle-stump deliveries while learning. To leave, do not start a stroke. A swing that misses counts as a shot attempt even after you release. Switch to Manual in Conditions for direct swipe control.</p>
+      <p class="help-note">Being bowled is always a dismissal. On a full miss, the result card shows the ball’s direction and closest gap from the blade. The ball and bat keep their physical width; the game does not aim for you.</p>
     </div>
     <div class="dialog-foot"><button id="help-done" class="primary-button">Got it. Let’s bat.</button></div>
   </dialog>

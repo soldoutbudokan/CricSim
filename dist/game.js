@@ -1,6 +1,6 @@
-import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, createDelivery, stepDelivery } from './physics.js';
+import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, batBasis, createDelivery, stepDelivery } from './physics.js';
 import { NetsAudio } from './audio.js';
-import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setSwipeLength, SWIPE_LENGTHS, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, CONTACT_Z } from './bat-control.js';
+import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setBatMode, setSwipeLength, SWIPE_LENGTHS, STANDARD_STROKE, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, contactPreview, CONTACT_Z } from './bat-control.js';
 import { describeShot, describeMiss, missDiagram, isControlled, isPlayingShot, missTitle } from './shot-feedback.js';
 import { SHORTCUTS, SHORTCUT_GROUPS, keyLabel, createShortcutState, serializeShortcutState, isShortcutEnabled, setShortcutEnabled, matchShortcut, cycleValue } from './shortcuts.js';
 import { normalizeGraphicsMode, qualityProfile, targetRenderFps, createFramePacer, createAdaptiveQuality } from './render-policy.js';
@@ -20,11 +20,13 @@ let shortcutState=createShortcutState();
 try{shortcutState=createShortcutState(JSON.parse(localStorage.getItem('cricsim-shortcuts')||'null'));}catch{}
 let graphicsMode='auto';
 try{graphicsMode=normalizeGraphicsMode(localStorage.getItem('cricsim-graphics'));}catch{}
+let battingMode='standard';
+try{if(localStorage.getItem('cricsim-batting-mode')==='manual')battingMode='manual';}catch{}
 const adaptiveQuality=createAdaptiveQuality();
 let appliedAutoLevel=0,activeQuality=qualityProfile(graphicsMode),requestRender=()=>{},resetFrameClock=()=>{},stopFrames=()=>{};
 let view,phase='intro',paused=false,phaseTime=0,delivery=null,deliveryConfig={...config},accumulator=0,lastTime=0,sessionSeconds=0,ready=false;
 let resultRealTime=0,resultCounted=false,controlCount=0,cleanCount=0,ballsFaced=0,lastExit=null,ballSerial=0,strideIndex=0;
-const batControl=createBatControl(config.hand),bat=batControl.pose,target=batControl.target;
+const batControl=createBatControl(config.hand,battingMode),bat=batControl.pose,target=batControl.target;
 const input={held:false,defend:false,pointerId:null,button:0,keys:new Set()};
 const TRIM_KEYS={KeyA:'a',KeyD:'d',KeyW:'w',KeyS:'s',KeyQ:'q',KeyE:'e'};
 let contactFlash=0;
@@ -35,6 +37,26 @@ new ResizeObserver(entries=>viewport.style.setProperty('--hud-top',Math.round(en
 new ResizeObserver(entries=>viewport.style.setProperty('--hud-bottom',Math.round(entries[0].contentRect.height)+'px')).observe(document.querySelector('.hud-bottom'));
 function savePreferences(){try{localStorage.setItem('cricsim-preferences',JSON.stringify(config));}catch{}}
 function saveShortcuts(){try{localStorage.setItem('cricsim-shortcuts',JSON.stringify(serializeShortcutState(shortcutState)));}catch{}}
+function syncBattingMode(){
+  const standard=battingMode==='standard',press=coarsePointer?'tap':'click';
+  $('batting-mode').value=battingMode;viewport.dataset.battingMode=battingMode;
+  $('manual-controls').hidden=standard;$('swipe').disabled=standard;
+  $('batting-description').textContent=standard?'Aim, then click or tap for a complete stroke with repeatable power. You can correct your aim during the early backlift.':'Hold and swipe to control stroke direction and bat speed. Aim before pressing; swipe length sets the required hand travel.';
+  $('game').setAttribute('aria-label',`Cricket simulation. ${standard?'Aim the blade outline and click or tap to play a complete stroke. Releasing does not cancel the shot.':'Aim the blade outline, hold and swipe up to drive or sideways to cut or pull.'} Right click and hold to defend. Keys 1, 2, 3 select grounded, lofted or defence. Space bowls the next ball. Press slash for keyboard shortcuts.`);
+  $('help-intro').textContent=standard?'Aim the blade outline where you expect to meet the ball, then click or tap to start a complete stroke. The outline shows the bat face at contact; the small ring marks its centre. Time your press so the ball arrives at the middle of the stroke meter.':'Aim the blade outline where you want to meet the ball. Hold to prepare the bat, then swipe. Your aim stays in place while the blade moves through it. The outline shows the bat face at contact; the middle of the stroke meter is the contact zone.';
+  $('help-touch').textContent=standard?'Tap the point where you expect to meet the ball. Each tap starts a complete stroke; lifting your finger does not cancel it. You can slide briefly during the early backlift to correct your aim. Select Defend and hold for a block.':'Place a finger on the contact point, then swipe up for a drive or across for a cut or pull. A quicker swipe gives more bat speed. The swing commits a quarter of the way and carries through on its own. Lift off before that to pull out. Select Defend and hold for a block.';
+  $('help-aim').textContent=standard?'Move the blade outline across the crease and up or down. You can correct your aim during the early backlift, then it locks for contact.':'Move the blade outline across the crease and up or down. Place it before you start the stroke.';
+  $('help-gesture').textContent=standard?'click':'+ swipe';
+  $('help-attack').textContent=standard?`Click to play a full stroke with repeatable power. The bat reaches the contact point about ${Math.round(STANDARD_STROKE.contactTime/config.timeScale*1000)} ms after your press at this practice speed. You do not need to hold or swipe, and releasing does not cancel the shot.`:'Swipe up for a drive; diagonally to angle it; sideways for a cut, pull or low sweep. A quicker swipe gives more bat speed. The swing commits a quarter of the way and carries through on its own, so a flick works. Let go before that to pull out of the shot.';
+  $('help-mode-note').textContent=standard?'Try half speed and middle-stump deliveries while learning. To leave, do not start a stroke. A swing that misses counts as a shot attempt even after you release. Switch to Manual in Conditions for direct swipe control.':'Try half speed and middle-stump deliveries while learning. Release before the ball passes to leave, including after starting a swipe. A safe leave counts as control; holding through a swing that misses does not. The bat keeps its momentum after a committed flick, so any contact still counts as a shot.';
+  $('swing-state').textContent=standard?`Aim · ${press} to swing`:'Aim · hold · swipe';
+  syncMenu();coach();requestRender(true);
+}
+$('batting-mode').addEventListener('change',event=>{
+  clearInput();battingMode=event.target.value==='manual'?'manual':'standard';setBatMode(batControl,battingMode);
+  try{localStorage.setItem('cricsim-batting-mode',battingMode);}catch{}
+  syncBattingMode();notice('Batting controls',battingMode==='standard'?'Standard · click or tap':'Manual · hold and swipe');
+});
 function syncGraphics(){
   $('graphics').value=graphicsMode;
   const names={balanced:'balanced quality',adaptive:'reduced resolution',eco:'lower power',high:'high detail'};
@@ -58,7 +80,7 @@ function setState(text){$('delivery-state').textContent=text;}
 function coach(){
   let tip='';
   if(ballsFaced<3){
-    if(phase==='ready')tip=coarsePointer?'Touch the line of the ball, then swipe up to drive or sideways to cut or pull.':'Aim the ring. Hold and swipe up to drive, sideways to cut or pull. Space bowls.';
+    if(phase==='ready')tip=battingMode==='standard'?(coarsePointer?'Tap where you expect to meet the ball to play a full stroke.':'Aim the blade outline, then click to swing. Space bowls.'):(coarsePointer?'Touch the line of the ball, then swipe up to drive or sideways to cut or pull.':'Aim the blade outline. Hold and swipe up to drive, sideways to cut or pull. Space bowls.');
     else if(phase==='runup')tip='Watch the hand.';
   }
   $('coach-tip').textContent=tip;
@@ -83,8 +105,9 @@ function syncControls(){
   $('clock-label').textContent=(config.timeScale===1?'Real time':config.timeScale===.75?'Read the ball':'Slow practice')+' · '+config.timeScale+'×';
   viewport.dataset.timescale=String(config.timeScale);
   $('reticle').style.visibility=config.guide?'visible':'hidden';
+  $('bat-guide').style.visibility=config.guide?'visible':'hidden';
   setSwipeLength(batControl,SWIPE_LENGTHS[config.swipe]);
-  syncMenu();requestRender(true);
+  syncBattingMode();
 }
 function syncMenu(){
   $('menu-bowling').textContent=`${config.arm==='left'?'Left':'Right'}-arm ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;
@@ -98,7 +121,8 @@ function syncMenu(){
   $('menu-sound-button').textContent=config.audio?'Sound on':'Sound off';
   $('menu-sound-button').setAttribute('aria-pressed',String(!config.audio));
   $('menu-sound-button').setAttribute('aria-label',config.audio?'Mute sound':'Enable sound');
-  $('menu-gesture').textContent=coarsePointer?'Touch to aim. Hold, then swipe.':'Move to aim. Hold, then swipe.';
+  $('menu-batting').textContent=battingMode==='standard'?'Standard · '+(coarsePointer?'tap':'click')+' to swing':'Manual · hold and swipe';
+  $('menu-gesture').textContent=battingMode==='standard'?(coarsePointer?'Tap to aim and swing.':'Move to aim. Click to swing.'):(coarsePointer?'Touch to aim. Hold, then swipe.':'Move to aim. Hold, then swipe.');
 }
 function applyEnvironment(){view?.setEnvironment(config);audio.setWind(config.wind);audio.setSurface(config.pitch);$('scene-weather').textContent=optionText('weather',config.weather);$('scene-pitch').textContent=PITCHES[config.pitch].name;$('delivery-speed').textContent=Math.round(config.speed);$('delivery-style').textContent=`${config.arm==='left'?'Left':'Right'}-arm ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
 // One path for every setting change, whether it came from the drawer or a key.
@@ -112,7 +136,7 @@ for(const key of ['bowler','arm','hand','length','line','weather','timeScale','s
   $(key).addEventListener(['speed','age','wind'].includes(key)?'input':'change',event=>applySetting(key,['auto','guide'].includes(key)?event.target.checked:event.target.value));
 }
 for(const button of document.querySelectorAll('[data-pitch]'))button.addEventListener('click',()=>applySetting('pitch',button.dataset.pitch));
-function setReticle(){const r=$('reticle');r.classList.toggle('is-held',input.held);r.classList.toggle('is-defend',input.defend);}
+function setReticle(){const swinging=battingMode==='standard'&&batControl.committed&&['load','swing','follow'].includes(batControl.phase);for(const id of ['reticle','bat-guide']){const r=$(id);r.classList.toggle('is-held',input.held||swinging);r.classList.toggle('is-defend',input.defend);}}
 function clearInput(){
   const pointerId=input.pointerId;input.pointerId=null;input.held=false;input.defend=false;
   releaseStroke(batControl,true);input.keys.clear();setReticle();
@@ -148,7 +172,7 @@ function onResult(event){
   const bowled=event.result==='Bowled',title=delivery.hit?event.result:missTitle(delivery,event.result);
   const card=$('shot-feedback');card.dataset.outcome=title.toLowerCase();card.classList.remove('hidden');
   $('feedback-label').textContent='Delivery '+String(ballsFaced).padStart(2,'0')+' · '+Math.round(delivery.speed)+' km/h';$('feedback-title').textContent=title;
-  const feedback=describeShot(delivery.stroke,delivery.contact,bowled);
+  const feedback=describeShot(delivery.stroke,delivery.contact,bowled,delivery.miss);
   $('feedback-detail').textContent=feedback.detail;
   $('feedback-timing').textContent=feedback.timing;
   const played=delivery.hit||isPlayingShot(delivery.stroke);
@@ -194,7 +218,10 @@ function tick(dt){
     const events=stepDelivery(delivery,deliveryConfig,dt,bat,previous);
     if(events.some(event=>event.type==='contact')||!delivery.stroke&&beforeZ<CONTACT_Z&&delivery.p.z>=CONTACT_Z){
       delivery.stroke=strokeSnapshot(batControl);
-      if(delivery.hit)delivery.stroke.progress=previous.progress+(bat.progress-previous.progress)*delivery.contact.t;
+      if(delivery.hit){
+        delivery.stroke.progress=previous.progress+(bat.progress-previous.progress)*delivery.contact.t;
+        if(delivery.stroke.mode==='standard')delivery.stroke.elapsed=previous.strokeTime+(bat.strokeTime-previous.strokeTime)*delivery.contact.t;
+      }
     }
     for(const event of events){
       if(event.type==='bounce'&&event.impactSpeed>.8)sound('bounce',event,event.impactSpeed/9);
@@ -218,7 +245,7 @@ canvas.addEventListener('pointermove',updatePointer);
 canvas.addEventListener('pointerdown',event=>{
   if(!canBat()||event.isPrimary===false||input.pointerId!==null||![0,2].includes(event.button))return;
   event.preventDefault();canvas.focus({preventScroll:true});updatePointer(event);input.pointerId=event.pointerId;input.button=event.button;canvas.setPointerCapture(event.pointerId);unlockAudio();
-  input.defend=event.button===2||batControl.intent==='defend';input.held=!input.defend;startStroke(batControl,input.defend);setReticle();
+  startStroke(batControl,event.button===2||batControl.intent==='defend');input.defend=batControl.defending;input.held=batControl.held;setReticle();
 });
 function finishPointer(event){if(event.pointerId!==input.pointerId)return;input.pointerId=null;input.defend=false;input.held=false;releaseStroke(batControl);setReticle();if(canvas.hasPointerCapture(event.pointerId))canvas.releasePointerCapture(event.pointerId);}
 canvas.addEventListener('pointerup',finishPointer);
@@ -291,7 +318,7 @@ const shortcutActions={
   weather:()=>cycleSetting('weather','Sky & light'),
   windDown:()=>stepSetting('wind',-5,-25,25,'Crosswind','km/h'),windUp:()=>stepSetting('wind',5,-25,25,'Crosswind','km/h'),
   ageDown:()=>stepSetting('age',-10,0,80,'Ball age','overs'),ageUp:()=>stepSetting('age',10,0,80,'Ball age','overs'),
-  timeScale:()=>cycleSetting('timeScale','Simulation speed'),swipe:()=>cycleSetting('swipe','Swipe length'),
+  timeScale:()=>cycleSetting('timeScale','Simulation speed'),swipe:()=>{if(battingMode==='manual')cycleSetting('swipe','Swipe length');else notice('Swipe length','Available in Manual batting');},
   guide:()=>toggleSetting('guide','Bat guide & ball trail'),auto:()=>toggleSetting('auto','Continuous deliveries'),
   sound:()=>{toggleSound();notice('Sound',config.audio?'On':'Off');},fullscreen:()=>toggleFullscreen(),
   conditions:()=>togglePanel('setup'),shortcuts:()=>togglePanel('shortcuts'),help:()=>showHelp(),
@@ -346,21 +373,36 @@ try{
   $('intro').addEventListener('scroll',updateMenuFrame,{passive:true});updateMenuFrame();
   canvas.addEventListener('webglcontextlost',event=>{event.preventDefault();pause(true);$('error-message').textContent='The graphics connection was interrupted. Reload to return to the nets.';showError(new Error('WebGL context lost'));});
   // Read-only inspection hook for browser checks and reproducible GPU budgets.
-  Object.defineProperty(window,'cricsim',{value:Object.freeze({get phase(){return phase;},get ball(){return delivery?{x:delivery.p.x,y:delivery.p.y,z:delivery.p.z,time:delivery.time,hit:delivery.hit}:null;},get stroke(){return {phase:batControl.phase,progress:batControl.progress,committed:batControl.committed};},get performance(){return {mode:graphicsMode,autoLevel:appliedAutoLevel,targetFps:targetRenderFps({phase,paused,hidden:document.hidden,mode:graphicsMode,autoLevel:appliedAutoLevel}),...view.getPerformanceInfo()};},project(p){return {...view.project(p)};}})});
-  const reticle=$('reticle'),shotLabel=$('shot-name'),swingLabel=$('swing-state'),strokeMeter=$('stroke-meter'),trimLabel=$('bat-trim'),sessionClock=$('session-time'),nextButton=$('next-button');
+  Object.defineProperty(window,'cricsim',{value:Object.freeze({get phase(){return phase;},get ball(){return delivery?{x:delivery.p.x,y:delivery.p.y,z:delivery.p.z,time:delivery.time,hit:delivery.hit}:null;},get stroke(){return {...strokeSnapshot(batControl),mode:battingMode,target:{...target},cancelled:batControl.cancelled};},get performance(){return {mode:graphicsMode,autoLevel:appliedAutoLevel,targetFps:targetRenderFps({phase,paused,hidden:document.hidden,mode:graphicsMode,autoLevel:appliedAutoLevel}),...view.getPerformanceInfo()};},project(p){return {...view.project(p)};}})});
+  const reticle=$('reticle'),batGuide=$('bat-guide'),guideFace=$('bat-guide-face'),shotLabel=$('shot-name'),swingLabel=$('swing-state'),strokeMeter=$('stroke-meter'),trimLabel=$('bat-trim'),sessionClock=$('session-time'),nextButton=$('next-button');
   const swingNames={guard:'Aim · hold · swipe',load:'Backlift · swipe through',swing:'Committed · through the ring',follow:'Follow-through',recover:'Returning to guard'};
-  const pacer=createFramePacer(),aimPoint={x:0,y:0,z:CONTACT_Z};
+  const standardSwingNames={guard:coarsePointer?'Aim · tap to swing':'Aim · click to swing',load:'Backlift · aim can adjust',swing:'Swing · aim locked',follow:'Follow-through',recover:'Returning to guard'};
+  const pacer=createFramePacer(),guidePoint={x:0,y:0,z:CONTACT_Z},guideCorners=[[-1,-1],[1,-1],[1,1],[-1,1]];
   let animationFrame=0,dirty=true,lastRenderTime=0,canvasWidth=canvas.clientWidth,canvasHeight=canvas.clientHeight;
   const textIfChanged=(element,text)=>{if(element.textContent!==text)element.textContent=text;};
   function updateHud(){
     // The title screen hides this entire HUD. Text only changes when its value
     // does, instead of rewriting the DOM on every monitor refresh.
     if(phase==='intro')return;
-    aimPoint.x=target.x;aimPoint.y=target.y;
-    const point=view.project(aimPoint),rx=clamp(point.x,16,canvasWidth-16),ry=clamp(point.y,16,canvasHeight-16);
+    const preview=contactPreview(batControl),point=view.project(preview),rx=clamp(point.x,16,canvasWidth-16),ry=clamp(point.y,16,canvasHeight-16);
     reticle.style.left=rx.toFixed(2)+'px';reticle.style.top=ry.toFixed(2)+'px';reticle.classList.toggle('is-clipped',rx!==point.x||ry!==point.y);
+    if(config.guide){
+      // Project the same physical blade dimensions and orientation used by
+      // collisions. This shows where the face will be, without enlarging it.
+      const {w,u}=batBasis(preview);
+      guideFace.setAttribute('points',guideCorners.map(([across,along])=>{
+        for(const axis of ['x','y','z'])guidePoint[axis]=preview[axis]+w[axis]*across*.054+u[axis]*along*.31;
+        const p=view.project(guidePoint);return p.x.toFixed(2)+','+p.y.toFixed(2);
+      }).join(' '));
+    }
+    setReticle();batGuide.classList.toggle('is-contact',contactFlash>0);
     const progress=bat.progress.toFixed(3);reticle.style.setProperty('--travel',progress);reticle.classList.toggle('is-contact',contactFlash>0);strokeMeter.style.setProperty('--stroke',progress);
-    textIfChanged(shotLabel,shotName(batControl));textIfChanged(swingLabel,batControl.defending?'Hold the line':swingNames[batControl.phase]);
+    let swingState=(battingMode==='standard'?standardSwingNames:swingNames)[batControl.phase];
+    if(battingMode==='standard'){
+      if(['load','swing','follow'].includes(batControl.phase))swingState=batControl.strokeTime<STANDARD_STROKE.aimLockTime?'Backlift · aim can adjust':batControl.strokeTime<STANDARD_STROKE.activeUntil?'Swing · aim locked':'Follow-through';
+      else if(batControl.held)swingState='Release to swing again';
+    }
+    textIfChanged(shotLabel,shotName(batControl));textIfChanged(swingLabel,batControl.defending?'Hold the line':swingState);
     textIfChanged(trimLabel,`Face ${Math.round(batControl.trim.yaw*180/Math.PI)}° · Loft ${Math.round(batControl.trim.loft*180/Math.PI)}° · Roll ${Math.round(batControl.trim.roll*180/Math.PI)}°`);
     trimLabel.hidden=Math.abs(batControl.trim.yaw)<=.01&&Math.abs(batControl.trim.loft)<=.01&&Math.abs(batControl.trim.roll)<=.01;
     const minutes=Math.floor(sessionSeconds/60),seconds=Math.floor(sessionSeconds%60);
