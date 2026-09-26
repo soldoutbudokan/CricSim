@@ -29,6 +29,23 @@ npm run dev
 
 The game remains plain static files. Vite is a development-only dependency.
 
+## Graphics and multitasking
+
+Open **Conditions → Graphics & performance**. The choice is saved on this device.
+
+| Setting | Active frame limit | Resolution budget | Shadows |
+| --- | --- | --- | --- |
+| Auto (default) | Up to 60 fps, falling to 30 under sustained load | Starts at Balanced; reduces between deliveries | Adapts with quality |
+| Balanced | 60 fps | 1.8 million pixels, pixel ratio capped at 1.25 | 1024² |
+| Eco | 30 fps | 1 million pixels, pixel ratio capped at 1 | Contact shadows only |
+| High | 60 fps | 3 million pixels, pixel ratio capped at 1.75 | 2048² |
+
+Choose **Eco** when watching a video or using other work apps alongside the game. It also reduces decorative grass and evening lighting work. Every setting uses the same detailed bat, gloves and bowler, and the same fixed 240 Hz collision simulation. High-refresh monitors no longer cause unlimited rendering. Auto lowers its budget only after sustained slow frames, applies changes between deliveries, and holds that level for the session; reselect Auto to reset it.
+
+The opening view renders at up to 20 fps. Pausing retains the last frame, redrawing only when something changes; hidden tabs stop scheduling frames. The audio graph also suspends when paused, hidden or muted. The renderer lets the browser choose its normal GPU instead of requesting a high-performance GPU.
+
+These are rendering budgets, not guaranteed frame rates. At a 1440×900 CSS-pixel window with device scale 2, Balanced allocates about 55% fewer drawing-buffer pixels and 75% fewer shadow-map pixels than the previous build. Actual responsiveness depends on the device and other running apps.
+
 ## Controls
 
 | Input | Action |
@@ -99,7 +116,8 @@ Aim before pressing: the contact ring stays anchored during the swipe. Holding w
 - Poly Haven ground colour, normal and roughness maps and three HDR skies (clear, overcast, evening). Each sky is rotated so its photographed sun sits where the shadow-casting light is. Khronos PBR Neutral tone mapping with per-weather exposure, sun colour and fog. In clear weather the sun sits behind the batter's left shoulder, so the bowler and sight screen are front-lit. The lawn shader remaps the photographed sparse-grass map to mown-lawn greens, and the ground runs out far enough to meet the sky without a seam.
 - Everything else is procedural, generated on canvases at load: knotted netting on sagging panels that flutters in a crosswind, long grass along the net skirts that leans with the crosswind, lawn mottle and mowing stripes, pitch wear per surface (soil grain, grassy edges, soft roller bands, crease scuffs and footmarks, live grass on a green top, a crack network on a dry deck, damp patches on a soft one), chalk creases, a slatted sight screen, a gabled pavilion with veranda and clock, a timber groundsman's shed, benches, hedge, fence and floodlights that glow and light the strip in the evening.
 - The batter: a lofted willow blade with a back spine, splice, oiled edges and painted grain; a ribbed rubber grip; padded batting gloves with closed cuffs; ribbed-knit forearm sleeves that fade out toward the elbow; pads that come into frame on portrait phones and while the view follows a struck ball. The physics grip sits about a metre in front of the eye, beyond a real arm's reach, so only the forearms are drawn and the arms never fill the frame; an elbow solve still aims each forearm and glove cuff. The bat stays on the physics pose. Low shots transfer weight onto the front foot, higher shots sit back, and cross-bat shots turn the shoulders. Head movement stays small and contact produces a subtle kick.
-- The bowler runs in, gathers, brings the arm back, up and over, follows through across the body, and idles at the top of the mark between balls. Bails fly and the middle stump leans when bowled.
+- The bowler has shaped body and clothing surfaces, a sculpted face, a fitted cap, collar and kit trim, curled fingers and running shoes. Details are merged into each moving body part. Smooth delivery curves continue through the release; two-bone leg animation plants the support foot in world space. The ball launches from the animated hand in both bowling arms. Bails fly and the middle stump leans when bowled.
+- The blade has bevelled edges and a rounded toe; gloves have separate finger shields, knuckle panels, joint gaps and fitted cuffs; pads have longitudinal ribs and knee rolls. Material relief is measured in fractions of a millimetre, keeping wood grain and fabric subtle. The bat's regulation dimensions and collision geometry are unchanged.
 - Ball trail as a fading ribbon, a lime bounce ring when the guide is on, a bounce puff, marks that accumulate on the strip, a single contact shadow under the ball, and a small glow that keeps a distant ball legible.
 - Asset sources and licenses are listed in `ASSETS.md`.
 
@@ -115,6 +133,9 @@ This remains a simulation foundation, **not a finished photorealistic or validat
 
 - `dist/physics.js`: deterministic simulation, presets, collision model.
 - `dist/scene.js`: Three.js environment, procedural textures and models, batter rig, camera.
+- `dist/bowler.js`: merged articulated bowler, continuous delivery timeline and planted-foot leg animation.
+- `dist/render-policy.js`: quality budgets, frame pacing and sustained-load adaptation.
+- `tests/runtime-smoke.mjs`: actual game entrypoint with a simulated browser lifecycle and real bat/ball physics; run with `npm run test:runtime` (also included in `npm test`).
 - `dist/game.js`: input, delivery lifecycle, session state, HUD choreography, settings.
 - `dist/bat-control.js`: anchored aiming, gesture-shaped stroke arcs with a committed, momentum-carrying downswing, shot intent, swipe length and three-axis fine adjustment.
 - `dist/shortcuts.js`: the keyboard shortcut table, key matching and the saved on/off state behind the shortcuts sidebar.
@@ -130,13 +151,19 @@ This remains a simulation foundation, **not a finished photorealistic or validat
 - `tests/shortcuts.test.mjs`: shortcut matching, modifier chords, per-key and master switches, persistence and setting cycles.
 
 ```sh
-node --test tests/*.test.mjs
+npm test
 npm run check
 ```
 
 The `.openai/hosting.json` file configures static output. `dist` is portable to any static host.
 
-### Verification status, 2026-09-23
+### Verification status, 2026-09-26
+
+All 73 automated tests and JavaScript syntax checks pass. New coverage checks release-to-flight continuity, mirrored bowling arms, planted feet, valid poses across the full delivery, delivery length from the new animated hand, frame caps on 60–240 Hz displays, quality adaptation and audio suspension. The bat and ball simulation tests remain passing.
+
+A separate entrypoint smoke check using the real game/physics modules with a simulated DOM, frame scheduler, renderer and audio confirms saved quality settings, menu/play frame caps, paused and hidden suspension, single redraws for paused changes, resume without time catch-up, panel/help behavior and Auto fallback. Geometry audits find finite coordinates in all quality modes and both stances. Software geometry previews were inspected for bowler anatomy, joints and equipment shape. These are not browser screenshots or GPU benchmarks: live WebGL rendering, final lighting and materials, mouse/touch feel, and playing alongside video on a work laptop still need an interactive check before release.
+
+### Previous verification, 2026-09-23
 
 All 59 automated simulation, control, shortcut and batting-play tests pass. They cover seeded contact across lengths and stances, stroke momentum, input rates, leaves before and after commitment, missed swings held through the ball, held versus released blocks in Defend mode and right-click defence, frozen input snapshots, dismissal precedence, swept miss distances, rotated diagrams and wide-miss bounds. JavaScript syntax checks pass. The visual refresh was checked in headless Chromium (SwiftShader) against the previous build at desktop, laptop, tablet and phone sizes in portrait and landscape, in every weather and on every surface. The checks confirmed the bowler's release point and the batting camera are numerically unchanged, and found no console errors or third-party requests. Rendering on real GPUs, audio balance, touch ergonomics and subjective mouse feel still need an interactive check.
 

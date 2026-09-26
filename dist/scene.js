@@ -3,6 +3,7 @@
 // the CC0 Poly Haven ground maps and HDR skies. No per-frame allocations in hot paths.
 import * as THREE from './vendor/three.module.js';
 import { HDRLoader } from './vendor/HDRLoader.js';
+import { createBowler } from './bowler.js';
 import { batBasis, random } from './physics.js';
 import { CONTACT_Z } from './bat-control.js';
 import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js';
@@ -59,77 +60,121 @@ function mergeGeometries(parts) {
 }
 const lathe = (pts, seg = 24) => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), seg);
 
-// Bat blade lofted from 28 stations x 19-point cross-sections: flat face, square edges, a
-// rounded spine rising to the sweet spot, rounded toe and narrowing shoulders with a splice.
+// A flat striking face and a gently bevelled perimeter keep the regulation .108 x .62 m
+// blade legible up close. The short toe radius avoids the old paddle-shaped outline.
 function bladeGeometry() {
-  const zFace = -0.012, N = 28, rings = [];
-  for (let i = 0; i < N; i++) {
-    const t = i / (N - 1), y = -0.31 + t * 0.62;
-    let hw = 0.054;
-    if (y < -0.255) { const k = (y + 0.255) / 0.055; hw = Math.max(0.011, 0.054 * Math.sqrt(Math.max(0, 1 - k * k))); }
-    else if (y > 0.225) { const k = (y - 0.225) / 0.085; hw = 0.054 - 0.026 * k * k; }
-    const spine = y < -0.05 ? lerp(0.026, 0.042, smooth((y + 0.31) / 0.26)) : y < 0.03 ? 0.042 : lerp(0.042, 0.016, smooth((y - 0.03) / 0.28));
-    const edge = Math.min(0.02, spine - 0.004), zEdge = zFace + edge, zSpine = zFace + spine, pts = [];
-    const push = (x, z, u) => pts.push([x, y, z, u, t]);
-    push(-hw, zFace, 0.25 - hw / 0.054 * 0.23); push(hw, zFace, 0.25 + hw / 0.054 * 0.23);
-    push(hw, zFace, 0.49); push(hw, zEdge, 0.49);
-    for (let j = 0; j <= 12; j++) { const s = 1 - j / 6, x = s * hw; push(x, zEdge + (zSpine - zEdge) * Math.pow(1 - Math.abs(s), 1.35), 0.75 + x / 0.054 * 0.23); }
-    push(-hw, zEdge, 0.01); push(-hw, zFace, 0.01);
-    rings.push(pts);
-  }
-  const P = rings[0].length, positions = [], uvs = [], index = [];
-  for (const pts of rings) for (const [x, y, z, u, v] of pts) { positions.push(x, y, z); uvs.push(u, v); }
-  for (let i = 0; i < N - 1; i++) for (let j = 0; j < P - 1; j++) {
-    if (j === 1 || j === 3 || j === 16) continue; // seams between duplicated corner vertices keep the edges crisp
-    const a = i * P + j, b = a + 1, c = a + P + 1, d = a + P;
-    index.push(a, c, b, a, d, c);
+  const zFace = -.012, stations = [-.31, -.308, -.303, -.296, -.292];
+  for (let y = -.274; y < .225; y += .022) stations.push(y);
+  stations.push(.225, .248, .27, .29, .304, .31);
+  const rings = stations.map(y => {
+    const t = (y + .31) / .62, bevel = .0016;
+    let hw = .054;
+    if (y < -.292) hw = .036 + .018 * Math.sqrt(Math.max(0, 1 - ((y + .292) / .018) ** 2));
+    else if (y > .225) hw -= .028 * smooth((y - .225) / .085);
+    const depth = y < -.05 ? lerp(.025, .043, smooth((y + .31) / .26)) : lerp(.043, .018, smooth((y + .05) / .36));
+    const zEdge = zFace + Math.min(.018, depth - .004), zSpine = zFace + depth, points = [];
+    const push = (x, z, u) => points.push([x, y, z, u, t]);
+    push(-hw + bevel, zFace, .25 - (hw - bevel) / .054 * .23);
+    push(hw - bevel, zFace, .25 + (hw - bevel) / .054 * .23);
+    // Duplicate the face boundary so the striking surface stays perfectly flat.
+    push(hw - bevel, zFace, .49);
+    push(hw - bevel * .3, zFace + bevel * .3, .49);
+    push(hw, zFace + bevel, .49);
+    push(hw, zEdge - bevel, .49);
+    push(hw - bevel * .3, zEdge - bevel * .3, .98);
+    for (let j = 0; j <= 12; j++) {
+      const k = 1 - j / 6, x = k * (hw - bevel);
+      push(x, zEdge + (zSpine - zEdge) * Math.pow(1 - Math.abs(k), 1.2), .75 + x / .054 * .23);
+    }
+    push(-hw + bevel * .3, zEdge - bevel * .3, .52);
+    push(-hw, zEdge - bevel, .01);
+    push(-hw, zFace + bevel, .01);
+    push(-hw + bevel * .3, zFace + bevel * .3, .01);
+    push(-hw + bevel, zFace, .01);
+    return points;
+  });
+  const count = rings[0].length, positions = [], uvs = [], indices = [];
+  for (const ring of rings) for (const [x, y, z, u, v] of ring) { positions.push(x, y, z); uvs.push(u, v); }
+  for (let i = 0; i < rings.length - 1; i++) for (let j = 0; j < count - 1; j++) {
+    if (j === 1) continue;
+    const a = i * count + j, b = a + 1, c = a + count + 1, d = a + count;
+    indices.push(a, c, b, a, d, c);
   }
   const cap = (ring, up) => {
-    const base = positions.length / 3; let cx = 0, cz = 0; for (const p of ring) { cx += p[0]; cz += p[2]; }
-    positions.push(cx / ring.length, ring[0][1], cz / ring.length); uvs.push(0.25, up ? 1 : 0);
-    for (const [x, y, z, u, v] of ring) { positions.push(x, y, z); uvs.push(u, v); }
-    for (let j = 0; j < ring.length; j++) { const a = base + 1 + j, b = base + 1 + (j + 1) % ring.length; if (up) index.push(base, b, a); else index.push(base, a, b); }
+    const outline = [ring[0], ...ring.slice(2, -1)], base = positions.length / 3;
+    positions.push(0, ring[0][1], zFace + .01); uvs.push(.25, up ? 1 : 0);
+    for (const [x, y, z, u, v] of outline) { positions.push(x, y, z); uvs.push(u, v); }
+    for (let j = 0; j < outline.length; j++) {
+      const a = base + 1 + j, b = base + 1 + (j + 1) % outline.length;
+      if (up) indices.push(base, b, a); else indices.push(base, a, b);
+    }
   };
-  cap(rings[0], false); cap(rings[N - 1], true);
+  cap(rings[0], false); cap(rings[rings.length - 1], true);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geo.setIndex(index); geo.computeVertexNormals();
+  geo.setIndex(indices); geo.computeVertexNormals();
   return geo;
 }
 
-// A batting glove wrapped around a vertical handle at the origin: padded back on +x, four
-// three-segment fingers curling round the front, thumb across the near side, flared cuff on +z.
+// A small upholstered panel. Rounded corners and bevels catch light without a separate
+// mesh or material; all of the panels are baked into the glove/pad geometry once at load.
+function paddedPanel(width, height, depth, radius = .004) {
+  const x = -width / 2, y = -height / 2, r = Math.min(radius, width / 2, height / 2), shape = new THREE.Shape();
+  shape.moveTo(x + r, y); shape.lineTo(x + width - r, y); shape.quadraticCurveTo(x + width, y, x + width, y + r);
+  shape.lineTo(x + width, y + height - r); shape.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
+  shape.lineTo(x + r, y + height); shape.quadraticCurveTo(x, y + height, x, y + height - r);
+  shape.lineTo(x, y + r); shape.quadraticCurveTo(x, y, x + r, y);
+  const bevel = Math.min(.0015, depth / 4);
+  return new THREE.ExtrudeGeometry(shape, { depth: depth - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 1, steps: 1, curveSegments: 3 }).translate(0, 0, -depth / 2 + bevel);
+}
+
+// Four separately articulated fingers curl round the handle. A fitted leather palm,
+// split protective blocks and a bound cuff give the close-up silhouette a human grip.
 function gloveGeometry(thumbUp, mirror) {
-  const cream = '#efe9d6', green = '#1f3a2c', parts = [];
+  const cream = '#f0eddf', leather = '#bcb6a5', green = '#284738', parts = [];
   const M = mirror ? new THREE.Matrix4().makeScale(-1, 1, 1) : _identity;
   const add = (g, m, c) => parts.push({ g, m: new THREE.Matrix4().multiplyMatrices(M, m), c });
-  add(new THREE.SphereGeometry(1, 14, 10), mat4(0.044, 0, 0.012, 0, 0, 0, 0.023, 0.05, 0.044), cream);
-  add(new THREE.SphereGeometry(1, 10, 8), mat4(0.058, 0, -0.008, 0, 0, 0, 0.012, 0.044, 0.02), cream); // knuckle ridge
-  const rc = 0.031, a = new THREE.Vector3(), b = new THREE.Vector3();
+  add(new THREE.SphereGeometry(1, 12, 8), mat4(.041, 0, .018, 0, 0, 0, .023, .046, .039), leather);
+  add(new THREE.SphereGeometry(1, 12, 8), mat4(.037, 0, .045, 0, 0, 0, .025, .037, .027), cream);
+  const rc = .028, a = new THREE.Vector3(), b = new THREE.Vector3(), pa = new THREE.Vector3(), pb = new THREE.Vector3();
   for (let k = 0; k < 4; k++) {
-    const yk = (k - 1.5) * 0.02, rf = 0.0135 - Math.abs(k - 1.5) * 0.0009;
-    for (let s = 0; s < 3; s++) {
-      const t0 = 0.35 + s * 0.78, t1 = t0 + 0.78;
-      a.set(rc * Math.cos(t0), yk, -rc * Math.sin(t0)); b.set(rc * Math.cos(t1), yk, -rc * Math.sin(t1));
-      add(new THREE.CapsuleGeometry(rf, a.distanceTo(b) - rf * .5, 3, 8), betweenMat(a, b), s === 2 ? green : cream);
+    const y = (k - 1.5) * .0205, rf = .010 - Math.abs(k - 1.5) * .0005;
+    // Split back-of-hand padding leaves leather channels at every finger joint.
+    add(paddedPanel(.037, .016, .012, .004), mat4(.061, y, .025, 0, Math.PI / 2, 0), cream);
+    add(paddedPanel(.018, .016, .013, .004), mat4(.058, y, -.007, 0, Math.PI / 2 + .18, 0), '#faf6e9');
+    for (let segment = 0; segment < 3; segment++) {
+      const t0 = .18 + segment * .83, t1 = t0 + .83;
+      a.set(rc * Math.cos(t0), y, -rc * Math.sin(t0)); b.set(rc * Math.cos(t1), y, -rc * Math.sin(t1));
+      add(new THREE.CapsuleGeometry(rf, Math.max(.002, a.distanceTo(b) - rf * .8), 2, 8), betweenMat(a, b), leather);
+      const pr = rc + .007;
+      pa.set(pr * Math.cos(t0 + .08), y, -pr * Math.sin(t0 + .08)); pb.set(pr * Math.cos(t1 - .08), y, -pr * Math.sin(t1 - .08));
+      add(new THREE.CapsuleGeometry(rf * .76, Math.max(.002, pa.distanceTo(pb) - rf), 2, 8), betweenMat(pa, pb), segment === 2 ? '#d9d6c7' : cream);
     }
   }
   const ty = thumbUp ? 1 : -1;
-  a.set(0.036, ty * 0.03, 0.03); b.set(-0.014, ty * 0.05, 0.024);
-  add(new THREE.CapsuleGeometry(0.0125, 0.04, 3, 8), betweenMat(a, b), cream);
-  add(new THREE.CylinderGeometry(0.047, 0.045, 0.046, 16, 1, true), mat4(0.034, 0, 0.076, Math.PI / 2), green);
-  add(new THREE.RingGeometry(0.036, 0.047, 20), mat4(0.034, 0, 0.098), '#0f1d15'); // dark lining closes the gap round the wrist
-  add(new THREE.TorusGeometry(0.047, 0.004, 6, 24), mat4(0.034, 0, 0.099), '#2d5840'); // piped edge at the opening
-  add(new THREE.BoxGeometry(0.028, 0.012, 0.006), mat4(0.082, 0, 0.078), cream); // strap tab
+  a.set(.034, ty * .03, .03); b.set(.005, ty * .053, .022);
+  add(new THREE.CapsuleGeometry(.012, a.distanceTo(b) - .008, 3, 8), betweenMat(a, b), cream);
+  a.copy(b); b.set(-.018, ty * .042, .003);
+  add(new THREE.CapsuleGeometry(.010, a.distanceTo(b) - .007, 3, 8), betweenMat(a, b), cream);
+  add(new THREE.CylinderGeometry(.044, .041, .045, 16, 1, true), mat4(.034, 0, .078, Math.PI / 2), green);
+  add(new THREE.RingGeometry(.035, .044, 20), mat4(.034, 0, .1), '#172b21');
+  add(new THREE.TorusGeometry(.043, .0025, 5, 20), mat4(.034, 0, .101), cream);
+  add(new THREE.TorusGeometry(.041, .002, 5, 20), mat4(.034, 0, .059), '#d1cbb7');
+  add(paddedPanel(.029, .035, .007, .005), mat4(.078, 0, .082, 0, Math.PI / 2, 0), cream);
+  add(paddedPanel(.015, .014, .0015, .002), mat4(.083, 0, .082, 0, Math.PI / 2, 0), green);
   return mergeGeometries(parts);
 }
 
-export async function createScene(canvas, onProgress = () => {}) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' });
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.75));
-  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+export async function createScene(canvas, onProgress = () => {}, initialQuality = {}) {
+  let quality = { id: 'balanced', maxPixelRatio: 1.25, maxPixels: 1800000, shadowMapSize: 1024, shadows: true, grassDensity: .6, details: true, ...initialQuality };
+  // Let the browser choose its normal GPU. A nets session should not force a
+  // discrete GPU to wake up while the user is watching a video or working.
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: false, powerPreference: 'default' });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio));
+  renderer.shadowMap.enabled = quality.shadows; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.info.autoReset = false;
   renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.NeutralToneMapping; renderer.toneMappingExposure = .88;
-  const maxAniso = renderer.capabilities.getMaxAnisotropy(), gl = renderer.getContext();
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
   const loader = new THREE.TextureLoader(), hdrLoader = new HDRLoader();
   let loaded = 0;
   const track = promise => promise.then(asset => { onProgress(`Loading the ground and light · ${++loaded}/9`); return asset; });
@@ -161,7 +206,7 @@ export async function createScene(canvas, onProgress = () => {}) {
   const ambient = new THREE.HemisphereLight('#d7e6f5', '#4f5d36', .9); scene.add(ambient);
   // Clear sun sits front-left, behind the batter's shoulder, so the bowler and sight screen are front-lit.
   const sun = new THREE.DirectionalLight('#fff4de', 4.2); sun.position.set(-22, 30, 12); sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -.0004; sun.shadow.normalBias = .02; sun.target.position.set(0, 0, -10); scene.add(sun, sun.target);
+  sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize); sun.shadow.bias = -.0004; sun.shadow.normalBias = .02; sun.target.position.set(0, 0, -10); scene.add(sun, sun.target);
   const spots = [];
   for (const x of [-16, 16]) { const s = new THREE.SpotLight('#f0f3ff', 0, 70, .6, .8, 0); s.position.set(x, 13.5, 9); s.target.position.set(0, 0, -8); scene.add(s, s.target); spots.push(s); }
 
@@ -379,6 +424,9 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
 
   // ---------------------------------------------------------------- nets
   const netMat = new THREE.MeshStandardMaterial({ map: netTexture(), color: '#ffffff', roughness: .85, transparent: true, depthWrite: false, side: THREE.DoubleSide });
+  // A net is a single sheet. Separate front/back submissions add needless
+  // draw calls and state changes for these flat panels.
+  netMat.forceSinglePass = true;
   const windUniform = { value: 0 }, timeUniform = { value: 0 };
   netMat.onBeforeCompile = shader => {
     shader.uniforms.uWind = windUniform; shader.uniforms.uTime = timeUniform;
@@ -428,6 +476,14 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   for (const nx of [-9.6, -3.1, 3.1, 9.6]) for (const face of [-1, 1]) for (let z = -23.9; z < 3.5; z += .1 + rng() * .22) tuft(nx + face * (.04 + rng() * rng() * .3), z, .45 + rng() * .45);
   for (const nz of [-24, 3.6]) for (const face of [-1, 1]) { if (nz > 0 && face < 0) continue; for (let x = -9.5; x < 9.5; x += .12 + rng() * .25) tuft(x, nz + face * (.05 + rng() * rng() * .3), .45 + rng() * .4); }
   while (n < TUFTS) { const cx = (rng() - .5) * 70, cz = -44 + rng() * 60; if (Math.abs(cx) < 10.2 && cz > -24.6 && cz < 4.2) continue; for (let j = 0; j < 5; j++) tuft(cx + (rng() - .5) * .8, cz + (rng() - .5) * .8, .4 + rng() * .5); }
+  // Interleave all lanes before applying density, so lower settings thin grass
+  // evenly instead of removing the right-hand lane and distant rough first.
+  const shuffle = random(8041), swapMatrix = new THREE.Matrix4(), swapColor = new THREE.Color();
+  for (let i = TUFTS - 1; i > 0; i--) {
+    const j = Math.floor(shuffle() * (i + 1));
+    tufts.getMatrixAt(i, swapMatrix); tufts.getMatrixAt(j, _m1); tufts.setMatrixAt(i, _m1); tufts.setMatrixAt(j, swapMatrix);
+    tufts.getColorAt(i, swapColor); tufts.getColorAt(j, _c1); tufts.setColorAt(i, _c1); tufts.setColorAt(j, swapColor);
+  }
   tufts.computeBoundingSphere(); scene.add(tufts);
 
   // ---------------------------------------------------------------- surroundings
@@ -508,77 +564,13 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   }
 
   // ---------------------------------------------------------------- bowler
-  const bowler = new THREE.Group(); scene.add(bowler);
-  const hips = new THREE.Group(); hips.position.y = .96; bowler.add(hips);
-  const body = new THREE.Group(); body.position.y = .96; bowler.add(body);
-  const shirt = new THREE.MeshStandardMaterial({ color: '#22403a', roughness: .9 }), trousers = new THREE.MeshStandardMaterial({ color: '#efeada', roughness: .95 }), skin = new THREE.MeshStandardMaterial({ color: '#9a6445', roughness: .84 });
-  const shoe = new THREE.MeshStandardMaterial({ color: '#e2e4d7', roughness: .7 }), sole = new THREE.MeshStandardMaterial({ color: '#4b6a53' }), hair = new THREE.MeshStandardMaterial({ color: '#302920' }), capMat = new THREE.MeshStandardMaterial({ color: '#17281f', roughness: .9 });
   const addPart = (geo, material, x, y, z, parent, shadow = true) => { const m = new THREE.Mesh(geo, material); m.position.set(x, y, z); m.castShadow = shadow; parent.add(m); return m; };
-  const torso = addPart(lathe([[.15, 0], [.156, .07], [.145, .2], [.17, .37], [.2, .46], [.17, .51]], 24), shirt, 0, -.02, 0, body); torso.scale.z = .72;
-  const shoulders = addPart(new THREE.SphereGeometry(.21, 16, 12), shirt, 0, .46, 0, body); shoulders.scale.set(1, .38, .65);
-  addPart(new THREE.CylinderGeometry(.06, .073, .12, 10), skin, 0, .57, 0, body);
-  const head = addPart(new THREE.SphereGeometry(.116, 16, 12), skin, 0, .74, 0, body); head.scale.set(.84, 1.17, .92);
-  const hairMesh = addPart(new THREE.SphereGeometry(.117, 12, 10), hair, 0, .8, -.015, body); hairMesh.scale.set(.88, .72, .9);
-  addPart(new THREE.CylinderGeometry(.1, .105, .09, 12), capMat, 0, .84, 0, body); const brim = addPart(new THREE.CircleGeometry(.115, 12, -Math.PI / 2, Math.PI), capMat, 0, .80, .04, body, false); brim.rotation.x = -Math.PI / 2 + .15; brim.material.side = THREE.DoubleSide;
-  addPart(new THREE.SphereGeometry(.021, 8, 6), skin, 0, .735, .104, body, false);
-  const limbs = [];
-  function limb(x, y, isArm, parent) {
-    const pivot = new THREE.Group(); pivot.position.set(x, y, 0); parent.add(pivot);
-    // Rounded shoulder caps; shins run .035 longer than the joint spacing so the soles meet the pitch.
-    if (isArm) addPart(new THREE.SphereGeometry(.064, 14, 10), shirt, 0, 0, 0, pivot);
-    addPart(new THREE.CylinderGeometry(isArm ? .062 : .09, isArm ? .052 : .072, isArm ? .28 : .41, 14), isArm ? shirt : trousers, 0, isArm ? -.12 : -.2, 0, pivot);
-    const lower = new THREE.Group(); lower.position.y = isArm ? -.27 : -.41; pivot.add(lower);
-    const dz = isArm ? 0 : .035;
-    addPart(new THREE.SphereGeometry(isArm ? .053 : .075, 14, 10), isArm ? skin : trousers, 0, 0, 0, lower);
-    addPart(new THREE.CylinderGeometry(isArm ? .05 : .07, isArm ? .034 : .05, (isArm ? .29 : .42) + dz, 14), isArm ? skin : trousers, 0, (isArm ? -.14 : -.2) - dz / 2, 0, lower);
-    if (isArm) { const hand = addPart(new THREE.SphereGeometry(.047, 10, 8), skin, 0, -.3, 0, lower); hand.scale.set(.7, 1.15, .7); } else { addPart(new THREE.BoxGeometry(.12, .08, .25), shoe, 0, -.43 - dz, .05, lower); addPart(new THREE.BoxGeometry(.123, .021, .255), sole, 0, -.473 - dz, .05, lower, false); }
-    limbs.push({ pivot, lower }); return { pivot, lower };
-  }
-  const rightArm = limb(-.225, .47, true, body), leftArm = limb(.225, .47, true, body), rightLeg = limb(-.105, 0, false, hips), leftLeg = limb(.105, 0, false, hips);
-  // Pelvis and belt under the shirt hem, so a twisting torso never shows the tops of the legs.
-  const pelvis = addPart(lathe([[.1, -.13], [.14, -.09], [.158, -.02], [.155, .05], [.148, .09]], 20), trousers, 0, 0, 0, hips); pelvis.scale.z = .74;
-  const belt = addPart(new THREE.TorusGeometry(.152, .012, 6, 24), capMat, 0, .07, 0, hips); belt.rotation.x = Math.PI / 2; belt.scale.y = .74;
   const ballMat = new THREE.MeshPhysicalMaterial({ color: '#a3131f', roughness: .35, clearcoat: 1, clearcoatRoughness: .12, bumpMap: leatherBump(), bumpScale: .0006 });
-  const heldBall = addPart(new THREE.SphereGeometry(.036, 14, 10), ballMat, 0, -.31, .035, rightArm.lower);
-  const setLimb = (l, upper, low, z = 0) => { l.pivot.rotation.x = upper; l.pivot.rotation.z = z; l.lower.rotation.x = low; };
+  const athlete = createBowler({ ballMaterial: ballMat });
+  const bowler = athlete.group, heldBall = athlete.heldBall;
+  scene.add(bowler);
   let idleClock = 0;
-  function animateBowler(phase, t, c) {
-    const arm = c.arm === 'left' ? -1 : 1, spin = c.bowler.includes('spin');
-    const bowling = arm > 0 ? rightArm : leftArm, other = arm > 0 ? leftArm : rightArm, front = arm > 0 ? leftLeg : rightLeg, back = arm > 0 ? rightLeg : leftLeg;
-    if (heldBall.parent !== bowling.lower) bowling.lower.add(heldBall);
-    heldBall.visible = phase === 'runup' || phase === 'intro' || phase === 'ready'; heldBall.position.set(0, -.31, .035);
-    let z = -17.7, y = 0, lean = 0, twist = 0, sway = 0;
-    if (phase === 'runup') {
-      const z0 = spin ? -21.6 : -23.4, zb = -18.9;
-      if (t < 1.45) {
-        const s = t / 1.45, p = spin ? s : s * s * (3 - 2 * s) * .35 + s * .65; z = z0 + (zb - z0) * p;
-        const stride = Math.sin(t * (spin ? 11 : 16)) * (spin ? .5 : .7), bob = Math.abs(Math.cos(t * (spin ? 11 : 16))); y = bob * (spin ? .02 : .04) * Math.min(1, t * 2); lean = (spin ? .06 : .16) * Math.min(1, t * 1.5);
-        setLimb(back, stride, Math.max(0, -stride) * .9); setLimb(front, -stride, Math.max(0, stride) * .9);
-        setLimb(bowling, -stride * .7, -.6); setLimb(other, stride * .7, -.6);
-      } else if (t < 1.62) {
-        const u = (t - 1.45) / .17; z = zb + .6 * u; y = .15 * Math.sin(Math.PI * u); twist = 1.05 * smooth(u); lean = .05;
-        setLimb(back, .3, .9); setLimb(front, -.6, 1.2); setLimb(bowling, .3 + .3 * u, -.9); setLimb(other, -.9, -1.1, 0);
-      } else if (t < 1.85) {
-        const u = (t - 1.62) / .23; z = -18.3 + .3 * u; twist = 1.1; lean = -.16 * u;
-        setLimb(back, .15, .55 - .3 * u); setLimb(front, lerp(-.6, .55, smooth(u)), lerp(1.2, .1, u)); setLimb(bowling, lerp(.6, 1.0, u), -.2); setLimb(other, lerp(-.9, -2.6, smooth(u)), -.3, 0);
-      } else {
-        const u = smooth((t - 1.85) / .35), a = clamp((t - 1.85) / .35, 0, 1); z = -18 + .3 * u; twist = 1.1 * (1 - u); lean = lerp(-.16, .25, u); y = (spin ? .13 : .18) * u;
-        // The bowling arm goes back, up and over, speeding into release; at t = 2.2 it is exactly vertical (the physics release pose).
-        setLimb(back, lerp(.15, -.55, u), .25 * (1 - u)); setLimb(front, lerp(.55, .35, u), 0); setLimb(bowling, lerp(1.0, Math.PI, a * a + .28 * a * (1 - a)), 0); setLimb(other, lerp(-2.6, -.4, u), -.3, 0);
-      }
-    } else if (phase === 'flight' || phase === 'result') {
-      const p = Math.min(t / .5, 1), k = 1 - Math.exp(-t * 2.2); z = -17.7 + 3.2 * k; y = (spin ? .13 : .18) * Math.max(0, 1 - t / .22); lean = .25 * Math.max(0, 1 - t / .8) + .08 * Math.min(1, t / .8);
-      const stride = Math.sin(t * 9) * .55 * Math.exp(-t * .9); setLimb(back, -.55 * (1 - p) + stride * p, Math.max(0, -stride) * .8); setLimb(front, .35 * (1 - p) - stride * p, Math.max(0, stride) * .8);
-      setLimb(bowling, Math.PI + 2.6 * p * (2 - p) + stride * .3 * p, -.2 * p); setLimb(other, lerp(-.4, .3, p) + stride * .4 * p, -.4, 0);
-    } else {
-      // Idle at the top of the mark: weight shift, ball flipped in the bowling hand.
-      const ic = idleClock; sway = .025 * Math.sin(ic * 1.9); lean = .03 + .02 * Math.sin(ic * .9);
-      setLimb(back, .05, .1); setLimb(front, -.05, .12); setLimb(bowling, -.25 + .08 * Math.sin(ic * 1.3), -1.2); setLimb(other, -.35, -1.7, arm * .8);
-      const flip = Math.max(0, Math.sin(ic * 1.4)); heldBall.position.set(0, -.31 + flip * flip * .18, .035 + flip * .05);
-    }
-    bowler.position.set(-.195 * arm + sway, y, z); body.rotation.set(lean, twist * arm, 0); hips.rotation.y = twist * arm * .45;
-    heldBall.rotation.y = idleClock * 2;
-  }
+  function animateBowler(phase, t, c) { athlete.animate(phase, t, c, idleClock); }
 
   // ---------------------------------------------------------------- ball, trail, markers
   const ballGroup = new THREE.Group(); ballGroup.scale.setScalar(1.2); scene.add(ballGroup); ballGroup.visible = false;
@@ -589,6 +581,9 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   const ballGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(64, [[0, 'rgba(255,236,200,1)'], [.35, 'rgba(255,220,170,0.45)'], [1, 'rgba(255,210,150,0)']]), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: .55 })); scene.add(ballGlow); ballGlow.visible = false;
   const shadowTex = radialTexture(64, [[0, 'rgba(10,20,12,1)'], [.5, 'rgba(10,20,12,0.55)'], [1, 'rgba(10,20,12,0)']]);
   const ballShadow = new THREE.Mesh(new THREE.PlaneGeometry(.24, .24), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity: .32, depthWrite: false })); ballShadow.rotation.x = -Math.PI / 2; scene.add(ballShadow); ballShadow.visible = false;
+  // Cheap grounding survives Eco mode, which has no shadow-map pass.
+  const bowlerContact = new THREE.Mesh(new THREE.PlaneGeometry(.9, .65), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity: .24, depthWrite: false }));
+  bowlerContact.rotation.x = -Math.PI / 2; scene.add(bowlerContact);
   const TRAIL = 45, trailPos = new Float32Array(TRAIL * 2 * 3), trailFade = new Float32Array(TRAIL * 2), trailIndex = [];
   for (let i = 0; i < TRAIL - 1; i++) { const a = i * 2; trailIndex.push(a, a + 1, a + 2, a + 1, a + 3, a + 2); }
   for (let i = 0; i < TRAIL; i++) { const f = i / (TRAIL - 1); trailFade[i * 2] = f; trailFade[i * 2 + 1] = f; }
@@ -637,11 +632,11 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   // ---------------------------------------------------------------- bat, gloves, arms, body
   const batGroup = new THREE.Group(); scene.add(batGroup);
   const willow = willowTextures();
-  const wood = new THREE.MeshPhysicalMaterial({ map: willow.map, bumpMap: willow.bump, bumpScale: .4, roughness: .55, clearcoat: .35, clearcoatRoughness: .45 });
+  const wood = new THREE.MeshPhysicalMaterial({ map: willow.map, bumpMap: willow.bump, bumpScale: .00035, roughness: .58, clearcoat: .2, clearcoatRoughness: .5 });
   const blade = new THREE.Mesh(bladeGeometry(), wood); blade.castShadow = true; blade.receiveShadow = true; batGroup.add(blade);
   const gripTex = gripTextures();
-  const handle = new THREE.Mesh(new THREE.CylinderGeometry(.0165, .018, .29, 20), new THREE.MeshStandardMaterial({ map: gripTex.map, bumpMap: gripTex.bump, bumpScale: 1, roughness: .92 })); handle.position.y = .455; handle.scale.z = .85; handle.castShadow = true; batGroup.add(handle);
-  const gloveMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .8, bumpMap: quiltBump(), bumpScale: .7 });
+  const handle = new THREE.Mesh(lathe([[0, -.145], [.017, -.145], [.018, -.131], [.0165, -.095], [.016, .115], [.019, .136], [.019, .145], [0, .145]], 20), new THREE.MeshStandardMaterial({ map: gripTex.map, bumpMap: gripTex.bump, bumpScale: .0011, roughness: .92 })); handle.position.y = .455; handle.scale.z = .85; handle.castShadow = true; batGroup.add(handle);
+  const gloveMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .76, bumpMap: quiltBump(), bumpScale: .00045 });
   const gloveGeos = { right: gloveGeometry(true, false), rightTop: gloveGeometry(false, false), left: gloveGeometry(true, true), leftTop: gloveGeometry(false, true) };
   const gloves = [new THREE.Mesh(gloveGeos.right, gloveMat), new THREE.Mesh(gloveGeos.rightTop, gloveMat)];
   for (const g of gloves) { g.castShadow = true; g.receiveShadow = true; scene.add(g); }
@@ -651,24 +646,32 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vArmY;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvArmY = position.y;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vArmY;').replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\n' + cut);
   };
-  const armMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .85, bumpMap: knitBump(), bumpScale: 1.2, transparent: true });
+  const armMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .9, bumpMap: knitBump(), bumpScale: .0008, transparent: true });
   armMat.onBeforeCompile = sh => fadeArm(sh, 'diffuseColor.a *= 1.0 - smoothstep(0.15, 0.28, vArmY);\nif (diffuseColor.a < 0.02) discard;'); // no depth writes from faded texels
   const armDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
   armDepth.onBeforeCompile = sh => fadeArm(sh, 'if (vArmY > 0.22) discard;'); // shadow only from the part you can see
   const SKIN = '#b5865f', SWEATER = '#d8cfb6', TRIM = '#1f3a2c', L_UPPER = .5, L_FORE = .36;
   const forearmGeo = mergeGeometries([
     { g: lathe([[.036, -.01], [.038, 0], [.040, .035], [.041, .055]], 18), c: SKIN, uv: [0, 0] },
-    { g: lathe([[.043, .042], [.046, .065], [.046, .26], [.046, .31]], 18), c: SWEATER },
-    { g: new THREE.TorusGeometry(.044, .008, 8, 20), m: mat4(0, .046, 0, Math.PI / 2), c: TRIM },
+    { g: lathe([[.042, .042], [.047, .049], [.047, .071], [.050, .086], [.048, .12], [.057, .23], [.061, .31]], 18), c: SWEATER },
+    { g: new THREE.TorusGeometry(.046, .0025, 5, 20), m: mat4(0, .051, 0, Math.PI / 2), c: TRIM },
+    { g: new THREE.TorusGeometry(.046, .0015, 5, 20), m: mat4(0, .065, 0, Math.PI / 2), c: TRIM },
     { g: new THREE.SphereGeometry(.045, 18, 8, 0, TAU, 0, Math.PI / 2), m: mat4(0, .07, 0, 0, 0, 0, 1, 2, 1), c: SWEATER }, // solid end seen down the sleeve, shaded like its walls
   ]);
   const arms = [0, 1].map(() => ({ fore: new THREE.Mesh(forearmGeo, armMat) }));
   for (const a of arms) { a.fore.castShadow = true; a.fore.receiveShadow = true; a.fore.customDepthMaterial = armDepth; scene.add(a.fore); }
-  const padMat = new THREE.MeshStandardMaterial({ color: '#ebe7da', roughness: .85, bumpMap: quiltBump(), bumpScale: 1 });
-  const padGeo = mergeGeometries([
-    { g: lathe([[.06, 0], [.095, .04], [.1, .3], [.095, .5], [.08, .62]], 16), m: mat4(0, 0, 0, 0, 0, 0, 1, 1, .55) },
-    { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .4, .04, 0, 0, Math.PI / 2) }, { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .47, .05, 0, 0, Math.PI / 2) }, { g: new THREE.CapsuleGeometry(.045, .12, 3, 10), m: mat4(0, .54, .045, 0, 0, Math.PI / 2) },
-  ]);
+  const padMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .84, bumpMap: quiltBump(), bumpScale: .00055 });
+  const padParts = [
+    { g: lathe([[.06, 0], [.087, .025], [.095, .28], [.098, .43], [.087, .57], [.068, .61]], 16), m: mat4(0, 0, 0, 0, 0, 0, 1, 1, .55), c: '#c4bfae' },
+    { g: paddedPanel(.135, .064, .016, .013), m: mat4(0, .57, .045, -.12), c: '#eeeade' },
+  ];
+  // Separate vertical canes and horizontal knee rolls, with real gaps rather than deep bump shading.
+  for (let i = 0; i < 7; i++) {
+    const x = (i - 3) * .025, z = .031 + .027 * Math.sqrt(1 - (x / .1) ** 2);
+    padParts.push({ g: new THREE.CapsuleGeometry(.011, .277, 3, 8), m: mat4(x, .187, z, 0, 0, 0, 1, 1, .72), c: i % 2 ? '#ebe7da' : '#f4f0e4' });
+  }
+  for (let i = 0; i < 3; i++) padParts.push({ g: paddedPanel(.164 - i * .007, .048, .023, .014), m: mat4(0, .374 + i * .057, .05 + (i === 1 ? .005 : 0)), c: '#f0ecdf' });
+  const padGeo = mergeGeometries(padParts);
   const pads = [new THREE.Mesh(padGeo, padMat), new THREE.Mesh(padGeo, padMat)]; for (const p of pads) { p.receiveShadow = true; scene.add(p); } // seen at the foot of a portrait screen and while the gaze follows a struck ball
   let hand = 'right', handSign = 1, lastBatX = .25, lastBatY = .48, lastBatZ = .06, batSpeed = 0;
   const wristLocal = new THREE.Vector3(.034, 0, .105), gloveY = [.40, .51];
@@ -723,7 +726,12 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   }
 
   // ---------------------------------------------------------------- camera, gaze, head motion
-  function resize() { const rect = canvas.parentElement.getBoundingClientRect(); renderer.setSize(rect.width, rect.height, false); camera.aspect = rect.width / rect.height; camera.fov = battingFov(camera.aspect); camera.updateProjectionMatrix(); }
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect(), width = Math.max(1, rect.width), height = Math.max(1, rect.height);
+    const ratio = Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio, Math.sqrt(quality.maxPixels / (width * height)));
+    renderer.setPixelRatio(ratio); renderer.setSize(width, height, false);
+    camera.aspect = width / height; camera.fov = battingFov(camera.aspect); camera.updateProjectionMatrix();
+  }
   new ResizeObserver(resize).observe(canvas.parentElement); resize();
   const gazeCamera = camera.clone(), gazePoint = new THREE.Vector3().copy(BATTING_VIEW.look), restPoint = gazePoint.clone(), gazeTarget = new THREE.Vector3(), viewQuat = new THREE.Quaternion().copy(camera.quaternion);
   // The title screen looks along the real nets from beside the crease. Give
@@ -738,7 +746,12 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     for (const mesh of batterMeshes) mesh.visible = !frame;
     if (frame && frame.width > 0 && frame.height > 0) { menuCamera.aspect = frame.width / frame.height; menuCamera.updateProjectionMatrix(); }
   }
+  let renderedFrames = 0;
   function render() {
+    renderer.info.reset();
+    bowlerContact.position.set(bowler.position.x, PITCH_TOP + .002, bowler.position.z);
+    bowlerContact.material.opacity = quality.shadows ? .12 : .28;
+    bowlerContact.scale.setScalar(1 + Math.max(0, bowler.position.y) * .5);
     const width = canvas.clientWidth, height = canvas.clientHeight;
     if (menuFrame && menuFrame.width > 0 && menuFrame.height > 0) {
       const f = menuFrame, bottom = height - f.y - f.height;
@@ -748,8 +761,30 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     } else {
       renderer.setScissorTest(false); renderer.setViewport(0, 0, width, height); renderer.render(scene, camera);
     }
-    // Alpha-to-coverage grass and chalk leave partial alpha in the canvas; make it opaque so the page behind never tints their edges.
-    gl.colorMask(false, false, false, true); gl.clearColor(0, 0, 0, 1); gl.clear(gl.COLOR_BUFFER_BIT); gl.colorMask(true, true, true, true); renderer.resetState();
+    // The opaque context owns canvas alpha. Keep Three's GL state cache intact
+    // instead of clearing and rebuilding it after every single frame.
+    renderedFrames++;
+  }
+  function setQuality(profile) {
+    quality = { ...quality, ...profile };
+    const shadowChanged = renderer.shadowMap.enabled !== quality.shadows;
+    renderer.shadowMap.enabled = quality.shadows;
+    if (sun.shadow.mapSize.x !== quality.shadowMapSize) {
+      sun.shadow.map?.dispose(); sun.shadow.map = null;
+      sun.shadow.mapSize.set(quality.shadowMapSize, quality.shadowMapSize);
+    }
+    if (shadowChanged) scene.traverse(object => {
+      if (!object.material) return;
+      for (const material of Array.isArray(object.material) ? object.material : [object.material]) material.needsUpdate = true;
+    });
+    tufts.count = Math.max(1, Math.round(TUFTS * quality.grassDensity));
+    for (const light of spots) light.visible = quality.details !== false;
+    resize(); renderer.shadowMap.needsUpdate = true;
+  }
+  function getPerformanceInfo() {
+    return { quality: quality.id, frames: renderedFrames, drawCalls: renderer.info.render.calls, triangles: renderer.info.render.triangles,
+      pixelRatio: renderer.getPixelRatio(), width: canvas.width, height: canvas.height, shadows: renderer.shadowMap.enabled,
+      shadowSize: sun.shadow.mapSize.x, grassInstances: tufts.count };
   }
   let lastBallTime = -1, followUntil = 0, frameDt = 0, clock = 0;
   function updateGaze(d, dt, isPaused) {
@@ -814,5 +849,6 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   const idle = window.requestIdleCallback || (fn => setTimeout(fn, 200)), warm = ['hard', 'green', 'dry', 'soft'];
   const warmNext = () => { const kind = warm.shift(); if (!kind) return; pitchTexture(kind); idle(warmNext); };
   idle(warmNext);
-  return { renderer, scene, camera, setEnvironment, setMenuFrame, updateBat, updateBall, updateGaze, animateBowler, getReleasePosition, pointerWorld, project, render, resetWicket, hitWicket };
+  setQuality(quality);
+  return { renderer, scene, camera, setQuality, getPerformanceInfo, setEnvironment, setMenuFrame, updateBat, updateBall, updateGaze, animateBowler, getReleasePosition, pointerWorld, project, render, resetWicket, hitWicket };
 }
