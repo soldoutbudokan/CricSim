@@ -4,9 +4,9 @@
 // No recordings, microphone access or network requests.
 const SURFACES = { hard: { tone: 620, decay: .045 }, green: { tone: 520, decay: .05 }, dry: { tone: 700, decay: .04 }, soft: { tone: 300, decay: .07 } };
 export class NetsAudio {
-  constructor(){this.context=null;this.enabled=true;this.wind=0;this.surface='hard';this.nextBird=0;}
+  constructor(){this.context=null;this.enabled=true;this.suspended=false;this.contextQueue=Promise.resolve();this.wind=0;this.surface='hard';this.nextBird=0;}
   async unlock(){
-    if(!this.enabled)return;
+    if(!this.enabled||this.suspended)return;
     try{
       if(!this.context){
         const ctx=this.context=new(window.AudioContext||window.webkitAudioContext)();
@@ -19,7 +19,7 @@ export class NetsAudio {
         const data=this.noise.getChannelData(0);for(let i=0;i<data.length;i++)data[i]=Math.random()*2-1;
         this.startAmbience();
       }
-      if(this.context.state==='suspended')await this.context.resume();
+      await this.syncContextState();
     }catch{/* Audio is optional when the browser cannot provide it. */}
   }
   startAmbience(){
@@ -53,7 +53,18 @@ export class NetsAudio {
     }
     setTimeout(()=>pan.disconnect(),1500);
   }
-  setEnabled(enabled){this.enabled=enabled;if(this.master)this.master.gain.setTargetAtTime(enabled?.7:0,this.context.currentTime,.025);}
+  // Muting and pausing stop the audio graph too, including the looping wind
+  // sources. Serialize state changes so a quick hide/show cannot resume late.
+  syncContextState(){
+    this.contextQueue=this.contextQueue.then(async()=>{
+      const ctx=this.context;if(!ctx||ctx.state==='closed')return;
+      if(!this.enabled||this.suspended){if(ctx.state==='running')await ctx.suspend();}
+      else if(ctx.state==='suspended')await ctx.resume();
+    }).catch(()=>{/* Browser audio restrictions must not interrupt play. */});
+    return this.contextQueue;
+  }
+  setSuspended(suspended){if(this.suspended===suspended)return;this.suspended=suspended;this.syncContextState();}
+  setEnabled(enabled){this.enabled=enabled;if(this.master)this.master.gain.setTargetAtTime(enabled?.7:0,this.context.currentTime,.025);this.syncContextState();}
   setWind(speed){this.wind=speed;if(!this.context)return;const t=this.context.currentTime,w=Math.abs(speed);this.windGain.gain.setTargetAtTime(.006+w*.0007,t,.3);this.leafGain.gain.setTargetAtTime(.0025+w*.00045,t,.3);}
   setSurface(kind){this.surface=SURFACES[kind]?kind:'hard';}
   // Shared building blocks -------------------------------------------------

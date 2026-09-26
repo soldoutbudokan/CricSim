@@ -160,6 +160,13 @@
       </div>
       <div class="settings-scroll">
         <section class="setting-section">
+          <div class="section-heading"><h3>Graphics &amp; performance</h3></div>
+          <label for="graphics">Graphics quality</label>
+          <select id="graphics" aria-describedby="graphics-description graphics-status"><option value="auto">Auto · adapt to this computer</option><option value="balanced">Balanced · 60 fps</option><option value="eco">Eco · 30 fps, lower power</option><option value="high">High · richer detail, 60 fps</option></select>
+          <p id="graphics-description" class="field-note">Playing alongside a video? Choose Eco to reduce graphics load. Changes apply immediately.</p>
+          <p id="graphics-status" class="field-note" role="status">Auto · balanced quality</p>
+        </section>
+        <section class="setting-section">
           <div class="section-heading"><h3><span>01</span>The bowler</h3><span id="bowler-tag" class="tiny-tag">PACE</span></div>
           <label for="bowler">Bowling style</label>
           <select id="bowler"><option value="fast">Fast pace</option><option value="outswing">Outswing</option><option value="inswing">Inswing</option><option value="offspin">Off spin</option><option value="legspin">Leg spin</option></select>
@@ -205,7 +212,7 @@
           <label class="switch-row" for="auto"><span>Continuous deliveries</span><input id="auto" type="checkbox"><span class="switch"></span></label>
         </section>
       </div>
-      <div class="settings-footer"><span class="save-hint" id="settings-hint">Changes apply to the next ball</span><button id="reset-session" class="text-button">Reset session</button></div>
+      <div class="settings-footer"><span class="save-hint" id="settings-hint">Delivery settings apply to the next ball</span><button id="reset-session" class="text-button">Reset session</button></div>
     </aside>
   </main>
 
