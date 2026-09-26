@@ -1,12 +1,12 @@
 // CricSim scene: procedural textures, merged/instanced geometry, first-person batter rig.
 // Every texture in here is generated on a canvas at load time; the only files loaded are
 // the CC0 Poly Haven ground maps and HDR skies. No per-frame allocations in hot paths.
-import * as THREE from './vendor/three.module.js';
-import { HDRLoader } from './vendor/HDRLoader.js';
-import { createBowler } from './bowler.js';
-import { batBasis, random } from './physics.js';
-import { CONTACT_Z } from './bat-control.js';
-import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js';
+import * as THREE from './vendor/three.module.js?v=85c5bf6cbdfe4cef';
+import { HDRLoader } from './vendor/HDRLoader.js?v=85c5bf6cbdfe4cef';
+import { createBowler } from './bowler.js?v=85c5bf6cbdfe4cef';
+import { batBasis, random } from './physics.js?v=85c5bf6cbdfe4cef';
+import { CONTACT_Z } from './bat-control.js?v=85c5bf6cbdfe4cef';
+import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js?v=85c5bf6cbdfe4cef';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;

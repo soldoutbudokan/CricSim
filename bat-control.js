@@ -1,4 +1,4 @@
-import { batBasis, clamp } from './physics.js';
+import { batBasis, clamp } from './physics.js?v=85c5bf6cbdfe4cef';
 
 export const BAT_LIMITS = { x: 1.18, minY: 0.35, maxY: 1.65, travel: 0.52, speed: 20, angularSpeed: 28, rate: 9 };
 export const CONTACT_Z = -0.22;

@@ -1,4 +1,4 @@
-import { clamp } from './physics.js';
+import { clamp } from './physics.js?v=85c5bf6cbdfe4cef';
 
 // A fixed batting view shows the release hand and contact area together. Head
 // movement stays small; torso and feet can move without dragging the aim around.
