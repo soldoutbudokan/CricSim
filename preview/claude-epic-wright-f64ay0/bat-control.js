@@ -1,4 +1,4 @@
-import { batBasis, clamp } from './physics.js?v=f8e1566bac9922f4';
+import { batBasis, clamp } from './physics.js?v=bb970c53c4b054ed';
 
 export const BAT_LIMITS = { x: 1.18, minY: 0.35, maxY: 1.65, travel: 0.52, speed: 20, angularSpeed: 28, rate: 9 };
 export const CONTACT_Z = -0.22;
@@ -23,6 +23,8 @@ export const FLOW = Object.freeze({
   restSpeed: 0.9, window: 0.024, memory: 0.25, anchorMemory: 0.15, onsetMemory: 0.06, gap: 0.08,
   // A push must point within 60 degrees of straight up; sideways and downward moves only aim.
   cone: 0.5, backdate: 0.03, jumpSpeed: 30,
+  // A pointer that reappears this far away after a silence is a new hand, not a push.
+  jumpDistance: 0.3,
   // An upward move this fast and far that stays short of the trigger earns a "push harder" hint.
   hintSpeed: 1.2, hintDistance: 0.04, hintTime: 1.0,
 });
@@ -46,7 +48,7 @@ export function createBatControl(hand = 'right', mode = 'manual') {
     speed: 0, releaseTime: 0, strokeTime: 0, aimLocked: false,
     // Flow: recent pointer samples, the last one that was at rest, and whether
     // the next push may swing. The clock is the controller's own simulated time.
-    clock: 0, samples: [], rest: null, armed: false, pointerSpeed: 0, softPushAt: -Infinity,
+    clock: 0, samples: [], rest: null, armed: false, pointerSpeed: 0, softPushAt: -Infinity, restartClock: 0,
   };
 }
 
@@ -64,16 +66,25 @@ export function setSwipeLength(control, factor) {
   if (Number.isFinite(factor)) control.swipe = clamp(factor, 0.4, 2.5);
 }
 
-// A new touch, or a pointer coming back onto the canvas, starts a fresh hand:
-// the distance from wherever it last was is not a push, and the hand must be
-// seen resting (a slow sample, or a silence) before it may swing.
+// A new touch, a pointer coming back onto the canvas or a resize starts a fresh
+// hand: the distance from wherever it last was is not a push, and the hand must
+// be seen resting (a slow sample, or a silence) before it may swing.
 export function restartFlow(control) {
-  control.samples.length = 0; control.rest = null; control.armed = false; control.pointerSpeed = 0; control.softPushAt = -Infinity;
+  control.samples.length = 0; control.restartClock = control.clock;
+  disarmFlow(control);
+}
+
+// A cancelled stroke (the next ball, a pause, a change of intent) forgets
+// nothing about where the hand is: the last sample stays as the place a still
+// mouse is resting, so the silence before the next push still counts.
+function disarmFlow(control) {
+  control.samples.splice(0, Math.max(0, control.samples.length - 1));
+  control.rest = null; control.armed = false; control.pointerSpeed = 0; control.softPushAt = -Infinity;
 }
 
 // How decisive a push must be before Flow swings.
 export function setSwingTrigger(control, trigger) {
-  if (trigger in SWING_TRIGGERS) control.trigger = trigger;
+  if (Object.hasOwn(SWING_TRIGGERS, trigger)) control.trigger = trigger;
 }
 
 // Simulation seconds per real second, so a push can be dated in stroke time.
@@ -97,10 +108,14 @@ export function startStroke(control, defend = control.intent === 'defend') {
   // A held button or repeated pointer-down cannot restart an automatic attack.
   if (timed(control) && (control.held || timedSwinging(control))) return;
   // Flow does not need a click, but one still plays the same stroke. A click
-  // that lands in the middle of a push swings at the point the hand rested on.
+  // that lands in the middle of a push swings at the point the hand rested on;
+  // a click during a sideways correction swings where the outline is.
   if (control.mode === 'flow' && !defend) {
     const { rest } = control, last = control.samples.at(-1);
-    if (rest && last && last.t - rest.t <= FLOW.anchorMemory && control.pointerSpeed >= FLOW.restSpeed) { control.target.x = rest.wx; control.target.y = rest.wy; }
+    if (rest && last && last.t - rest.t <= FLOW.anchorMemory && control.pointerSpeed >= FLOW.restSpeed) {
+      const dx = last.x - rest.x, dy = last.y - rest.y;
+      if (dy >= FLOW.cone * Math.hypot(dx, dy)) { control.target.x = rest.wx; control.target.y = rest.wy; }
+    }
     control.armed = false; control.rest = null;
   }
   control.held = !defend; control.defending = defend; control.attempted = true;
@@ -150,8 +165,8 @@ export function releaseStroke(control, cancel = false) {
     if (cancel) {
       control.cancelled = true; control.phase = 'recover'; control.releaseTime = 0;
       control.pose.active = false; control.velocity = control.carry = 0;
-      // A pause, blur or panel leaves the hand somewhere new; old samples must not read as a push.
-      restartFlow(control);
+      // A pause, blur, panel or the next ball: the stroke is off, the hand stays where it is.
+      disarmFlow(control);
     } else if (swinging) control.phase = 'follow';
     else if (wasDefending) { control.phase = 'recover'; control.releaseTime = 0; control.pose.active = false; }
     control.pose.defending = false;
@@ -203,10 +218,12 @@ function moveFlow(control, x, y, pointer, time) {
   let t = Number.isFinite(time) ? time : control.clock;
   if (last && t < last.t) t = last.t;
   // A still mouse sends nothing. An event after a silence means the hand rested
-  // where the last sample was, and only then began to move.
-  if (last && t - last.t >= FLOW.gap) {
-    const still = { ...last, t: t - FLOW.window, s: control.clock };
-    samples.length = 0; samples.push(still); control.rest = still; control.armed = true;
+  // where the last sample was, and only then began to move. That first event
+  // cannot be a push by itself: the samples after it, with real intervals, decide.
+  const afterGap = Boolean(last) && t - last.t >= FLOW.gap;
+  if (afterGap) {
+    if (Math.hypot(pointer.x - last.x, pointer.y - last.y) > FLOW.jumpDistance) { restartFlow(control); control.restartClock = -Infinity; }
+    else { const still = { ...last, t: t - FLOW.window, s: control.clock }; samples.length = 0; samples.push(still); control.rest = still; control.armed = true; }
   }
   const sample = { x: pointer.x, y: pointer.y, wx: clamp(x, -BAT_LIMITS.x, BAT_LIMITS.x), wy: clamp(y, BAT_LIMITS.minY, BAT_LIMITS.maxY), t, s: control.clock };
   samples.push(sample);
@@ -215,18 +232,23 @@ function moveFlow(control, x, y, pointer, time) {
   // 60 Hz pointer and a 1 kHz coalesced stream read the same push.
   let ref = null;
   for (let i = samples.length - 2; i >= 0; i--) { ref = samples[i]; if (t - ref.t >= FLOW.window) break; }
-  let speed = ref && t > ref.t ? Math.hypot(sample.x - ref.x, sample.y - ref.y) / (t - ref.t) : 0;
+  let speed = ref && t > ref.t && !afterGap ? Math.hypot(sample.x - ref.x, sample.y - ref.y) / (t - ref.t) : 0;
   // A teleport (a finger put down elsewhere, a pointer back from off-canvas) is
-  // not a hand movement: forget the history and treat this sample as the rest.
-  if (speed > FLOW.jumpSpeed) { samples.splice(0, samples.length - 1); ref = null; speed = 0; }
+  // not a hand movement: forget the history and wait to see the hand resting.
+  if (speed > FLOW.jumpSpeed) { samples.splice(0, samples.length - 1); ref = null; speed = 0; control.armed = false; }
   control.pointerSpeed = speed;
-  // A measured slow movement is a rest and arms the next push; a lone first
-  // sample says nothing about the hand yet.
-  if (speed < FLOW.restSpeed) { control.rest = sample; if (ref) control.armed = true; }
+  // A measured slow movement is a rest and arms the next push. A lone first
+  // sample says nothing about the hand, unless it comes after a silence that
+  // followed a restart: then the hand has been still since.
+  if (speed < FLOW.restSpeed && !afterGap) {
+    control.rest = sample;
+    if (ref || (!last && control.clock - control.restartClock >= FLOW.gap)) control.armed = true;
+  }
   // A stroke in flight keeps its contact point; a block follows the hand onto the line.
   if (timedSwinging(control)) return;
   control.target.x = sample.wx; control.target.y = sample.wy;
-  if (control.defending || !control.armed || speed < FLOW.hintSpeed) return;
+  // With Defend chosen a push only aims: a block is held, never pushed.
+  if (control.defending || control.intent === 'defend' || !control.armed || afterGap || speed < FLOW.hintSpeed) return;
   // The aim is where the hand rested before it pushed, not where the push was
   // noticed. A hand that never rested (tracking the ball) anchors a moment back.
   const anchor = control.rest && t - control.rest.t <= FLOW.anchorMemory ? control.rest

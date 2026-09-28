@@ -1,7 +1,7 @@
 // A small articulated athlete, built once from shaped surfaces. All details on
 // each moving part are baked into one vertex-colour mesh: no texture downloads,
 // per-frame geometry updates, material switches, or separate buttons / shoelaces.
-import * as THREE from './vendor/three.module.js?v=f8e1566bac9922f4';
+import * as THREE from './vendor/three.module.js?v=bb970c53c4b054ed';
 
 const DOWN = new THREE.Vector3(0, -1, 0), UP = new THREE.Vector3(0, 1, 0);
 const TAU = Math.PI * 2, UPPER_LEG = .455, LOWER_LEG = .445, ANKLE = .165;

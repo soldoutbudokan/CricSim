@@ -1,7 +1,7 @@
 // Feedback describes the stroke at contact / at the crease, never the current
 // mouse button after the ball has gone. Timing is relative to the stroke's middle.
 
-import { BALL, batBasis, clamp } from './physics.js?v=f8e1566bac9922f4';
+import { BALL, batBasis, clamp } from './physics.js?v=bb970c53c4b054ed';
 
 // Standard clicks and Flow pushes commit a full shot, including after release
 // and recovery. Manual mode retains its existing held/released leave convention.
@@ -26,7 +26,7 @@ export function describeShot(stroke, contact = null, bowled = false, miss = null
   if (isTimed(stroke) && stroke.committed && !stroke.cancelled) {
     // Sampled at contact or at the crease. A released button and a recovered
     // animation cannot erase the intent or rewrite the stroke's timing.
-    const offset = (stroke.elapsed - stroke.idealContactTime) * 1000, act = stroke.mode === 'flow' ? 'Push' : 'Click or tap';
+    const offset = (stroke.elapsed - stroke.idealContactTime) * 1000, act = stroke.mode === 'flow' ? 'Start the push' : 'Click or tap';
     if (Number.isFinite(offset) && offset >= 35) return {
       timing: 'Early', detail: contact ? `You made contact, but started early. ${act} a little later for the strongest stroke.` : `The stroke arrived before the ball. ${act} a little later.`,
     };
