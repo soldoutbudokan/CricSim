@@ -29,7 +29,9 @@ async function fixture(t) {
     GIT_TERMINAL_PROMPT: '0',
     PUBLISH_PAGES_RETRY_DELAY: '0',
     PUBLISH_PAGES_TEST_HOOK: '',
+    // On a runner the script would otherwise read the workflow's own commit and outputs.
     GITHUB_OUTPUT: '',
+    GITHUB_SHA: '',
   };
   const git = async (...args) => (await run('git', [...identity, ...args], { env })).stdout;
   await git('-c', 'init.defaultBranch=main', 'init', '--quiet', '--bare', bare);
