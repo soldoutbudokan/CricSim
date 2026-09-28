@@ -27,7 +27,7 @@ export const SHORTCUTS = [
   { id: 'ageDown', group: 'Surface & conditions', keys: ['Comma'], label: 'Ball age −10 overs', repeat: true },
   { id: 'ageUp', group: 'Surface & conditions', keys: ['Period'], label: 'Ball age +10 overs', repeat: true },
   { id: 'timeScale', group: 'Practice tools', keys: ['KeyT'], label: 'Simulation speed' },
-  { id: 'swipe', group: 'Practice tools', keys: ['KeyV'], label: 'Swipe length' },
+  { id: 'swipe', group: 'Practice tools', keys: ['KeyV'], label: 'Swing trigger · swipe length' },
   { id: 'guide', group: 'Practice tools', keys: ['KeyG'], label: 'Bat guide & ball trail' },
   { id: 'auto', group: 'Practice tools', keys: ['KeyX'], label: 'Continuous deliveries' },
   { id: 'sound', group: 'Interface', keys: ['KeyM'], label: 'Sound' },

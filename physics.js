@@ -18,7 +18,7 @@ export const BOWLERS = {
 // Ball-to-ball pace spread in km/h (one standard deviation). Real bowlers vary a
 // few km/h between deliveries; a mixed bag adds the occasional slower ball.
 export const PACE_SPREADS = { none: 0, slight: 2, natural: 4, mixed: 7 };
-export const DEFAULTS = { bowler: 'fast', arm: 'right', speed: 140, pitch: 'hard', length: 'good', line: 'off', weather: 'clear', wind: 0, age: 8, timeScale: 1, auto: false, guide: true, hand: 'right', audio: true, swipe: 'standard', speedSpread: 'none' };
+export const DEFAULTS = { bowler: 'fast', arm: 'right', speed: 140, pitch: 'hard', length: 'good', line: 'off', weather: 'clear', wind: 0, age: 8, timeScale: 1, auto: false, guide: true, hand: 'right', audio: true, swipe: 'standard', speedSpread: 'none', trigger: 'normal' };
 const lengths = { yorker: -0.65, full: -2.1, good: -4.0, short: -7.0 };
 const lines = { leg: -0.25, middle: 0, off: 0.30, wide: 0.70 };
 export const clamp = (x, min, max) => Math.max(min, Math.min(max, x));
