@@ -1,12 +1,14 @@
 # CricSim
 
-A first-person cricket nets simulator. Aim a contact point and click or tap to play a complete attacking stroke with a regulation-width bat. Standard controls handle the swing; optional Manual controls keep gesture-driven drives, cuts, pulls and sweeps. Face pace or spin and change the pitch and conditions. Practice only: no teams, innings, runs, or match modes.
+A first-person cricket nets simulator. Aim a contact point with the mouse, then push the mouse to play a complete attacking stroke with a regulation-width bat. Flow controls need no click; Standard controls keep the click or tap; optional Manual controls keep gesture-driven drives, cuts, pulls and sweeps. Face pace or spin and change the pitch and conditions. Practice only: no teams, innings, runs, or match modes.
 
 ## Play
 
 [Play CricSim on GitHub Pages](https://soldoutbudokan.github.io/CricSim/). Public access; no account or sign-in required. GitHub Pages is the primary and only public game host.
 
-The `Deploy Production` workflow tests the source, runs `npm run build:pages`, and publishes the generated `.pages-dist` folder to `gh-pages`. Pages serves **Deploy from a branch → gh-pages → / (root)**. Every push to `main` publishes automatically. The old ChatGPT-hosted copy is retired from public use; development and publication use this repository. Preferences are stored per browser origin, so settings from the old address do not transfer automatically. The game has no server-side accounts or saved innings to migrate.
+The `Deploy Production` workflow tests the source, runs `npm run build:pages`, and publishes the generated `.pages-dist` folder to the root of `gh-pages` with `scripts/publish-pages.sh`. Pages serves **Deploy from a branch → gh-pages → / (root)**. Every push to `main` publishes automatically. The old ChatGPT-hosted copy is retired from public use; development and publication use this repository. Preferences are stored per browser origin, so settings from the old address do not transfer automatically. The game has no server-side accounts or saved innings to migrate.
+
+Every push to any other branch publishes a playable preview of that branch at `https://soldoutbudokan.github.io/CricSim/preview/<branch-slug>/` through the `Deploy Preview` workflow, beside production in the same `gh-pages` branch. The slug is the branch name in lower case with runs of other characters replaced by `-`, so `claude/epic-wright-f64ay0` is served at `preview/claude-epic-wright-f64ay0/`. The preview's opening screen shows its branch and commit under the loading status. Deleting the branch removes its preview. Production deploys never touch `preview/`. Previews share the browser origin with production, so saved preferences carry across. See `AGENTS.md` for the details.
 
 ## Run
 
@@ -48,18 +50,21 @@ These are rendering budgets, not guaranteed frame rates. At a 1440×900 CSS-pixe
 
 ## Controls
 
-**Standard** is the default. Aim the blade outline where the ball will arrive, choose Grounded or Lofted, then click or tap. Each press commits one complete stroke with repeatable power; you do not need a swipe. The bat reaches the contact area about 100 ms after pressing at normal speed (200 ms at half speed). You can correct your aim during the first 65 ms, then it locks. Holding does not repeat the stroke. To leave a ball, do not start an attack.
+**Flow** is the default and needs no click. Rest the blade outline where the ball will arrive, choose Grounded or Lofted, then push the mouse up. The push plays the same complete stroke as a Standard click, with the same repeatable power and the same timing window, aimed at the point where your hand rested before it pushed. Slow movement only aims, and so does any sideways or downward movement: a push counts when it is fast enough, long enough and within about sixty degrees of straight up. The bat reaches the contact area about 100 ms after the push begins at normal speed (200 ms at half speed); the aim is locked from that moment. A mouse click still plays the same stroke. To leave a ball, keep your hand still. **Swing trigger** in Practice tools sets how decisive a push must be (Light, Normal or Firm), and the stroke panel says "Push a little harder to swing" after an upward move that fell short.
 
-Choose **Conditions → Practice tools → Batting controls → Manual** for the original swipe controls. Your choice is saved on this device. Both modes use the same regulation-width bat and ball physics. Neither tracks the ball or enlarges the contact area.
+**Standard** keeps the click or tap. Aim the blade outline where the ball will arrive, choose Grounded or Lofted, then click or tap. Each press commits one complete stroke with repeatable power; you do not need a swipe. The bat reaches the contact area about 100 ms after pressing at normal speed (200 ms at half speed). You can correct your aim during the first 65 ms, then it locks. Holding does not repeat the stroke. To leave a ball, do not start an attack.
+
+Choose **Conditions → Practice tools → Batting controls** to switch between Flow, Standard and the original Manual swipe controls. Your choice is saved on this device. All three modes use the same regulation-width bat and ball physics. None of them tracks the ball or enlarges the contact area.
 
 | Input | Action |
 | --- | --- |
 | Mouse movement | Aim the blade outline across the crease and vertically |
+| Push up (Flow) | Play one complete Grounded or Lofted stroke from the point where the hand rested; no button |
 | Left click / tap (Standard) | Play one complete Grounded or Lofted stroke |
 | Left click + upward swipe (Manual) | Lift the bat, then drive through the aimed point |
 | Left click + sideways swipe (Manual) | Cut or pull a high ball; sweep a low ball |
 | Diagonal swipe (Manual) | Angle a drive; swipe speed controls bat speed |
-| Release | Standard attacks finish and remain shot attempts. Manual retains release-to-leave feedback; a committed flick can still hit. Release a held block to leave in either mode. |
+| Release | Flow and Standard attacks finish and remain shot attempts. Manual retains release-to-leave feedback; a committed flick can still hit. Release a held block to leave in any mode. |
 | Right click | Hold a soft-handed block and move it onto the ball's line. Release before the ball passes to leave. |
 | 1 / 2 / 3 or shot buttons | Choose Grounded, Lofted or Defend; Defend also works with left click or touch |
 | A / D | Fine adjustment of the bat face |
@@ -75,7 +80,7 @@ Choose **Conditions → Practice tools → Batting controls → Manual** for the
 | U · O | Cycle surface · sky and light |
 | − / = | Crosswind −5 / +5 km/h |
 | , / . | Ball age −10 / +10 overs |
-| T · V | Cycle simulation speed · Manual swipe length |
+| T · V | Cycle simulation speed · Flow swing trigger or Manual swipe length |
 | G · X | Toggle the bat guide and ball trail · continuous deliveries |
 | M · F · N | Sound · fullscreen · the conditions drawer |
 | / | The shortcuts sidebar, where every key above can be switched off |
@@ -83,7 +88,7 @@ Choose **Conditions → Practice tools → Batting controls → Manual** for the
 
 Every key is listed in the shortcuts sidebar with a switch. Turn off any that clash with your setup; the buttons and menus keep working. Choices are saved on the device. A key that changes a condition shows a short notice under the scorebug and applies to the next ball.
 
-On touch in Standard, tap the contact point to aim and swing. In Manual, put a finger at the contact point and swipe up or across. Select Defend and hold for a block. All shot choices work without a keyboard. **Practise at half speed** on the opening screen starts with slower play and middle-stump deliveries.
+On touch in Flow, touch the contact point, hold still for a moment, then swipe up; a plain tap does nothing. In Standard, tap the contact point to aim and swing. In Manual, put a finger at the contact point and swipe up or across. Select Defend and hold for a block. All shot choices work without a keyboard. **Practise at half speed** on the opening screen starts with slower play and middle-stump deliveries.
 
 In Manual, aim before pressing: the contact ring stays anchored during the swipe. Holding without moving prepares the backlift; it does not swing. The backlift follows the hand both ways until the swing commits a quarter of the way through; from there the blade keeps the pace the hand gave it, eases off rather than stopping dead when the pointer stalls, and never runs backwards. Letting go after the commit point finishes the stroke with the blade live; letting go before it pulls out. The middle section of the stroke meter shows the contact portion of the arc. The bat's path is shaped by your gesture, never by the incoming ball. Guard, cancelled strokes and the return to guard cannot score accidental hits. **Swipe length** in Practice tools sets how far the hand travels for a full stroke.
 
@@ -112,7 +117,8 @@ In Manual, aim before pressing: the contact ring stays anchored during the swipe
 - Right- and left-arm fast pace, inswing, outswing, off spin, and leg spin. Handedness changes off/leg line selection; bowling arm changes movement direction. Bowling style descriptions use right-arm/right-handed conventions.
 - Hard, green, dry, and damp surfaces; clear, overcast, and evening light; crosswind and ball wear. Cloud cover changes lighting and the air-density preset; it is not used as an arbitrary swing multiplier.
 - Continuous collision detection between a moving ball and oriented, finite-width bat face, including edge detection and bat-velocity-dependent rebound.
-- Standard uses a fixed backlift, stable face through contact and follow-through, driven only by the chosen target, intent and press time. Forward blade motion supplies its power through the existing collision physics.
+- Standard and Flow use a fixed backlift, stable face through contact and follow-through, driven only by the chosen target, intent and the moment the stroke starts. Forward blade motion supplies its power through the existing collision physics.
+- Flow reads the pointer's speed in real time from the event timestamps, including coalesced samples, in screen units where the shorter window side is 1.6 units. Movement slower than 0.9 units per second is a rest; a push must reach 2.0, 2.6 or 3.4 units per second (Light, Normal, Firm) over 0.06, 0.08 or 0.11 units, within sixty degrees of straight up. The stroke starts at the last resting point and is dated up to 30 ms before the push was noticed, so the bat is where the hand expects it. An event after 80 ms of silence means the hand rested where the last sample was, which is what a still mouse looks like. A teleport (a finger placed elsewhere, a pointer back from off the canvas, a resize) starts a fresh hand that must rest before it may swing, and the tail of a push cannot swing again until the hand rests. The thresholds are in real time, so half-speed practice needs the same hand movement.
 - In Manual, swipe displacement advances a curved backlift, downswing and follow-through. The stroke's progress is one smooth state with bounded velocity and acceleration; the blade, the stroke meter, the timing feedback and the collision model all read it, so a staircase of pointer events cannot show up as a stutter. Past the commit point the stroke carries a decaying momentum floor, so it completes at the pace the hand set. Automatic face and wrist rotation distinguish vertical drives from horizontal cuts, pulls and sweeps. Cross-bat shots stay level through the contact area. Shared curve tangents preserve speed through impact. Gesture direction is read from the whole backlift and freezes at the commit point, so a hand that curls on its way up still plays the drive it meant, and jitter or reversals cannot accumulate power.
 - Translation and rotation are smoothed and speed-limited. Blade corners remain above the pitch. Contact includes the surface velocity due to face rotation. Soft-handed defence uses a lower restitution coefficient; lofted intent changes the physical launch angle.
 - The ball starts at the animated bowling hand's world position. A steady eye-level view includes the release and contact area without diving after the incoming ball. It tracks a struck ball briefly, then settles back. Portrait screens preserve enough horizontal field of view for off-stump deliveries.
@@ -143,7 +149,7 @@ This remains a simulation foundation, **not a finished photorealistic or validat
 - `dist/render-policy.js`: quality budgets, frame pacing and sustained-load adaptation.
 - `tests/runtime-smoke.mjs`: actual game entrypoint with a simulated browser lifecycle and real bat/ball physics; run with `npm run test:runtime` (also included in `npm test`).
 - `dist/game.js`: input, delivery lifecycle, session state, HUD choreography, settings.
-- `dist/bat-control.js`: Standard timed strokes and early aim correction, Manual gesture-shaped stroke arcs, physical contact preview, shot intent, swipe length and three-axis fine adjustment.
+- `dist/bat-control.js`: Flow push detection (pointer sampling, rest anchoring, the upward cone and the swing trigger), Standard timed strokes and early aim correction, Manual gesture-shaped stroke arcs, physical contact preview, shot intent, swipe length and three-axis fine adjustment.
 - `dist/shortcuts.js`: the keyboard shortcut table, key matching and the saved on/off state behind the shortcuts sidebar.
 - `dist/batter-motion.js`: stance, shoulder/foot placement and stable batting-camera geometry.
 - `dist/shot-feedback.js`: feedback from the stroke sampled at contact or at the crease, the control rule for leaves, result headlines and miss-diagram geometry.
@@ -152,16 +158,23 @@ This remains a simulation foundation, **not a finished photorealistic or validat
 - `dist/fonts`: Newsreader (regular and italic), Barlow Condensed and DM Sans, latin subsets (about 130 KB). All three are under the SIL Open Font License; each licence sits beside its fonts in `dist/fonts` (`NEWSREADER-OFL.txt`, `BARLOW-CONDENSED-OFL.txt`, `DM-SANS-OFL.txt`).
 - `dist/index.html` / `dist/style.css`: the interface; `dist/menu.css` isolates the scorebook-style opening screen from the in-play HUD.
 - `tests/physics.test.mjs`: trajectory, speed, pace variation, bounce, contact, near-miss, outcome, and determinism checks.
+- `tests/flow-control.test.mjs` with `tests/flow-hand.mjs`: a simulated hand (120 Hz samples, 1/60 s frames, real timestamps) that rests, pushes, holds still without sending events and clicks; Flow's push detection, rest anchoring, cone, gap rule, trigger levels, click fallback, hint, time-scale independence, timing window, all lengths and lines, bounds and feedback.
 - `tests/bat-control.test.mjs`: swipe shape, handedness, displacement, commit and momentum, direction reading, swipe length, speed and acceleration limits, ground clearance, defence and release safety.
 - `tests/batting-play.test.mjs`: repeatable aimed strokes against seeded deliveries, shot direction, loft, flick release, input rates, feedback, the control rule and camera geometry.
 - `tests/shortcuts.test.mjs`: shortcut matching, modifier chords, per-key and master switches, persistence and setting cycles.
+- `tests/pages-build.test.mjs` and `tests/publish-pages.test.mjs`: versioned Pages builds and the build label; publishing to `gh-pages` against a local repository, including previews surviving production deploys, cleanup and a push race.
+- `scripts/publish-pages.sh`: commits a built directory into `gh-pages`, at the root for production or under `preview/<slug>/` for a branch; `.github/workflows/deploy-preview.yml` runs it for every other branch and removes the preview when the branch is deleted.
 
 ```sh
 npm test
 npm run check
 ```
 
-`dist` is portable to any static host and uses relative asset paths, including under GitHub Pages' `/CricSim/` prefix. Publication is configured by `.github/workflows/deploy-prod.yml`; `scripts/build-pages.mjs` prepares the versioned static output.
+`dist` is portable to any static host and uses relative asset paths, including under GitHub Pages' `/CricSim/` prefix and the `/CricSim/preview/<slug>/` previews. Publication is configured by `.github/workflows/deploy-prod.yml` and `deploy-preview.yml`; `scripts/build-pages.mjs` prepares the versioned static output and `scripts/publish-pages.sh` commits it to `gh-pages`.
+
+### Verification status, 2026-09-28
+
+All 121 automated tests, 21 entrypoint lifecycle checks and JavaScript syntax checks pass. Flow coverage uses a simulated hand with real timestamps: a push starts one stroke and no button is involved; a vertical push steps in lockstep with a Standard click at the same target; slow aiming, short height corrections and fast sideways moves never swing; the aim is the rest point and stays locked until the stroke is over; the tail of a push cannot swing again; a click still plays the stroke and lands near the rest point mid-push; blocks stay held under a fast hand; only pushes within sixty degrees of straight up swing; a silent still mouse anchors the push where it stopped and re-arms a second push; a restarted hand must rest first; a short upward move leaves a hint that a real push clears; Light, Normal and Firm order the trigger; half-speed practice needs the same real hand movement and dates the stroke in stroke time; the Standard timing window (at least 95 ms of clean contact in a 5 ms sweep, for both intents) and all lengths, speeds and lines in both stances are kept; poses mirror with stance within the motion bounds and above the pitch; and feedback treats a push like a click. The entrypoint checks cover the Flow default and fallback, persistence of all three modes and the swing trigger, a click in Flow, a rest-then-push through the contact plane exactly once with the aim at the rest point, resumed aiming, a held block under a fast hand, a touch tap doing nothing, a touch rest-then-swipe swinging, and a new touch never reading as a push. Pages tests cover the build label and publishing previews beside production. The available test browser has WebGL disabled, so the feel of the push on a real mouse, trackpad and phone still needs a player check on the preview.
 
 ### Verification status, 2026-09-26
 

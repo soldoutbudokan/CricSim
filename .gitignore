@@ -9,3 +9,6 @@ artifacts/
 
 # Local agent worktrees
 .claude/worktrees/
+
+# Temporary fixtures from tests/pages-build.test.mjs and tests/publish-pages.test.mjs
+.pages-test-*/

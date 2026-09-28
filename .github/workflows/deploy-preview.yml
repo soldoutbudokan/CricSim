@@ -1,0 +1,157 @@
+name: Deploy Preview
+# Every push to a branch other than main publishes a playable build to
+# https://soldoutbudokan.github.io/CricSim/preview/<slug>/ where <slug> is the
+# branch name lower-cased with every run of characters outside [a-z0-9]
+# replaced by "-", trimmed of leading/trailing "-", at most 60 characters.
+# Deleting the branch removes its preview. See AGENTS.md.
+on:
+  push:
+    branches-ignore: [main, gh-pages]
+    tags-ignore: ['**']
+  workflow_dispatch:
+  delete:
+permissions:
+  contents: write
+  pull-requests: write
+concurrency:
+  # On delete events github.ref_name is the default branch, so use the deleted
+  # ref instead; both forms are the bare branch name.
+  group: preview-pages-${{ github.event_name == 'delete' && github.event.ref || github.ref_name }}
+  cancel-in-progress: true
+env:
+  PAGES_URL_BASE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+jobs:
+  deploy:
+    if: github.event_name != 'delete'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Preview slug
+        id: preview
+        env:
+          REF: ${{ github.ref_name }}
+        run: |
+          slug="$(printf '%s' "$REF" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-60 | sed -E 's/-+$//')"
+          slug="${slug:-branch}"
+          {
+            echo "slug=$slug"
+            echo "destination=preview/$slug"
+            echo "url=$PAGES_URL_BASE/preview/$slug/"
+            echo "short_sha=${GITHUB_SHA:0:7}"
+            echo "label=Preview · $REF · ${GITHUB_SHA:0:7}"
+          } >> "$GITHUB_OUTPUT"
+      - run: npm test
+      - run: npm run check
+      - run: npm run build:pages
+        env:
+          CRICSIM_BUILD_LABEL: ${{ steps.preview.outputs.label }}
+      - name: Publish preview
+        id: publish
+        run: bash scripts/publish-pages.sh
+        env:
+          SOURCE_DIR: .pages-dist
+          DESTINATION: ${{ steps.preview.outputs.destination }}
+          PAGES_BRANCH: gh-pages
+          PAGES_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+          COMMIT_MESSAGE: Deploy preview ${{ steps.preview.outputs.slug }} from ${{ github.ref_name }}@${{ steps.preview.outputs.short_sha }}
+      - name: Summary
+        env:
+          BRANCH: ${{ github.ref_name }}
+          URL: ${{ steps.preview.outputs.url }}
+          CHANGED: ${{ steps.publish.outputs.changed }}
+        run: |
+          {
+            echo "## Preview"
+            echo
+            echo "- Branch: \`$BRANCH\`"
+            echo "- Commit: \`$GITHUB_SHA\`"
+            echo "- URL: $URL"
+            echo
+            if [ "$CHANGED" = true ]; then
+              echo "GitHub Pages can serve the previous index.html for up to about ten minutes; hard-reload until the build label in the menu shows \`${GITHUB_SHA:0:7}\`."
+            else
+              echo "No changes to publish; the preview already matches this build."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Comment on the pull request
+        uses: actions/github-script@v7
+        env:
+          BRANCH: ${{ github.ref_name }}
+          URL: ${{ steps.preview.outputs.url }}
+        with:
+          script: |
+            const marker = '<!-- cricsim-preview -->';
+            const { owner, repo } = context.repo;
+            const branch = process.env.BRANCH;
+            const { data: pulls } = await github.rest.pulls.list({
+              owner, repo, state: 'open', head: `${owner}:${branch}`, per_page: 100,
+            });
+            if (!pulls.length) {
+              core.info(`No open pull request for ${branch}; not commenting.`);
+              return;
+            }
+            const body = [
+              marker,
+              '**Preview deployment**',
+              '',
+              `Play this branch at ${process.env.URL}`,
+              '',
+              `Built from ${context.sha} (\`${context.sha.slice(0, 7)}\`) on \`${branch}\`. Updated on every push; removed when the branch is deleted.`,
+              'GitHub Pages can serve the previous index.html for up to about ten minutes, so hard-reload if the build label in the menu is behind.',
+            ].join('\n');
+            for (const pull of pulls) {
+              const comments = await github.paginate(github.rest.issues.listComments, {
+                owner, repo, issue_number: pull.number, per_page: 100,
+              });
+              const existing = comments.find(comment => comment.body && comment.body.includes(marker));
+              if (existing) {
+                await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+                core.info(`Updated preview comment on #${pull.number}`);
+              } else {
+                await github.rest.issues.createComment({ owner, repo, issue_number: pull.number, body });
+                core.info(`Created preview comment on #${pull.number}`);
+              }
+            }
+  cleanup:
+    if: github.event_name == 'delete' && github.event.ref_type == 'branch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - name: Preview slug
+        id: preview
+        env:
+          REF: ${{ github.event.ref }}
+        run: |
+          slug="$(printf '%s' "$REF" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//' | cut -c1-60 | sed -E 's/-+$//')"
+          slug="${slug:-branch}"
+          {
+            echo "slug=$slug"
+            echo "destination=preview/$slug"
+          } >> "$GITHUB_OUTPUT"
+      - name: Remove preview
+        run: bash scripts/publish-pages.sh
+        env:
+          DELETE_DESTINATION: '1'
+          DESTINATION: ${{ steps.preview.outputs.destination }}
+          PAGES_BRANCH: gh-pages
+          PAGES_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+          COMMIT_MESSAGE: Remove preview ${{ steps.preview.outputs.slug }} (branch ${{ github.event.ref }} deleted)
+      - name: Summary
+        env:
+          BRANCH: ${{ github.event.ref }}
+          DESTINATION: ${{ steps.preview.outputs.destination }}
+        run: |
+          {
+            echo "## Preview removed"
+            echo
+            echo "- Branch: \`$BRANCH\`"
+            echo "- Removed: \`$DESTINATION\` from gh-pages"
+          } >> "$GITHUB_STEP_SUMMARY"

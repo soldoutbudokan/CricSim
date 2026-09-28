@@ -1,4 +1,7 @@
 name: Deploy Production
+# Publishes main to the root of the gh-pages branch, which GitHub Pages serves
+# at https://soldoutbudokan.github.io/CricSim/. Previews live under preview/
+# in the same branch and are left untouched by scripts/publish-pages.sh.
 on:
   push:
     branches: [main]
@@ -13,6 +16,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: true
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -20,7 +25,29 @@ jobs:
       - run: npm run check
       - run: npm run build:pages
       - name: Publish static game
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./.pages-dist
+        id: publish
+        run: bash scripts/publish-pages.sh
+        env:
+          SOURCE_DIR: .pages-dist
+          DESTINATION: ''
+          PAGES_BRANCH: gh-pages
+          PAGES_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
+          PAGES_URL_BASE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
+          COMMIT_MESSAGE: Deploy production from ${{ github.sha }}
+      - name: Summary
+        env:
+          URL: ${{ steps.publish.outputs.url }}
+          CHANGED: ${{ steps.publish.outputs.changed }}
+        run: |
+          {
+            echo "## Production"
+            echo
+            echo "- Commit: \`$GITHUB_SHA\`"
+            if [ "$CHANGED" = true ]; then
+              echo "- URL: $URL"
+              echo
+              echo "GitHub Pages can serve the previous index.html for up to about ten minutes; hard-reload if needed."
+            else
+              echo "- No changes to publish; gh-pages already matches this build."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

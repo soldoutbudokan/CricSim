@@ -80,8 +80,10 @@ async function boot(saved='eco',battingMode=null,{coarse=false}={}){
   function resize(){for(const observer of resizeObservers)observer.callback([{contentRect:{height:80}}]);}
   function setting(id,value){get(id).value=value;get(id).dispatch('change');}
   function intent(value){const button=buttons.find(el=>el.dataset.intent===value);assert.ok(button,`actual HTML includes ${value} intent`);button.click();}
-  function pointer(type,extra={}){get('game').dispatch(type,{pointerId:1,pointerType:'mouse',button:0,buttons:type==='pointerup'?0:1,isPrimary:true,clientX:640,clientY:360,...extra});}
-  return {stats,window,document,get,store,raf,pump,hide,quality,resize,view,setting,intent,pointer};
+  function pointer(type,extra={}){get('game').dispatch(type,{pointerId:1,pointerType:'mouse',button:0,buttons:type==='pointerup'?0:1,isPrimary:true,clientX:640,clientY:360,timeStamp:now,...extra});}
+  // A hand for Flow: pointer samples every 8 ms of real time, one frame of simulation every 16 ms, as a 60 Hz loop would see a 120 Hz mouse.
+  function hand(from,to,seconds,extra={}){const samples=Math.max(1,Math.round(seconds*120));for(let i=1;i<=samples;i++){const t=i/samples;now+=1000/120;pointer('pointermove',{buttons:0,clientX:from.x+(to.x-from.x)*t,clientY:from.y+(to.y-from.y)*t,...extra});if(i%2===0)pump(1,0);}}
+  return {stats,window,document,get,store,raf,pump,hide,quality,resize,view,setting,intent,pointer,hand};
 }
 const results=[];
 function passed(name){results.push(name);console.log('PASS '+name);}
@@ -100,14 +102,52 @@ app.get('pause-button').click();app.pump();app.get('help-button').click();app.ge
 const restored=await boot(app.store.get('cricsim-graphics'));assert.equal(restored.view.quality.id,'high');assert.equal(restored.get('graphics').value,'high');passed('persisted graphics choice survives a fresh game entrypoint');
 const automatic=await boot('invalid');assert.equal(automatic.window.cricsim.performance.mode,'auto');automatic.get('start-button').click();automatic.pump(1);automatic.pump(130,1000/30);assert.equal(automatic.window.cricsim.performance.autoLevel,1);automatic.quality('balanced');assert.equal(automatic.window.cricsim.performance.autoLevel,0);assert.equal(automatic.view.quality.id,'balanced');passed('invalid preference falls back to Auto; sustained overload applies quality reduction; manual mode resets it');
 
-const standard=await boot();
-assert.equal(standard.stats.bat.mode,'standard');assert.equal(standard.get('batting-mode').value,'standard');assert.equal(standard.get('manual-controls').hidden,true);
-const invalidBatting=await boot('eco','invalid');assert.equal(invalidBatting.stats.bat.mode,'standard');
+const flow=await boot();
+assert.equal(flow.stats.bat.mode,'flow');assert.equal(flow.get('batting-mode').value,'flow');assert.equal(flow.get('manual-controls').hidden,true);assert.equal(flow.get('flow-controls').hidden,false);assert.equal(flow.get('trigger').disabled,false);
+const invalidBatting=await boot('eco','invalid');assert.equal(invalidBatting.stats.bat.mode,'flow');
+const standard=await boot('eco','standard');
+assert.equal(standard.stats.bat.mode,'standard');assert.equal(standard.get('batting-mode').value,'standard');assert.equal(standard.get('manual-controls').hidden,true);assert.equal(standard.get('flow-controls').hidden,true);
 standard.setting('batting-mode','manual');assert.equal(standard.store.get('cricsim-batting-mode'),'manual');assert.equal(standard.get('manual-controls').hidden,false);
 const manual=await boot('eco',standard.store.get('cricsim-batting-mode'));assert.equal(manual.stats.bat.mode,'manual');assert.equal(manual.get('batting-mode').value,'manual');
 standard.setting('batting-mode','standard');assert.equal(standard.store.get('cricsim-batting-mode'),'standard');
 const restoredStandard=await boot('eco',standard.store.get('cricsim-batting-mode'));assert.equal(restoredStandard.stats.bat.mode,'standard');
-passed('Standard is the default and invalid-preference fallback; both batting choices persist and restore');
+flow.setting('trigger','firm');assert.equal(flow.stats.bat.trigger,'firm');assert.equal(JSON.parse(flow.store.get('cricsim-preferences')).trigger,'firm');
+passed('Flow is the default and invalid-preference fallback; all three batting choices and the swing trigger persist and restore');
+
+flow.setting('trigger','normal');flow.get('start-button').click();flow.pump();
+flow.pointer('pointerdown');flow.pointer('pointerup');
+assert.equal(flow.stats.bat.committed,true,'a mouse click still plays the stroke in Flow');assert.equal(flow.stats.bat.held,false);flow.pump(240);
+assert.equal(flow.stats.bat.phase,'guard');
+// Rest on the line, then push the mouse up: 360 px in 120 ms on a 720 px window is 6.7 screen units per second.
+flow.hand({x:640,y:360},{x:640,y:360},.3);
+let flowCrossings=0,flowZ=flow.stats.bat.pose.z,flowActive=false;
+const watch=()=>{const p=flow.stats.bat.pose;if(flowZ>-.22&&p.z<=-.22)flowCrossings++;flowZ=p.z;flowActive||=p.active;};
+flow.hand({x:640,y:360},{x:640,y:0},.12);watch();
+assert.equal(flow.stats.bat.committed,true,'a push starts the stroke without any button');assert.equal(flow.stats.bat.held,false);
+assert.ok(Math.abs(flow.stats.bat.target.y-1)<1e-9&&Math.abs(flow.stats.bat.target.x)<1e-9,'the aim is where the hand rested, not where the push ended');
+for(let i=0;i<240;i++){flow.pump();watch();}
+assert.equal(flowCrossings,1,"one push carries the real blade through the contact plane exactly once");assert.ok(flowActive);assert.equal(flow.stats.bat.phase,"guard");
+flow.hand({x:640,y:0},{x:640,y:0},.2);flow.hand({x:640,y:0},{x:900,y:300},.6);flow.hand({x:900,y:300},{x:900,y:300},.2);
+assert.equal(flow.stats.bat.phase,'guard');assert.ok(Math.abs(flow.stats.bat.target.x-(900/1280*2-1))<1e-9,'slow movement aims again after the stroke');
+assert.deepEqual(Object.keys(flow.window.cricsim.stroke).filter(k=>['trigger','armed','pointerSpeed'].includes(k)).sort(),['armed','pointerSpeed','trigger']);
+passed('Flow: a rest-then-push plays one complete stroke aimed at the rest point, with no button');
+
+flow.hand({x:900,y:300},{x:900,y:300},.2);flow.stats.bat.attempted=false;
+flow.pointer('pointerdown',{button:2,buttons:2,clientX:900,clientY:300});flow.pump(20);assert.equal(flow.stats.bat.defending,true);assert.equal(flow.stats.bat.pose.active,true);
+flow.hand({x:900,y:300},{x:900,y:0},.1,{buttons:2});assert.equal(flow.stats.bat.committed,false,'a fast hand during a block does not swing');
+flow.pointer('pointerup',{button:2,clientX:900,clientY:0});flow.pump(2);assert.equal(flow.stats.bat.defending,false);assert.equal(flow.stats.bat.pose.active,false);
+flow.hand({x:900,y:0},{x:900,y:0},.3);assert.equal(flow.stats.bat.committed,false,'releasing a block after a fast hand does not swing');
+const touchFlow=await boot('eco',null,{coarse:true});touchFlow.get('start-button').click();touchFlow.pump();
+touchFlow.pointer('pointerdown',{pointerType:'touch'});touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});touchFlow.pump(30);
+assert.equal(touchFlow.stats.bat.attempted,false,'a tap does not swing in Flow');
+touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:640,clientY:400});touchFlow.hand({x:640,y:400},{x:640,y:400},.2,{pointerType:'touch',buttons:1});
+touchFlow.hand({x:640,y:400},{x:640,y:60},.12,{pointerType:'touch',buttons:1});
+assert.equal(touchFlow.stats.bat.committed,true,'a touch swipe from a rest swings');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});touchFlow.pump(240);
+assert.equal(touchFlow.stats.bat.phase,'guard');
+// A finger put down somewhere new is not a push, even a modest distance away.
+touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:700,clientY:200});touchFlow.hand({x:700,y:200},{x:700,y:200},.05,{pointerType:'touch',buttons:1});
+assert.ok(!['load','swing','follow'].includes(touchFlow.stats.bat.phase)&&touchFlow.stats.bat.pose.z>0,'a new touch starts a fresh hand');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});
+passed('Flow: blocks stay held, taps do nothing, a touch swipe swings, and a new touch never reads as a push');
 
 standard.get('start-button').click();standard.pump();
 standard.pointer('pointerdown');standard.pointer('pointerup');

@@ -102,3 +102,39 @@ test('builds are deterministic, clean old output and invalidate on HTML or CSS c
   assert.notEqual(htmlChange.version, cssChange.version);
   await assert.rejects(buildPages({ ...options, outputDir: options.sourceDir }), /separate/);
 });
+
+test('a build label is injected after the viewport meta, escaped, and changes the release', async t => {
+  const options = await fixture(t, {
+    'index.html': '<!doctype html>\n<html lang="en">\n<head>\n  <meta charset="UTF-8">\n  <meta name="viewport" content="width=device-width,initial-scale=1">\n  <title>CricSim</title>\n  <script type="module" src="./game.js"></script>\n</head>\n<body></body>\n</html>\n',
+    'game.js': 'export const value = 1;',
+  });
+  const index = () => readFile(resolve(options.outputDir, 'index.html'), 'utf8');
+  const plain = await buildPages(options);
+  const plainMarkup = await index();
+  assert.ok(!plainMarkup.includes('cricsim-build'), 'no label means no meta tag');
+
+  const label = 'Preview · feature/"quotes" <tag> & \'apostrophe\' · abc1234';
+  const labelled = await buildPages({ ...options, label });
+  const markup = await index();
+  assert.ok(markup.includes([
+    '  <meta name="viewport" content="width=device-width,initial-scale=1">',
+    '  <meta name="cricsim-build" content="Preview · feature/&quot;quotes&quot; &lt;tag&gt; &amp; &#39;apostrophe&#39; · abc1234">',
+    '  <title>CricSim</title>',
+  ].join('\n')), 'the meta follows the viewport meta with the same indentation and an escaped label');
+  assert.equal(markup.match(/cricsim-build/g).length, 1);
+  assert.ok(markup.includes(`src="./game.js?v=${labelled.version}"`), 'module URLs are still versioned');
+  assert.equal(labelled.label, label);
+  assert.notEqual(labelled.version, plain.version, 'a label is part of the release token');
+  const relabelled = await buildPages({ ...options, label: 'Preview · other · def5678' });
+  assert.notEqual(relabelled.version, labelled.version, 'a different label is a different release');
+
+  const again = await buildPages(options);
+  assert.equal(again.version, plain.version);
+  assert.equal(await index(), plainMarkup, 'dropping the label restores the unlabelled markup');
+  const originalSource = await readFile(resolve(options.sourceDir, 'index.html'), 'utf8');
+  assert.ok(!originalSource.includes('cricsim-build'), 'the source is never modified');
+
+  await writeFile(resolve(options.sourceDir, 'index.html'), '<html><head><title>No viewport</title></head></html>');
+  await buildPages({ ...options, label: 'x' });
+  assert.ok((await index()).startsWith('<html><head>\n<meta name="cricsim-build" content="x">'), 'falls back to the start of <head>');
+});
