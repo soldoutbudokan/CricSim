@@ -22,7 +22,8 @@ env:
   PAGES_URL_BASE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
 jobs:
   deploy:
-    if: github.event_name != 'delete'
+    # A manual run from main would publish preview/main/, which nothing cleans up.
+    if: github.event_name != 'delete' && github.ref_name != 'main' && github.ref_name != 'gh-pages'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -59,6 +60,9 @@ jobs:
           PAGES_BRANCH: gh-pages
           PAGES_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
           COMMIT_MESSAGE: Deploy preview ${{ steps.preview.outputs.slug }} from ${{ github.ref_name }}@${{ steps.preview.outputs.short_sha }}
+          # Deploy commits carry the identity of whoever pushed, as the earlier deploys did.
+          GIT_AUTHOR_NAME: ${{ github.actor }}
+          GIT_AUTHOR_EMAIL: ${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com
       - name: Summary
         env:
           BRANCH: ${{ github.ref_name }}
@@ -144,6 +148,8 @@ jobs:
           PAGES_BRANCH: gh-pages
           PAGES_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
           COMMIT_MESSAGE: Remove preview ${{ steps.preview.outputs.slug }} (branch ${{ github.event.ref }} deleted)
+          GIT_AUTHOR_NAME: ${{ github.actor }}
+          GIT_AUTHOR_EMAIL: ${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com
       - name: Summary
         env:
           BRANCH: ${{ github.event.ref }}

@@ -74,7 +74,7 @@ test('the tail of a push cannot swing again; the hand must rest first', () => {
   const c = createBatControl('right', 'flow'), h = hand(c), count = strokes(c);
   h.rest(.4, undefined, count.step);
   // A long push that keeps going well after the stroke has started and finished.
-  h.move(.6, t => ({ x: 0, y: 7 * t }), count.step);
+  const t0 = h.time; h.move(.6, t => ({ x: 0, y: 7 * (t - t0) }), count.step);
   assert.equal(count.count(), 1);
   h.rest(.9, { x: 0, y: 4.2 }, count.step);
   assert.equal(count.count(), 1);
@@ -150,6 +150,54 @@ test('a still mouse sends nothing: the hand rests through a silence and the push
   assert.equal(countD.count(), 1);
 });
 
+test('the next ball keeps the hand: a still mouse through the run-up can push straight away', () => {
+  // nextBall, pause and a change of intent cancel through releaseStroke(control, true).
+  for (const silence of [.3, 2.2]) {
+    const c = createBatControl('right', 'flow'), h = hand(c, { x: .2, y: .8 }), count = strokes(c);
+    h.rest(.5, undefined, count.step);
+    releaseStroke(c, true); assert.equal(c.armed, false);
+    h.still(silence, count.step);
+    h.push(UP, 6, .45, count.step);
+    assert.equal(count.count(), 1, `a push after ${silence}s of silence following the next ball swings`);
+    assert.deepEqual(c.target, { x: .2, y: .8 }, 'aimed where the mouse has been all along');
+  }
+  // The same with a Standard-style cancel while the hand is mid-push: the tail stays disarmed.
+  const c = createBatControl('right', 'flow'), h = hand(c), count = strokes(c);
+  h.rest(.3, undefined, count.step);
+  const t0 = h.time; h.move(.01, t => ({ x: 0, y: 6 * (t - t0) }), count.step);
+  assert.equal(count.count(), 0); releaseStroke(c, true);
+  const t1 = h.time, from = h.at; h.move(.1, t => ({ x: 0, y: from.y + 6 * (t - t1) }), count.step);
+  assert.equal(count.count(), 0, 'the rest of a push that was cancelled does not swing');
+});
+
+test('with Defend chosen a push only aims; a held block is the only defensive stroke', () => {
+  const c = createBatControl('right', 'flow'), h = hand(c); setBatIntent(c, 'defend');
+  h.rest(.3); h.push(UP, 6, .45); h.rest(.3);
+  assert.equal(c.attempted, false); assert.equal(c.committed, false); assert.equal(c.phase, 'guard');
+  assert.ok(Math.abs(c.target.y - (.8 + .45 * 1.5)) < 1e-9, 'the push moved the aim');
+  const { d } = play({ intent: 'defend' }); assert.equal(d.hit, false, 'no attacking drive hides behind the Defend label');
+  startStroke(c); h.rest(.1); assert.equal(c.defending, true); assert.equal(c.pose.active, true); releaseStroke(c);
+});
+
+test('a click during a sideways correction swings where the outline is drawn', () => {
+  const c = createBatControl('right', 'flow'), h = hand(c, { x: 0, y: .8 });
+  h.rest(.3);
+  const t0 = h.time; h.move(.1, t => ({ x: 3 * (t - t0), y: 0 }));
+  assert.ok(c.pointerSpeed >= FLOW.restSpeed);
+  startStroke(c); releaseStroke(c);
+  assert.ok(Math.abs(c.target.x - .3 * 1.5) < .02, `the stroke plays on the corrected line (${c.target.x})`);
+});
+
+test('a browser that sends one event per slow frame cannot turn slow aiming into a push', () => {
+  // Events 100 ms apart while the aim rises at 0.8 units per second.
+  const c = createBatControl('right', 'flow');
+  let t = 0, y = 0;
+  const feed = () => moveBatTarget(c, .1, .8 + y * 1.5, { x: 0, y }, t);
+  for (let i = 0; i < 4; i++) { feed(); t += .1; for (let k = 0; k < 24; k++) stepBat(c, DT); }
+  for (let i = 0; i < 12; i++) { y += .08; t += .1; feed(); for (let k = 0; k < 24; k++) stepBat(c, DT); assert.equal(c.attempted, false, `event ${i}`); }
+  assert.equal(c.phase, 'guard');
+});
+
 test('after a restart the hand must be seen resting before it may swing', () => {
   const c = createBatControl('right', 'flow'), h = hand(c);
   // A pointer arriving on the canvas at speed, straight up, is not a push.
@@ -161,6 +209,20 @@ test('after a restart the hand must be seen resting before it may swing', () => 
   const d = createBatControl('right', 'flow'), hd = hand(d);
   hd.rest(.3); restartFlow(d); hd.push(UP, 6, .4); assert.equal(d.committed, false);
   hd.still(.2); hd.push(UP, 6, .4); assert.equal(d.committed, true);
+  // A restart with the mouse already still (a resize): the first event after the silence is a rest.
+  const e = createBatControl('right', 'flow'), he = hand(e, { x: .3, y: .9 });
+  he.rest(.3); restartFlow(e); he.still(.4);
+  he.push(UP, 6, .45); assert.equal(e.committed, true, 'a push after a silent restart swings');
+  assert.ok(Math.abs(e.target.y - .9) < .1, `anchored close to the rest (${e.target.y})`);
+  // A pointer that jumps in from elsewhere at a plausible speed is not a push either.
+  const f = createBatControl('right', 'flow'), hf = hand(f);
+  hf.rest(.3); hf.still(1); hf.move(.03, () => ({ x: 0, y: .5 })); hf.rest(.05);
+  assert.equal(f.committed, false, 'a reappearing pointer half a screen up did not push');
+  hf.rest(.2); hf.push(UP, 6, .4); assert.equal(f.committed, true, 'once it has rested it may swing');
+  // A push whose first event lands within the jump distance after a silence is still a push.
+  const g = createBatControl('right', 'flow'), hg = hand(g);
+  hg.rest(.3); hg.still(1); const tg = hg.time; hg.move(.06, t => ({ x: 0, y: .2 + 6 * (t - tg) }));
+  assert.equal(g.committed, true, 'a push noticed late after a hitch still swings');
 });
 
 test('an upward move that is not quite a push leaves a hint, which a real push clears', () => {
@@ -231,7 +293,8 @@ test('cancellation, mode and intent changes disarm a Flow stroke and forget the 
   for (const cancel of [c => releaseStroke(c, true), c => setBatMode(c, 'standard'), c => setBatIntent(c, 'lofted')]) {
     const c = createBatControl('right', 'flow'), h = hand(c); h.rest(.3); h.push(UP, 6, .2);
     assert.equal(c.committed, true); cancel(c);
-    assert.equal(c.pose.active, false); assert.equal(c.cancelled, true); assert.equal(c.samples.length, 0);
+    assert.equal(c.pose.active, false); assert.equal(c.cancelled, true); assert.equal(c.armed, false);
+    assert.equal(c.samples.length, 1, 'the hand keeps its last position: a still mouse is still there');
     for (let i = 0; i < 80; i++) { stepBat(c, DT); assert.equal(c.pose.active, false); }
   }
   // A pause in the middle of a push: the resumed hand's first samples cannot read as a push.
@@ -273,8 +336,8 @@ test('feedback treats a Flow push like a Standard click', () => {
   assert.equal(s.mode, 'flow'); assert.equal(s.committed, true); assert.equal(s.held, false); assert.equal(s.attempted, true);
   assert.equal(isSwing(s), true); assert.equal(isPlayingShot(s), true);
   assert.equal(missTitle({ stroke: s }, 'Missed'), 'Played & missed'); assert.equal(isControlled({ stroke: s }, 'Missed'), false);
-  assert.equal(describeShot(s).timing, 'Early'); assert.match(describeShot(s).detail, /Push a little later/);
-  assert.equal(describeShot({ ...s, elapsed: .02 }).timing, 'Late'); assert.match(describeShot({ ...s, elapsed: .02 }).detail, /Push a little sooner/);
+  assert.equal(describeShot(s).timing, 'Early'); assert.match(describeShot(s).detail, /Start the push a little later/);
+  assert.equal(describeShot({ ...s, elapsed: .02 }).timing, 'Late'); assert.match(describeShot({ ...s, elapsed: .02 }).detail, /Start the push a little sooner/);
   assert.equal(describeShot({ ...s, elapsed: .1 }, { quality: .9, edge: false }).timing, 'Well timed');
   const standard = describeShot({ ...s, mode: 'standard' }); assert.match(standard.detail, /Click or tap/);
 });

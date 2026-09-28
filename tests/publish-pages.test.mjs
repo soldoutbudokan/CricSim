@@ -164,6 +164,23 @@ test('a deploy without changes exits 0 and creates no commit', async t => {
   assert.equal(await pages.commits(), 2);
 });
 
+test('step outputs record whether anything changed, the commit and the URL', async t => {
+  const pages = await fixture(t);
+  const output = resolve(pages.directory, 'github-output');
+  await pages.publish(site);
+  await pages.publish(preview, { destination: 'preview/foo', GITHUB_OUTPUT: output });
+  const first = await readFile(output, 'utf8');
+  assert.match(first, /^changed=true$/m);
+  assert.match(first, /^commit=[0-9a-f]{40}$/m);
+  assert.match(first, /^url=https:\/\/example\.test\/CricSim\/preview\/foo\/$/m);
+  await writeFile(output, '');
+  await pages.publish(preview, { destination: 'preview/foo', GITHUB_OUTPUT: output });
+  assert.equal(await readFile(output, 'utf8'), 'changed=false\n');
+  await writeFile(output, '');
+  await pages.publish(site, { GITHUB_OUTPUT: output });
+  assert.equal(await readFile(output, 'utf8'), 'changed=false\n', 'a root redeploy of the same tree changes nothing');
+});
+
 test('a rejected push is retried on top of the newer branch tip', async t => {
   const pages = await fixture(t);
   await pages.publish(site);

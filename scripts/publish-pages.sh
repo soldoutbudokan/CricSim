@@ -54,6 +54,8 @@ export GIT_TERMINAL_PROMPT=0
 
 log() { printf '%s\n' "$*"; }
 fail() { printf 'publish-pages: %s\n' "$*" >&2; exit 1; }
+# The remote URL may carry a token; messages show it without the userinfo.
+remote_for_display() { printf '%s' "$1" | sed -E 's#(://)[^@/]+@#\1#'; }
 
 # --- Validate inputs --------------------------------------------------------
 
@@ -119,7 +121,7 @@ case "$branch_status" in
     git -C "$WORK_DIR" checkout --quiet --orphan "$PAGES_BRANCH"
     ;;
   *)
-    fail "cannot reach $PAGES_REMOTE (git ls-remote exited with $branch_status)"
+    fail "cannot reach $(remote_for_display "$PAGES_REMOTE") (git ls-remote exited with $branch_status)"
     ;;
 esac
 

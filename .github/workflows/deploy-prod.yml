@@ -13,6 +13,8 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
+    # A manual run from any other branch must not replace the production root.
+    if: github.ref_name == 'main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,6 +36,9 @@ jobs:
           PAGES_REMOTE: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
           PAGES_URL_BASE: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
           COMMIT_MESSAGE: Deploy production from ${{ github.sha }}
+          # Deploy commits carry the identity of whoever pushed, as the earlier deploys did.
+          GIT_AUTHOR_NAME: ${{ github.actor }}
+          GIT_AUTHOR_EMAIL: ${{ github.actor_id }}+${{ github.actor }}@users.noreply.github.com
       - name: Summary
         env:
           URL: ${{ steps.publish.outputs.url }}

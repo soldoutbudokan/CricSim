@@ -144,9 +144,11 @@ touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:640,clientY:400});t
 touchFlow.hand({x:640,y:400},{x:640,y:60},.12,{pointerType:'touch',buttons:1});
 assert.equal(touchFlow.stats.bat.committed,true,'a touch swipe from a rest swings');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});touchFlow.pump(240);
 assert.equal(touchFlow.stats.bat.phase,'guard');
-// A finger put down somewhere new is not a push, even a modest distance away.
-touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:700,clientY:200});touchFlow.hand({x:700,y:200},{x:700,y:200},.05,{pointerType:'touch',buttons:1});
-assert.ok(!['load','swing','follow'].includes(touchFlow.stats.bat.phase)&&touchFlow.stats.bat.pose.z>0,'a new touch starts a fresh hand');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});
+// A finger put down somewhere new, above where the last one lifted, is not a push; nor is a swipe that starts without resting.
+touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:640,clientY:20});touchFlow.hand({x:640,y:20},{x:640,y:20},.05,{pointerType:'touch',buttons:1});
+assert.ok(!['load','swing','follow'].includes(touchFlow.stats.bat.phase)&&touchFlow.stats.bat.pose.z>0,'a new touch starts a fresh hand');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});touchFlow.pump(30);
+touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:640,clientY:400});touchFlow.hand({x:640,y:400},{x:640,y:60},.12,{pointerType:'touch',buttons:1});
+assert.ok(!['load','swing','follow'].includes(touchFlow.stats.bat.phase),'a swipe straight from the touch, without resting, does not swing');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});
 passed('Flow: blocks stay held, taps do nothing, a touch swipe swings, and a new touch never reads as a push');
 
 standard.get('start-button').click();standard.pump();

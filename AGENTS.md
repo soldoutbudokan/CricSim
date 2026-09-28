@@ -45,6 +45,8 @@ The workflow writes the URL to the run summary and, when the branch has an open 
 
 **Caching.** GitHub Pages caches `index.html` for up to about ten minutes and the CDN may keep an older copy briefly, so a hard reload (or a private window) may be needed right after a deploy. Modules and stylesheets are versioned by content, so once the new `index.html` loads, everything it references is fresh.
 
+**Build budget.** Pages is served from a branch, so every commit the script pushes to `gh-pages` (one per push to a non-main branch, one per branch deletion, one per production deploy) triggers a Pages build. GitHub applies a soft limit of about ten Pages builds per hour per site; rapid pushes across several branches can queue a production deploy behind it, so batch small changes before pushing when previews are not needed.
+
 **Cleanup.** Deleting a branch triggers the `delete` event and the workflow removes `preview/<slug>/` from `gh-pages`. Delete merged branches so previews do not pile up. To remove one by hand: `DELETE_DESTINATION=1 DESTINATION=preview/<slug> PAGES_REMOTE=origin bash scripts/publish-pages.sh`. Production deploys never touch `preview/`, and preview deploys never touch the root, so the two can run concurrently. The `delete` event runs the workflow file from `main`, so cleanup works only once `deploy-preview.yml` is on `main`.
 
 ## `scripts/publish-pages.sh` contract
@@ -86,7 +88,7 @@ Behaviour:
 
 Three modes share `dist/bat-control.js` and the same bat, ball and collision physics; the mode is saved as `cricsim-batting-mode` (`flow`, `standard` or `manual`, default `flow`).
 
-- **Flow** (default): no click. `moveBatTarget` receives every pointer sample with its real timestamp (`game.js` feeds coalesced events). Slow movement aims; the last slow sample is the rest point. A push up the screen that is fast and long enough (`SWING_TRIGGERS`, chosen by the `trigger` preference) and within the upward cone (`FLOW.cone`) starts the Standard stroke at the rest point, dated up to `FLOW.backdate` before it was noticed. An event after `FLOW.gap` of silence means the hand rested at the previous sample (a still mouse sends nothing). `restartFlow` (new touch, pointer re-entering, resize, cancel) forgets the samples and disarms until the hand is seen resting. Speeds are screen units per real second (shorter window side = 1.6), so `timeScale` does not change what counts as a push; `setBatTimeScale` only scales the backdating. A mouse click still plays the stroke; a touch must rest then swipe.
+- **Flow** (default): no click. `moveBatTarget` receives every pointer sample with its real timestamp (`game.js` feeds coalesced events). Slow movement aims; the last slow sample is the rest point. A push up the screen that is fast and long enough (`SWING_TRIGGERS`, chosen by the `trigger` preference) and within the upward cone (`FLOW.cone`) starts the Standard stroke at the rest point, dated up to `FLOW.backdate` before it was noticed. An event after `FLOW.gap` of silence means the hand rested at the previous sample (a still mouse sends nothing); that first event never decides a push by itself. A cancelled stroke (the next ball, a pause, a change of intent) keeps the last sample, so a mouse that stayed still through the run-up can push straight away. `restartFlow` (new touch, pointer entering the canvas, resize) forgets the samples; the hand must then be seen resting, or be silent for `FLOW.gap`, before it may swing. A teleport faster than `FLOW.jumpSpeed` also disarms. With the Defend intent a push only aims. Speeds are screen units per real second (shorter window side = 1.6), so `timeScale` does not change what counts as a push; `setBatTimeScale` only scales the backdating. A mouse click still plays the stroke; a touch must rest then swipe.
 - **Standard**: click or tap plays the same fixed-timing stroke (`STANDARD_STROKE`, `standardPose`), with aim correction for the first 65 ms.
 - **Manual**: hold and swipe; displacement drives `strokePose`, commit at `COMMIT`, momentum carries through.
 
@@ -94,7 +96,7 @@ When changing Flow, run `tests/flow-control.test.mjs`; its `tests/flow-hand.mjs`
 
 ## Git
 
-Commit as the repository owner (author `soldoutbudokan <68517314+soldoutbudokan@users.noreply.github.com>`), not as an agent identity, so history and Pages deploys read as the owner's work. Push the working branch with `git push -u origin <branch>`; never push to `main` or `gh-pages` by hand (the workflows own `gh-pages`).
+Commit as the repository owner (author `soldoutbudokan <68517314+soldoutbudokan@users.noreply.github.com>`), not as an agent identity, so history reads as the owner's work. Push the working branch with `git push -u origin <branch>`; never push to `main` or `gh-pages` by hand. The workflows own `gh-pages`: their deploy commits are authored as the GitHub actor who pushed (the script's own default is `github-actions[bot]`, which only applies when it is run without `GIT_AUTHOR_NAME`).
 
 ## Conventions
 
