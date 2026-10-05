@@ -1,12 +1,12 @@
 // CricSim scene: procedural textures, merged/instanced geometry, first-person batter rig.
 // Every texture in here is generated on a canvas at load time; the only files loaded are
 // the CC0 Poly Haven ground maps and HDR skies. No per-frame allocations in hot paths.
-import * as THREE from './vendor/three.module.js?v=9e39acd8943292c3';
-import { HDRLoader } from './vendor/HDRLoader.js?v=9e39acd8943292c3';
-import { createBowler } from './bowler.js?v=9e39acd8943292c3';
-import { batBasis, random } from './physics.js?v=9e39acd8943292c3';
-import { CONTACT_Z } from './bat-control.js?v=9e39acd8943292c3';
-import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js?v=9e39acd8943292c3';
+import * as THREE from './vendor/three.module.js?v=18ea47ad492f0842';
+import { HDRLoader } from './vendor/HDRLoader.js?v=18ea47ad492f0842';
+import { createBowler } from './bowler.js?v=18ea47ad492f0842';
+import { batBasis, random } from './physics.js?v=18ea47ad492f0842';
+import { CONTACT_Z } from './bat-control.js?v=18ea47ad492f0842';
+import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js?v=18ea47ad492f0842';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
@@ -74,8 +74,9 @@ function bladeGeometry() {
     const depth = y < -.05 ? lerp(.025, .043, smooth((y + .31) / .26)) : lerp(.043, .018, smooth((y + .05) / .36));
     const zEdge = zFace + Math.min(.018, depth - .004), zSpine = zFace + depth, points = [];
     const push = (x, z, u) => points.push([x, y, z, u, t]);
-    push(-hw + bevel, zFace, .25 - (hw - bevel) / .054 * .23);
-    push(hw - bevel, zFace, .25 + (hw - bevel) / .054 * .23);
+    // Seen from in front of the face, +x is on the viewer's left, so u runs the other way.
+    push(-hw + bevel, zFace, .25 + (hw - bevel) / .054 * .23);
+    push(hw - bevel, zFace, .25 - (hw - bevel) / .054 * .23);
     // Duplicate the face boundary so the striking surface stays perfectly flat.
     push(hw - bevel, zFace, .49);
     push(hw - bevel * .3, zFace + bevel * .3, .49);
@@ -128,40 +129,55 @@ function paddedPanel(width, height, depth, radius = .004) {
   return new THREE.ExtrudeGeometry(shape, { depth: depth - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 1, steps: 1, curveSegments: 3 }).translate(0, 0, -depth / 2 + bevel);
 }
 
-// Four separately articulated fingers curl round the handle. A fitted leather palm,
-// split protective blocks and a bound cuff give the close-up silhouette a human grip.
+// Four separately articulated fingers curl round the handle, each a different length,
+// with rounded sausage pads over leather undersides and real gaps at every joint. A
+// fitted leather palm, a domed back-of-hand pad, split metacarpal blocks, a padded
+// thumb and an elasticated cuff with a strap give the close-up silhouette a human grip.
 function gloveGeometry(thumbUp, mirror) {
-  const cream = '#f0eddf', leather = '#bcb6a5', green = '#284738', parts = [];
+  const cream = '#f1eee2', pad = '#f8f5ec', leather = '#e3d8bc', tan = '#cdb48b', green = '#284738', parts = [];
   const M = mirror ? new THREE.Matrix4().makeScale(-1, 1, 1) : _identity;
   const add = (g, m, c) => parts.push({ g, m: new THREE.Matrix4().multiplyMatrices(M, m), c });
-  add(new THREE.SphereGeometry(1, 12, 8), mat4(.041, 0, .018, 0, 0, 0, .023, .046, .039), leather);
-  add(new THREE.SphereGeometry(1, 12, 8), mat4(.037, 0, .045, 0, 0, 0, .025, .037, .027), cream);
-  const rc = .028, a = new THREE.Vector3(), b = new THREE.Vector3(), pa = new THREE.Vector3(), pb = new THREE.Vector3();
+  const rc = .027, a = new THREE.Vector3(), b = new THREE.Vector3(), pa = new THREE.Vector3(), pb = new THREE.Vector3();
+  const curl = (out, t, y, r) => out.set(r * Math.cos(t), y, -r * Math.sin(t));
+  // Palm heel on the handle's near side, the web of the hand and the domed back of the hand.
+  add(new THREE.SphereGeometry(1, 14, 10), mat4(.04, 0, .017, 0, 0, 0, .021, .048, .037), leather);
+  add(new THREE.SphereGeometry(1, 14, 10), mat4(.053, 0, .04, 0, 0, 0, .016, .05, .036), cream);
+  // Two protective blocks over the metacarpals, a knuckle row, leather channels between.
+  add(paddedPanel(.046, .044, .013, .009), mat4(.066, .024, .046, 0, Math.PI / 2, 0), pad);
+  add(paddedPanel(.046, .044, .013, .009), mat4(.066, -.024, .046, 0, Math.PI / 2, 0), pad);
+  add(paddedPanel(.024, .09, .012, .008), mat4(.064, 0, .008, 0, Math.PI / 2, 0), pad);
+  // Fingers: middle longest, little shortest; three padded phalanges each.
+  const reach = [2.42, 2.62, 2.52, 2.12], radius = [.0098, .0103, .0098, .009], split = [0, .42, .74, 1];
   for (let k = 0; k < 4; k++) {
-    const y = (k - 1.5) * .0205, rf = .010 - Math.abs(k - 1.5) * .0005;
-    // Split back-of-hand padding leaves leather channels at every finger joint.
-    add(paddedPanel(.037, .016, .012, .004), mat4(.061, y, .025, 0, Math.PI / 2, 0), cream);
-    add(paddedPanel(.018, .016, .013, .004), mat4(.058, y, -.007, 0, Math.PI / 2 + .18, 0), '#faf6e9');
+    const y = (k - 1.5) * .0225, rf = radius[k], tEnd = reach[k], t0 = .14;
     for (let segment = 0; segment < 3; segment++) {
-      const t0 = .18 + segment * .83, t1 = t0 + .83;
-      a.set(rc * Math.cos(t0), y, -rc * Math.sin(t0)); b.set(rc * Math.cos(t1), y, -rc * Math.sin(t1));
-      add(new THREE.CapsuleGeometry(rf, Math.max(.002, a.distanceTo(b) - rf * .8), 2, 8), betweenMat(a, b), leather);
-      const pr = rc + .007;
-      pa.set(pr * Math.cos(t0 + .08), y, -pr * Math.sin(t0 + .08)); pb.set(pr * Math.cos(t1 - .08), y, -pr * Math.sin(t1 - .08));
-      add(new THREE.CapsuleGeometry(rf * .76, Math.max(.002, pa.distanceTo(pb) - rf), 2, 8), betweenMat(pa, pb), segment === 2 ? '#d9d6c7' : cream);
+      const s0 = t0 + (tEnd - t0) * split[segment], s1 = t0 + (tEnd - t0) * split[segment + 1];
+      // Leather finger underneath, continuous round the handle.
+      curl(a, s0, y, rc); curl(b, s1, y, rc);
+      add(new THREE.CapsuleGeometry(rf * .72, Math.max(.002, a.distanceTo(b) - rf * .5), 2, 8), betweenMat(a, b), segment === 2 ? tan : leather);
+      // Sausage pad outside it, shorter than the phalanx so the joints show as gaps.
+      const pr = rc + rf * .8, gap = .045;
+      curl(pa, s0 + gap, y, pr); curl(pb, s1 - gap, y, pr);
+      add(new THREE.CapsuleGeometry(rf, Math.max(.004, pa.distanceTo(pb) - rf * .5), 3, 10), betweenMat(pa, pb), segment === 2 ? cream : pad);
     }
   }
+  // Thumb: two padded joints splayed up (or down) the handle from the palm's edge.
   const ty = thumbUp ? 1 : -1;
-  a.set(.034, ty * .03, .03); b.set(.005, ty * .053, .022);
-  add(new THREE.CapsuleGeometry(.012, a.distanceTo(b) - .008, 3, 8), betweenMat(a, b), cream);
-  a.copy(b); b.set(-.018, ty * .042, .003);
-  add(new THREE.CapsuleGeometry(.010, a.distanceTo(b) - .007, 3, 8), betweenMat(a, b), cream);
-  add(new THREE.CylinderGeometry(.044, .041, .045, 16, 1, true), mat4(.034, 0, .078, Math.PI / 2), green);
-  add(new THREE.RingGeometry(.035, .044, 20), mat4(.034, 0, .1), '#172b21');
-  add(new THREE.TorusGeometry(.043, .0025, 5, 20), mat4(.034, 0, .101), cream);
-  add(new THREE.TorusGeometry(.041, .002, 5, 20), mat4(.034, 0, .059), '#d1cbb7');
-  add(paddedPanel(.029, .035, .007, .005), mat4(.078, 0, .082, 0, Math.PI / 2, 0), cream);
-  add(paddedPanel(.015, .014, .0015, .002), mat4(.083, 0, .082, 0, Math.PI / 2, 0), green);
+  a.set(.036, ty * .028, .03); b.set(.006, ty * .056, .018);
+  add(new THREE.CapsuleGeometry(.0085, a.distanceTo(b) - .006, 2, 8), betweenMat(a, b), leather);
+  pa.copy(a).add(_v[0].set(.004, ty * .004, .004)); pb.copy(b).add(_v[0].set(.004, ty * .004, .004));
+  add(new THREE.CapsuleGeometry(.0115, pa.distanceTo(pb) - .014, 3, 10), betweenMat(pa, pb), pad);
+  a.copy(b); b.set(-.018, ty * .044, .002);
+  add(new THREE.CapsuleGeometry(.0075, a.distanceTo(b) - .005, 2, 8), betweenMat(a, b), tan);
+  pa.copy(a).add(_v[0].set(.003, ty * .004, .004)); pb.copy(b).add(_v[0].set(.003, ty * .004, .004));
+  add(new THREE.CapsuleGeometry(.0095, pa.distanceTo(pb) - .012, 3, 10), betweenMat(pa, pb), cream);
+  // Cuff: elasticated band flaring to the wrist, green strap with a tab, and a wrist pad.
+  add(lathe([[0, -.012], [.037, -.012], [.043, -.004], [.046, .012], [.047, .03], [.045, .04], [.04, .042], [0, .042]], 24), mat4(.034, 0, .062, Math.PI / 2), cream);
+  add(new THREE.TorusGeometry(.0465, .004, 8, 36), mat4(.034, 0, .086), green);
+  add(new THREE.TorusGeometry(.045, .003, 8, 36), mat4(.034, 0, .056), '#d6cfb8');
+  add(paddedPanel(.022, .03, .006, .003), mat4(.082, 0, .086, 0, Math.PI / 2, 0), green);
+  add(paddedPanel(.012, .018, .002, .002), mat4(.086, 0, .086, 0, Math.PI / 2, 0), '#c9f26b');
+  add(paddedPanel(.03, .036, .008, .006), mat4(.079, 0, .07, 0, Math.PI / 2, 0), cream);
   return mergeGeometries(parts);
 }
 
@@ -369,14 +385,33 @@ export async function createScene(canvas, onProgress = () => {}, initialQuality 
     for (let i = 0; i < 4; i++) { const y = i * 64; const g = x.createLinearGradient(0, y, 0, y + 56); g.addColorStop(0, '#f4f5ef'); g.addColorStop(1, '#dfe2d8'); x.fillStyle = g; x.fillRect(0, y, 64, 56); x.fillStyle = '#9ea39a'; x.fillRect(0, y + 56, 64, 8); const gb = bx.createLinearGradient(0, y, 0, y + 56); gb.addColorStop(0, '#c0c0c0'); gb.addColorStop(1, '#a0a0a0'); bx.fillStyle = gb; bx.fillRect(0, y, 64, 56); bx.fillStyle = '#404040'; bx.fillRect(0, y + 56, 64, 8); }
     return { map: texOf(c, { srgb: true, repeat: [1, 14.7] }), bump: texOf(b, { repeat: [1, 14.7] }) };
   }
-  function weatherboardBump() {
-    const c = makeCanvas(64, 256), x = c.getContext('2d'); for (let i = 0; i < 16; i++) { const y = i * 16, g = x.createLinearGradient(0, y, 0, y + 16); g.addColorStop(0, '#a8a8a8'); g.addColorStop(.85, '#8a8a8a'); g.addColorStop(1, '#404040'); x.fillStyle = g; x.fillRect(0, y, 64, 16); }
-    return texOf(c);
+  // Weatherboard: 150 mm boards with a shadow under each lap, as colour and relief, so the
+  // cladding still reads at forty metres. Slates: staggered courses with a shadow line.
+  function weatherboardTextures() {
+    const c = makeCanvas(64, 256), x = c.getContext('2d'), b = makeCanvas(64, 256), bx = b.getContext('2d');
+    for (let i = 0; i < 16; i++) {
+      const y = i * 16, g = x.createLinearGradient(0, y, 0, y + 16); g.addColorStop(0, '#ffffff'); g.addColorStop(.78, '#f1f0ec'); g.addColorStop(.9, '#d2d0c9'); g.addColorStop(1, '#a3a19a'); x.fillStyle = g; x.fillRect(0, y, 64, 16);
+      const gb = bx.createLinearGradient(0, y, 0, y + 16); gb.addColorStop(0, '#a8a8a8'); gb.addColorStop(.85, '#8a8a8a'); gb.addColorStop(1, '#404040'); bx.fillStyle = gb; bx.fillRect(0, y, 64, 16);
+    }
+    noiseOn(x, 64, 256, 320, () => `rgba(120,110,90,${.04 + rng() * .06})`, 1);
+    return { map: texOf(c, { srgb: true }), bump: texOf(b) };
+  }
+  function slateTextures() {
+    const c = makeCanvas(128, 128), x = c.getContext('2d'), b = makeCanvas(128, 128), bx = b.getContext('2d');
+    x.fillStyle = '#ffffff'; x.fillRect(0, 0, 128, 128); bx.fillStyle = '#909090'; bx.fillRect(0, 0, 128, 128);
+    for (let row = 0; row < 8; row++) {
+      const y = row * 16, off = row % 2 ? 8 : 0;
+      for (let i = -1; i < 8; i++) { const sx = i * 16 + off, t = Math.round(228 + rng() * 27), bt = Math.round(140 + rng() * 40); x.fillStyle = `rgb(${t},${t},${t})`; x.fillRect(sx + 1, y, 14, 14); bx.fillStyle = `rgb(${bt},${bt},${bt})`; bx.fillRect(sx + 1, y, 14, 14); }
+      x.fillStyle = 'rgba(0,0,0,0.38)'; x.fillRect(0, y + 14, 128, 2); bx.fillStyle = '#303030'; bx.fillRect(0, y + 14, 128, 2);
+    }
+    return { map: texOf(c, { srgb: true }), bump: texOf(b) };
   }
   function stumpTexture() {
-    const c = makeCanvas(32, 256), x = c.getContext('2d'); x.fillStyle = '#e9d8a8'; x.fillRect(0, 0, 32, 256);
-    for (let i = 0; i < 6; i++) { x.strokeStyle = `rgba(150,120,70,${.15 + rng() * .2})`; x.lineWidth = .8; x.beginPath(); x.moveTo(i * 5 + 2, 0); x.lineTo(i * 5 + 2 + (rng() - .5) * 3, 256); x.stroke(); }
-    x.fillStyle = '#1f3a2c'; x.fillRect(0, 0, 32, 14); x.fillStyle = '#6a6f6a'; x.fillRect(0, 245, 32, 11);
+    const c = makeCanvas(32, 256), x = c.getContext('2d'); x.fillStyle = '#e6d4a4'; x.fillRect(0, 0, 32, 256);
+    for (let i = 0; i < 7; i++) { x.strokeStyle = `rgba(150,118,66,${.14 + rng() * .22})`; x.lineWidth = .6 + rng() * .8; x.beginPath(); x.moveTo(i * 4.5 + 2, 0); x.lineTo(i * 4.5 + 2 + (rng() - .5) * 4, 256); x.stroke(); }
+    const sheen = x.createLinearGradient(0, 0, 32, 0); sheen.addColorStop(0, 'rgba(90,60,30,0.22)'); sheen.addColorStop(.35, 'rgba(255,255,255,0.08)'); sheen.addColorStop(.7, 'rgba(255,255,255,0)'); sheen.addColorStop(1, 'rgba(90,60,30,0.28)'); x.fillStyle = sheen; x.fillRect(0, 0, 32, 256);
+    // v runs bottom to top: steel shoe below, lacquered shaft, a brass ferrule under the domed cap.
+    x.fillStyle = '#7d8280'; x.fillRect(0, 244, 32, 12); x.fillStyle = '#b08d3e'; x.fillRect(0, 0, 32, 13); x.fillStyle = 'rgba(255,240,180,0.45)'; x.fillRect(0, 3, 32, 2); x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(0, 12, 32, 2);
     return texOf(c, { srgb: true, clampEdge: true });
   }
   function clockTexture() {
@@ -487,41 +522,79 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   tufts.computeBoundingSphere(); scene.add(tufts);
 
   // ---------------------------------------------------------------- surroundings
-  const creamMat = new THREE.MeshStandardMaterial({ color: '#ece8da', roughness: .85, bumpMap: weatherboardBump(), bumpScale: .012 });
-  const slateMat = new THREE.MeshStandardMaterial({ color: '#2f4a3c', roughness: .78 });
+  const boards = weatherboardTextures(), slates = slateTextures();
+  const creamMat = new THREE.MeshStandardMaterial({ color: '#efebdd', roughness: .85, map: boards.map, bumpMap: boards.bump, bumpScale: .012 });
+  const slateMat = new THREE.MeshStandardMaterial({ color: '#3a5648', roughness: .8, map: slates.map, bumpMap: slates.bump, bumpScale: .02 });
   const deckMat = new THREE.MeshStandardMaterial({ color: '#8a7658', roughness: .9 });
   const glassMat = new THREE.MeshPhysicalMaterial({ color: '#1e2a2a', roughness: .06, metalness: 0, envMapIntensity: 1 });
-  const timberMat = new THREE.MeshStandardMaterial({ color: '#5e4c3a', roughness: .9, bumpMap: creamMat.bumpMap, bumpScale: .012 });
-  const cream = [], slate = [], deck = [], glass = [], timber = [];
+  const timberMat = new THREE.MeshStandardMaterial({ color: '#6a5541', roughness: .9, map: boards.map, bumpMap: boards.bump, bumpScale: .012 });
+  const propMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .62 });
+  const trimMat = new THREE.MeshStandardMaterial({ color: '#f1ede1', roughness: .8 });
+  const cream = [], trim = [], slate = [], deck = [], glass = [], timber = [], steel = [], props = [];
   const roofPitch = Math.atan2(1.41, 3.5);
   const building = (cx, cz, w, h, d, walls = cream) => {
     const bump = [w / 2.4, h / 2.4];
     walls.push({ g: new THREE.PlaneGeometry(w, h), m: mat4(cx, h / 2, cz + d / 2), uv: bump }, { g: new THREE.PlaneGeometry(w, h), m: mat4(cx, h / 2, cz - d / 2, 0, Math.PI), uv: bump });
     walls.push({ g: new THREE.PlaneGeometry(d, h), m: mat4(cx + w / 2, h / 2, cz, 0, Math.PI / 2), uv: [d / 2.4, h / 2.4] }, { g: new THREE.PlaneGeometry(d, h), m: mat4(cx - w / 2, h / 2, cz, 0, -Math.PI / 2), uv: [d / 2.4, h / 2.4] });
-    const rise = d / 2 * Math.tan(roofPitch), slab = d / 2 / Math.cos(roofPitch) + .5;
-    slate.push({ g: new THREE.BoxGeometry(w + .8, .12, slab), m: mat4(cx, h + rise / 2 - .02, cz + d / 4 + .1, roofPitch) }, { g: new THREE.BoxGeometry(w + .8, .12, slab), m: mat4(cx, h + rise / 2 - .02, cz - d / 4 - .1, -roofPitch) });
-    slate.push({ g: new THREE.BoxGeometry(w + .9, .14, .16), m: mat4(cx, h + rise, cz) });
-    for (const sx of [-1, 1]) { const gable = new THREE.Shape(); gable.moveTo(-d / 2, 0); gable.lineTo(d / 2, 0); gable.lineTo(0, rise); gable.closePath(); walls.push({ g: new THREE.ShapeGeometry(gable), m: mat4(cx + sx * w / 2, h, cz, 0, sx * Math.PI / 2), uv: [d / 2.4, rise / 2.4] }); }
-    // White fascia boards under the eaves on both long sides.
-    for (const sz of [-1, 1]) cream.push({ g: new THREE.BoxGeometry(w + .8, .16, .04), m: mat4(cx, h - .13, cz + sz * (d / 2 + .35)) });
+    const rise = d / 2 * Math.tan(roofPitch), slab = d / 2 / Math.cos(roofPitch) + .5, courses = [(w + .8) / 2.4, slab / 1.6];
+    slate.push({ g: new THREE.BoxGeometry(w + .8, .12, slab), m: mat4(cx, h + rise / 2 - .02, cz + d / 4 + .1, roofPitch), uv: courses }, { g: new THREE.BoxGeometry(w + .8, .12, slab), m: mat4(cx, h + rise / 2 - .02, cz - d / 4 - .1, -roofPitch), uv: courses });
+    slate.push({ g: new THREE.BoxGeometry(w + .9, .14, .16), m: mat4(cx, h + rise, cz), uv: [(w + .9) / 2.4, .1] });
+    for (const sx of [-1, 1]) { const gable = new THREE.Shape(); gable.moveTo(-d / 2, 0); gable.lineTo(d / 2, 0); gable.lineTo(0, rise); gable.closePath(); walls.push({ g: new THREE.ShapeGeometry(gable), m: mat4(cx + sx * w / 2, h, cz, 0, sx * Math.PI / 2), uv: [1 / 2.4, 1 / 2.4] }); }
+    // White fascia boards and a gutter under the eaves on both long sides, with a downpipe at each end.
+    for (const sz of [-1, 1]) {
+      trim.push({ g: new THREE.BoxGeometry(w + .8, .16, .04), m: mat4(cx, h - .13, cz + sz * (d / 2 + .35)) });
+      trim.push({ g: new THREE.CylinderGeometry(.045, .045, w + .8, 8), m: mat4(cx, h - .24, cz + sz * (d / 2 + .38), 0, 0, Math.PI / 2) });
+      for (const sx of [-1, 1]) trim.push({ g: new THREE.CylinderGeometry(.035, .035, h - .3, 8), m: mat4(cx + sx * (w / 2 - .15), (h - .3) / 2 + .05, cz + sz * (d / 2 + .06)) });
+    }
   };
-  // Pavilion: 19 x 7 m, veranda with six posts, glazed windows, a clock on the gable.
+  // Pavilion: 19 x 7 m, veranda with six posts, glazed windows with sills, a panelled
+  // front door, benches on the deck, a chimney on the ridge and a clock on the gable.
   building(24, -37, 19, 3.6, 7);
   deck.push({ g: new THREE.BoxGeometry(19.4, .28, 2.4), m: mat4(24, .3, -32.4) }, { g: new THREE.BoxGeometry(3, .16, .8), m: mat4(24, .1, -30.9) });
-  for (let i = 0; i < 6; i++) { const x = 15.2 + i * 3.52; cream.push({ g: new THREE.CylinderGeometry(.07, .07, 3.1, 8), m: mat4(x, 1.95, -31.35) }); }
-  slate.push({ g: new THREE.BoxGeometry(19.6, .1, 2.9), m: mat4(24, 3.55, -32.2, .2) });
-  cream.push({ g: new THREE.BoxGeometry(19.4, .06, .06), m: mat4(24, 1.35, -31.3) }); for (let i = 0; i < 40; i++) cream.push({ g: new THREE.BoxGeometry(.04, .95, .04), m: mat4(14.6 + i * .485, .9, -31.3) });
-  for (let i = 0; i < 6; i++) { const x = 16.4 + i * 2.9; glass.push({ g: new THREE.PlaneGeometry(1.7, 1.5), m: mat4(x, 2.0, -33.47) }); cream.push({ g: new THREE.BoxGeometry(1.9, .08, .08), m: mat4(x, 2.8, -33.45) }, { g: new THREE.BoxGeometry(1.9, .08, .08), m: mat4(x, 1.2, -33.45) }, { g: new THREE.BoxGeometry(.08, 1.6, .08), m: mat4(x - .9, 2, -33.45) }, { g: new THREE.BoxGeometry(.08, 1.6, .08), m: mat4(x + .9, 2, -33.45) }, { g: new THREE.BoxGeometry(.05, 1.5, .06), m: mat4(x, 2, -33.46) }); }
-  slate.push({ g: new THREE.BoxGeometry(1.0, 2.2, .1), m: mat4(24, 1.1, -33.44) });
+  for (let i = 0; i < 6; i++) { const x = 15.2 + i * 3.52; trim.push({ g: new THREE.CylinderGeometry(.07, .07, 3.1, 8), m: mat4(x, 1.95, -31.35) }); }
+  slate.push({ g: new THREE.BoxGeometry(19.6, .1, 2.9), m: mat4(24, 3.55, -32.2, .2), uv: [19.6 / 2.4, 2.9 / 1.6] });
+  trim.push({ g: new THREE.BoxGeometry(19.4, .06, .06), m: mat4(24, 1.35, -31.3) }); for (let i = 0; i < 40; i++) trim.push({ g: new THREE.BoxGeometry(.04, .95, .04), m: mat4(14.6 + i * .485, .9, -31.3) });
+  for (let i = 0; i < 6; i++) {
+    const x = 16.4 + i * 2.9; glass.push({ g: new THREE.PlaneGeometry(1.7, 1.5), m: mat4(x, 2.0, -33.47) });
+    trim.push({ g: new THREE.BoxGeometry(1.9, .08, .08), m: mat4(x, 2.8, -33.45) }, { g: new THREE.BoxGeometry(1.9, .08, .08), m: mat4(x, 1.2, -33.45) }, { g: new THREE.BoxGeometry(.08, 1.6, .08), m: mat4(x - .9, 2, -33.45) }, { g: new THREE.BoxGeometry(.08, 1.6, .08), m: mat4(x + .9, 2, -33.45) }, { g: new THREE.BoxGeometry(.05, 1.5, .06), m: mat4(x, 2, -33.46) });
+    trim.push({ g: new THREE.BoxGeometry(2.0, .07, .16), m: mat4(x, 1.14, -33.4) }, { g: new THREE.BoxGeometry(.04, .7, .05), m: mat4(x - .45, 2.37, -33.46) }, { g: new THREE.BoxGeometry(.04, .7, .05), m: mat4(x + .45, 2.37, -33.46) });
+  }
+  deck.push({ g: new THREE.BoxGeometry(1.0, 2.2, .1), m: mat4(24, 1.1, -33.44) });
+  trim.push({ g: new THREE.BoxGeometry(1.2, .1, .14), m: mat4(24, 2.25, -33.42) }, { g: new THREE.BoxGeometry(.1, 2.3, .14), m: mat4(23.45, 1.15, -33.42) }, { g: new THREE.BoxGeometry(.1, 2.3, .14), m: mat4(24.55, 1.15, -33.42) });
+  for (const py of [.55, 1.55]) for (const px of [-.22, .22]) timber.push({ g: new THREE.BoxGeometry(.32, .7, .03), m: mat4(24 + px, py, -33.4) });
+  props.push({ g: new THREE.CylinderGeometry(.018, .018, .12, 8), m: mat4(24.36, 1.05, -33.36, Math.PI / 2), c: '#c9a24c' });
+  for (const bx of [19, 29]) { deck.push({ g: new THREE.BoxGeometry(1.8, .05, .4), m: mat4(bx, .9, -33.0) }, { g: new THREE.BoxGeometry(1.8, .4, .05), m: mat4(bx, 1.2, -33.22, -.15) }); for (const s of [-1, 1]) steel.push({ g: new THREE.BoxGeometry(.05, .45, .4), m: mat4(bx + s * .8, .67, -33.0) }); }
+  timber.push({ g: new THREE.BoxGeometry(.7, 1.4, .7), m: mat4(29.5, 4.9, -37), uv: [.3, .6] }); slate.push({ g: new THREE.BoxGeometry(.82, .08, .82), m: mat4(29.5, 5.62, -37), uv: [.3, .3] }); deck.push({ g: new THREE.CylinderGeometry(.11, .13, .4, 10), m: mat4(29.5, 5.85, -37) });
   const clockFace = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 1.1), new THREE.MeshStandardMaterial({ map: clockTexture(), roughness: .6 })); clockFace.position.set(14.44, 4.2, -37); clockFace.rotation.y = -Math.PI / 2; scene.add(clockFace);
-  // Groundsman's shed on the other side for balance, in dark-stained timber.
+  // Groundsman's shed in dark-stained timber, with a plank door, a window, a water butt and the heavy roller parked beside it.
   building(-21, -35, 6, 2.8, 4, timber);
-  slate.push({ g: new THREE.BoxGeometry(.9, 1.9, .1), m: mat4(-21, .95, -32.95) });
+  deck.push({ g: new THREE.BoxGeometry(.9, 1.9, .1), m: mat4(-21, .95, -32.95) });
+  trim.push({ g: new THREE.BoxGeometry(1.1, .08, .12), m: mat4(-21, 1.94, -32.94) }, { g: new THREE.BoxGeometry(.08, 2.0, .12), m: mat4(-21.5, .97, -32.94) }, { g: new THREE.BoxGeometry(.08, 2.0, .12), m: mat4(-20.5, .97, -32.94) });
+  for (let i = 0; i < 4; i++) timber.push({ g: new THREE.BoxGeometry(.03, 1.8, .03), m: mat4(-21.33 + i * .22, .95, -32.9) });
+  glass.push({ g: new THREE.PlaneGeometry(.8, .7), m: mat4(-19.3, 1.65, -32.98) });
+  trim.push({ g: new THREE.BoxGeometry(.95, .07, .08), m: mat4(-19.3, 2.03, -32.96) }, { g: new THREE.BoxGeometry(.95, .07, .12), m: mat4(-19.3, 1.27, -32.94) }, { g: new THREE.BoxGeometry(.07, .8, .08), m: mat4(-19.72, 1.65, -32.96) }, { g: new THREE.BoxGeometry(.07, .8, .08), m: mat4(-18.88, 1.65, -32.96) }, { g: new THREE.BoxGeometry(.04, .7, .06), m: mat4(-19.3, 1.65, -32.97) });
+  props.push({ g: lathe([[0, 0], [.3, 0], [.32, .04], [.33, .5], [.32, .8], [.3, .84], [0, .84]], 14), m: mat4(-24.6, 0, -32.6), c: '#27382c' });
+  steel.push({ g: new THREE.CylinderGeometry(.36, .36, 1.0, 20), m: mat4(-17.4, .36, -33.6, 0, 0, Math.PI / 2) });
+  for (const s of [-1, 1]) props.push({ g: new THREE.BoxGeometry(.05, .05, 1.2), m: mat4(-17.4 + s * .54, .5, -33.0, -.35), c: '#2e4d3a' });
+  props.push({ g: new THREE.CylinderGeometry(.02, .02, 1.14, 8), m: mat4(-17.4, .71, -32.45, 0, 0, Math.PI / 2), c: '#2e4d3a' });
   // Benches beside the lanes and a hedge behind the pavilion.
-  for (const x of [-13.5, 13.5]) { for (let i = 0; i < 3; i++) deck.push({ g: new THREE.BoxGeometry(2.6, .05, .1), m: mat4(x, .48, -13.15 + i * .12) }); for (let j = 0; j < 2; j++) deck.push({ g: new THREE.BoxGeometry(2.6, .1, .05), m: mat4(x, .72 + j * .13, -13.32 - j * .035, -.25) }); for (const s of [-1, 1]) slate.push({ g: new THREE.BoxGeometry(.06, .46, .5), m: mat4(x + s * 1.2, .23, -13.05) }, { g: new THREE.BoxGeometry(.06, .45, .05), m: mat4(x + s * 1.2, .7, -13.3, -.25) }); }
+  for (const x of [-13.5, 13.5]) { for (let i = 0; i < 3; i++) deck.push({ g: new THREE.BoxGeometry(2.6, .05, .1), m: mat4(x, .48, -13.15 + i * .12) }); for (let j = 0; j < 2; j++) deck.push({ g: new THREE.BoxGeometry(2.6, .1, .05), m: mat4(x, .72 + j * .13, -13.32 - j * .035, -.25) }); for (const s of [-1, 1]) steel.push({ g: new THREE.BoxGeometry(.06, .46, .5), m: mat4(x + s * 1.2, .23, -13.05) }, { g: new THREE.BoxGeometry(.06, .45, .05), m: mat4(x + s * 1.2, .7, -13.3, -.25) }); }
   const hedge = new THREE.Mesh(new THREE.BoxGeometry(40, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: '#2f4a2a', roughness: 1, bumpMap: leatherBump(), bumpScale: .05 })); hedge.position.set(20, .8, -42.5); scene.add(hedge);
+  // Kit in the lanes: concrete footings under every net post, the bowler's marker disc, a ball
+  // bucket and kit bags at the far end, cones in the neighbouring lanes, a water bottle.
+  for (const x of [-9.6, -3.1, 3.1, 9.6]) for (let z = -24; z <= 4; z += 7) props.push({ g: new THREE.CylinderGeometry(.09, .11, .1, 10), m: mat4(x, .05, z), c: '#a4a39a' });
+  props.push({ g: new THREE.CylinderGeometry(.11, .11, .012, 16), m: mat4(-.2, .006, -23.9), c: '#f4f2ea' });
+  props.push({ g: lathe([[0, 0], [.14, 0], [.145, .02], [.16, .3], [.168, .32], [.152, .32], [.147, .3], [.133, .025], [0, .025]], 16), m: mat4(2.25, 0, -21.6), c: '#eceae2' });
+  const bag = (x, z, ry) => {
+    props.push({ g: new THREE.CapsuleGeometry(.21, .62, 6, 14), m: mat4(x, .2, z, Math.PI / 2, ry, 0, 1, 1, .85), c: '#1f3a2c' });
+    props.push({ g: new THREE.BoxGeometry(.34, .05, .22), m: mat4(x, .395, z, 0, ry, 0), c: '#d8cfa4' });
+    props.push({ g: new THREE.TorusGeometry(.1, .012, 6, 14, Math.PI), m: mat4(x, .4, z, 0, ry + Math.PI / 2, 0), c: '#141f1a' });
+  };
+  bag(-2.3, -22.9, .35); bag(8.9, -22.6, -.2); bag(-8.5, -8.2, 1.3);
+  props.push({ g: new THREE.CylinderGeometry(.038, .038, .24, 10), m: mat4(-1.85, .12, -22.4), c: '#2b6fb5' }, { g: new THREE.CylinderGeometry(.02, .02, .03, 8), m: mat4(-1.85, .255, -22.4), c: '#eef0ee' });
+  for (const [x, z] of [[-7.4, -6.2], [-5.4, -6.2], [5.6, -11.5], [7.2, -11.5]]) props.push({ g: new THREE.ConeGeometry(.13, .32, 10), m: mat4(x, .17, z), c: '#f0702a' }, { g: new THREE.BoxGeometry(.3, .02, .3), m: mat4(x, .01, z), c: '#f0702a' });
   const addMerged = (parts, material, shadow = true) => { if (!parts.length) return null; const m = new THREE.Mesh(mergeGeometries(parts), material); m.castShadow = shadow; m.receiveShadow = true; scene.add(m); return m; };
-  addMerged(cream, creamMat); addMerged(timber, timberMat); addMerged(slate, slateMat); addMerged(deck, deckMat); addMerged(glass, glassMat, false);
+  addMerged(cream, creamMat); addMerged(trim, trimMat); addMerged(timber, timberMat); addMerged(slate, slateMat); addMerged(deck, deckMat); addMerged(glass, glassMat, false); addMerged(steel, steelMat); addMerged(props, propMat);
   // Sight screen: slatted 7 x 4 m board on a steel A-frame with wheels, behind the back net.
   const slats = slatTextures();
   const screen = new THREE.Mesh(new THREE.PlaneGeometry(7, 4), new THREE.MeshStandardMaterial({ map: slats.map, bumpMap: slats.bump, bumpScale: .02, color: '#ffffff', roughness: .7 })); screen.position.set(0, 2.25, -26.5); screen.castShadow = true; screen.receiveShadow = true; scene.add(screen);
@@ -544,8 +617,12 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   scene.add(fencePosts); addMerged(rails, fenceMat, false);
 
   // ---------------------------------------------------------------- wickets
-  const stumpMat = new THREE.MeshStandardMaterial({ map: stumpTexture(), roughness: .6 }), bailMat = new THREE.MeshStandardMaterial({ color: '#d9c48f', roughness: .65 });
-  const stumpGeo = new THREE.CylinderGeometry(.0175, .019, .711, 12), bailGeo = new THREE.CylinderGeometry(.011, .011, .10, 8);
+  const stumpMat = new THREE.MeshStandardMaterial({ map: stumpTexture(), roughness: .42, metalness: .05 }), bailMat = new THREE.MeshStandardMaterial({ color: '#e2cc92', roughness: .5 });
+  // Turned stumps: a steel shoe, a lacquered shaft swelling slightly toward the top, a brass
+  // ferrule and a domed cap. Bails are barrels with spigots either end. Both are lathes
+  // centred as the old cylinders were, so the wicket placement and bail flight are unchanged.
+  const stumpGeo = lathe([[0, 0], [.013, 0], [.0158, .03], [.0172, .1], [.0178, .55], [.0176, .676], [.0186, .682], [.0186, .702], [.0176, .706], [.011, .7105], [0, .711]], 16).translate(0, -.3555, 0);
+  const bailGeo = lathe([[0, -.0555], [.0052, -.0555], [.0052, -.0425], [.0082, -.0425], [.0106, -.03], [.0114, 0], [.0106, .03], [.0082, .0425], [.0052, .0425], [.0052, .0555], [0, .0555]], 12);
   const otherStumps = new THREE.InstancedMesh(stumpGeo, stumpMat, 9), otherBails = new THREE.InstancedMesh(bailGeo, bailMat, 6); otherStumps.castShadow = true; n = 0; let nb = 0;
   for (const [x, z] of [[0, -18.9], [-6.4, -18.9], [6.4, -18.9]]) { for (const dx of [-.095, 0, .095]) { dummy.position.set(x + dx, .04 + .3555, z); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1); dummy.updateMatrix(); otherStumps.setMatrixAt(n++, dummy.matrix); } for (const dx of [-.0475, .0475]) { dummy.position.set(x + dx, .04 + .716, z); dummy.rotation.set(0, 0, Math.PI / 2); dummy.updateMatrix(); otherBails.setMatrixAt(nb++, dummy.matrix); } }
   scene.add(otherStumps, otherBails);
@@ -565,7 +642,19 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
 
   // ---------------------------------------------------------------- bowler
   const addPart = (geo, material, x, y, z, parent, shadow = true) => { const m = new THREE.Mesh(geo, material); m.position.set(x, y, z); m.castShadow = shadow; parent.add(m); return m; };
-  const ballMat = new THREE.MeshPhysicalMaterial({ color: '#a3131f', roughness: .35, clearcoat: 1, clearcoatRoughness: .12, bumpMap: leatherBump(), bumpScale: .0006 });
+  // Ball leather: dyed red with pore grain, a faint quarter seam, three rows of stitching
+  // either side of the equator (which the raised seam tori sit on) and a gold maker's stamp.
+  function ballTexture() {
+    const W = 512, H = 256, c = makeCanvas(W, H), x = c.getContext('2d'); x.fillStyle = '#a8141f'; x.fillRect(0, 0, W, H);
+    noiseOn(x, W, H, 9000, () => `rgba(${rng() < .5 ? 60 : 230},${rng() < .5 ? 10 : 90},${rng() < .5 ? 10 : 80},${.05 + rng() * .1})`, 1);
+    for (const u of [0, W / 2]) { x.strokeStyle = 'rgba(70,10,14,0.55)'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(u, 0); x.lineTo(u, H); x.stroke(); }
+    for (const row of [-21, -15, -9, 9, 15, 21]) { const y = H / 2 + row; x.fillStyle = row % 2 ? '#f1e6cc' : '#e8dcc0'; for (let u = 0; u < W; u += 7) x.fillRect(u + (row > 0 ? 2 : 0), y - 1, 4, 2); }
+    x.fillStyle = 'rgba(60,8,12,0.5)'; x.fillRect(0, H / 2 - 4, W, 8);
+    x.fillStyle = '#c8a24a'; x.font = 'bold 15px sans-serif'; x.textAlign = 'center'; x.fillText('CRICSIM', W * .25, H * .3); x.font = '600 9px sans-serif'; x.fillText('FOUR PIECE', W * .25, H * .3 + 12);
+    x.strokeStyle = '#c8a24a'; x.lineWidth = 1.5; x.beginPath(); x.ellipse(W * .25, H * .3 - 2, 36, 17, 0, 0, TAU); x.stroke();
+    return texOf(c, { srgb: true, clampEdge: true, aniso: 16 });
+  }
+  const ballMat = new THREE.MeshPhysicalMaterial({ map: ballTexture(), color: '#ffffff', roughness: .35, clearcoat: 1, clearcoatRoughness: .12, bumpMap: leatherBump(), bumpScale: .0006 });
   const athlete = createBowler({ ballMaterial: ballMat });
   const bowler = athlete.group, heldBall = athlete.heldBall;
   scene.add(bowler);
@@ -574,7 +663,7 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
 
   // ---------------------------------------------------------------- ball, trail, markers
   const ballGroup = new THREE.Group(); ballGroup.scale.setScalar(1.2); scene.add(ballGroup); ballGroup.visible = false;
-  const ball = addPart(new THREE.SphereGeometry(.036, 24, 18), ballMat, 0, 0, 0, ballGroup, false); // the blob below is its only shadow, straight under it
+  const ball = addPart(new THREE.SphereGeometry(.036, 32, 24).rotateX(Math.PI / 2), ballMat, 0, 0, 0, ballGroup, false); // poles on z, so the texture equator sits under the seam tori // the blob below is its only shadow, straight under it
   const seamMat = new THREE.MeshStandardMaterial({ color: '#f1e5cf', roughness: .7 }), grooveMat = new THREE.MeshStandardMaterial({ color: '#5a0d14', roughness: .5 });
   for (const off of [-.0038, .0038]) { const s = new THREE.Mesh(new THREE.TorusGeometry(Math.sqrt(.036 ** 2 - off ** 2) + .0004, .0009, 5, 64), seamMat); s.position.z = off; ballGroup.add(s); }
   const groove = new THREE.Mesh(new THREE.TorusGeometry(.0362, .0012, 4, 64), grooveMat); ballGroup.add(groove);
@@ -636,6 +725,15 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   const blade = new THREE.Mesh(bladeGeometry(), wood); blade.castShadow = true; blade.receiveShadow = true; batGroup.add(blade);
   const gripTex = gripTextures();
   const handle = new THREE.Mesh(lathe([[0, -.145], [.017, -.145], [.018, -.131], [.0165, -.095], [.016, .115], [.019, .136], [.019, .145], [0, .145]], 20), new THREE.MeshStandardMaterial({ map: gripTex.map, bumpMap: gripTex.bump, bumpScale: .0011, roughness: .92 })); handle.position.y = .455; handle.scale.z = .85; handle.castShadow = true; batGroup.add(handle);
+  // Spare kit: practice balls in the bucket at the bowler's end and a bat resting against the side net.
+  const spareBalls = [];
+  for (let i = 0; i < 5; i++) { const a = i * 1.26, r = i ? .075 : 0; spareBalls.push({ g: new THREE.SphereGeometry(.036, 14, 10), m: mat4(2.25 + Math.cos(a) * r, i ? .27 : .3, -21.6 + Math.sin(a) * r, rng() * 3, rng() * 3) }); }
+  const bucketBalls = new THREE.Mesh(mergeGeometries(spareBalls), ballMat); scene.add(bucketBalls);
+  const spareBat = new THREE.Group(); spareBat.position.set(2.95, .005, -14);
+  spareBat.quaternion.setFromAxisAngle(_v[0].set(0, 0, 1), -.2).multiply(_q1.setFromAxisAngle(_v[1].set(0, 1, 0), Math.PI / 2));
+  const spareBlade = new THREE.Mesh(blade.geometry, wood.clone()); spareBlade.position.y = .31; spareBlade.castShadow = true; spareBat.add(spareBlade); // its own material, so the contact flash stays on the bat in hand
+  const spareHandle = new THREE.Mesh(handle.geometry, handle.material); spareHandle.position.y = .765; spareHandle.scale.z = .85; spareHandle.castShadow = true; spareBat.add(spareHandle);
+  scene.add(spareBat);
   const gloveMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .76, bumpMap: quiltBump(), bumpScale: .00045 });
   const gloveGeos = { right: gloveGeometry(true, false), rightTop: gloveGeometry(false, false), left: gloveGeometry(true, true), leftTop: gloveGeometry(false, true) };
   const gloves = [new THREE.Mesh(gloveGeos.right, gloveMat), new THREE.Mesh(gloveGeos.rightTop, gloveMat)];
@@ -652,25 +750,35 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   armDepth.onBeforeCompile = sh => fadeArm(sh, 'if (vArmY > 0.22) discard;'); // shadow only from the part you can see
   const SKIN = '#b5865f', SWEATER = '#d8cfb6', TRIM = '#1f3a2c', L_UPPER = .5, L_FORE = .36;
   const forearmGeo = mergeGeometries([
-    { g: lathe([[.036, -.01], [.038, 0], [.040, .035], [.041, .055]], 18), c: SKIN, uv: [0, 0] },
-    { g: lathe([[.042, .042], [.047, .049], [.047, .071], [.050, .086], [.048, .12], [.057, .23], [.061, .31]], 18), c: SWEATER },
-    { g: new THREE.TorusGeometry(.046, .0025, 5, 20), m: mat4(0, .051, 0, Math.PI / 2), c: TRIM },
-    { g: new THREE.TorusGeometry(.046, .0015, 5, 20), m: mat4(0, .065, 0, Math.PI / 2), c: TRIM },
-    { g: new THREE.SphereGeometry(.045, 18, 8, 0, TAU, 0, Math.PI / 2), m: mat4(0, .07, 0, 0, 0, 0, 1, 2, 1), c: SWEATER }, // solid end seen down the sleeve, shaded like its walls
+    { g: lathe([[.036, -.01], [.038, 0], [.040, .035], [.041, .055]], 24), c: SKIN, uv: [0, 0] },
+    { g: lathe([[.042, .042], [.047, .049], [.047, .071], [.050, .086], [.048, .12], [.057, .23], [.061, .31]], 28), c: SWEATER },
+    { g: new THREE.TorusGeometry(.046, .0025, 8, 36), m: mat4(0, .051, 0, Math.PI / 2), c: TRIM },
+    { g: new THREE.TorusGeometry(.046, .0015, 8, 36), m: mat4(0, .065, 0, Math.PI / 2), c: TRIM },
+    { g: new THREE.SphereGeometry(.045, 24, 8, 0, TAU, 0, Math.PI / 2), m: mat4(0, .07, 0, 0, 0, 0, 1, 2, 1), c: SWEATER }, // solid end seen down the sleeve, shaded like its walls
   ]);
   const arms = [0, 1].map(() => ({ fore: new THREE.Mesh(forearmGeo, armMat) }));
   for (const a of arms) { a.fore.castShadow = true; a.fore.receiveShadow = true; a.fore.customDepthMaterial = armDepth; scene.add(a.fore); }
   const padMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .84, bumpMap: quiltBump(), bumpScale: .00055 });
-  const padParts = [
-    { g: lathe([[.06, 0], [.087, .025], [.095, .28], [.098, .43], [.087, .57], [.068, .61]], 16), m: mat4(0, 0, 0, 0, 0, 0, 1, 1, .55), c: '#c4bfae' },
-    { g: paddedPanel(.135, .064, .016, .013), m: mat4(0, .57, .045, -.12), c: '#eeeade' },
+  // Pads: a cream shell twice as wide as it is deep, seven tapered bolsters that follow its
+  // curve from the instep to the knee, three knee rolls bent round the shin, a top flap,
+  // and strap buckles on both sides. The same geometry serves both legs.
+  const PAD_DEPTH = .62, padParts = [
+    { g: lathe([[.058, 0], [.085, .022], [.094, .12], [.097, .3], [.1, .44], [.093, .55], [.075, .6], [.05, .62]], 20), m: mat4(0, 0, 0, 0, 0, 0, 1, 1, PAD_DEPTH), c: '#ebe6d6' },
+    { g: paddedPanel(.15, .07, .018, .016), m: mat4(0, .585, .034, -.2), c: '#f2eee3' },
   ];
-  // Separate vertical canes and horizontal knee rolls, with real gaps rather than deep bump shading.
+  const bolster = lathe([[0, -.16], [.008, -.159], [.012, -.152], [.0125, -.05], [.012, .1], [.0105, .146], [.007, .157], [0, .16]], 12);
   for (let i = 0; i < 7; i++) {
-    const x = (i - 3) * .025, z = .031 + .027 * Math.sqrt(1 - (x / .1) ** 2);
-    padParts.push({ g: new THREE.CapsuleGeometry(.011, .277, 3, 8), m: mat4(x, .187, z, 0, 0, 0, 1, 1, .72), c: i % 2 ? '#ebe7da' : '#f4f0e4' });
+    const x = (i - 3) * .0255, z = PAD_DEPTH * .094 * Math.sqrt(1 - (x / .104) ** 2) + .004;
+    padParts.push({ g: bolster, m: mat4(x, .2, z, .035, -x * .25, 0), c: i % 2 ? '#ebe7da' : '#f5f2e8' });
   }
-  for (let i = 0; i < 3; i++) padParts.push({ g: paddedPanel(.164 - i * .007, .048, .023, .014), m: mat4(0, .374 + i * .057, .05 + (i === 1 ? .005 : 0)), c: '#f0ecdf' });
+  for (let i = 0; i < 3; i++) {
+    const y = .378 + i * .056, r = .021 + i * .0015, arc = 1.9;
+    padParts.push({ g: new THREE.TorusGeometry(.094, r, 10, 22, arc), m: mat4(0, y, .004, Math.PI / 2, 0, Math.PI / 2 - arc / 2, 1, 1, PAD_DEPTH * 1.05), c: '#f3efe5' });
+  }
+  for (const side of [-1, 1]) for (const y of [.11, .3, .5]) {
+    padParts.push({ g: new THREE.BoxGeometry(.006, .03, .05), m: mat4(side * .097, y, -.012), c: '#284738' });
+    padParts.push({ g: new THREE.TorusGeometry(.013, .0022, 6, 16), m: mat4(side * .102, y, .012, 0, Math.PI / 2, 0), c: '#b9b4a6' });
+  }
   const padGeo = mergeGeometries(padParts);
   const pads = [new THREE.Mesh(padGeo, padMat), new THREE.Mesh(padGeo, padMat)]; for (const p of pads) { p.receiveShadow = true; scene.add(p); } // seen at the foot of a portrait screen and while the gaze follows a struck ball
   let hand = 'right', handSign = 1, lastBatX = .25, lastBatY = .48, lastBatZ = .06, batSpeed = 0;
@@ -845,7 +953,7 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     pitchMat.color.set(c.pitch === 'green' ? '#c4c79c' : c.pitch === 'soft' ? '#aaa386' : c.pitch === 'dry' ? '#e8d6ab' : '#d6cba6');
     pitchMat.normalScale.setScalar(c.pitch === 'dry' ? .45 : c.pitch === 'soft' ? .2 : .3);
     pitchMat.roughness = c.pitch === 'soft' ? (over ? .5 : .45) : .95; pitchMat.clearcoat = c.pitch === 'soft' ? .25 : 0;
-    ballMat.roughness = .3 + c.age / 200; ballMat.clearcoat = Math.max(0, 1 - c.age / 50); ballMat.color.set(c.age > 40 ? '#6e1519' : '#a3131f');
+    const wear = clamp(c.age / 80, 0, 1); ballMat.roughness = .3 + c.age / 200; ballMat.clearcoat = Math.max(0, 1 - c.age / 50); ballMat.color.setRGB(1 - .4 * wear, 1 - .52 * wear, 1 - .55 * wear);
   }
   setEnvironment({ weather: 'clear', pitch: 'hard', age: 8, wind: 0, hand: 'right' });
   // The other surfaces' wear textures take a moment to paint; do it while the browser is idle rather than on a click or at run-up.
