@@ -1,12 +1,13 @@
 // CricSim scene: procedural textures, merged/instanced geometry, first-person batter rig.
 // Every texture in here is generated on a canvas at load time; the only files loaded are
 // the CC0 Poly Haven ground maps and HDR skies. No per-frame allocations in hot paths.
-import * as THREE from './vendor/three.module.js?v=18ea47ad492f0842';
-import { HDRLoader } from './vendor/HDRLoader.js?v=18ea47ad492f0842';
-import { createBowler } from './bowler.js?v=18ea47ad492f0842';
-import { batBasis, random } from './physics.js?v=18ea47ad492f0842';
-import { CONTACT_Z } from './bat-control.js?v=18ea47ad492f0842';
-import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js?v=18ea47ad492f0842';
+import * as THREE from './vendor/three.module.js?v=8135f38a30ce2f1b';
+import { HDRLoader } from './vendor/HDRLoader.js?v=8135f38a30ce2f1b';
+import { createBowler } from './bowler.js?v=8135f38a30ce2f1b';
+import { bladeGeometry, gloveGeometry, paddedPanel, createGloveMaterial } from './equipment.js?v=8135f38a30ce2f1b';
+import { batBasis, random } from './physics.js?v=8135f38a30ce2f1b';
+import { CONTACT_Z } from './bat-control.js?v=8135f38a30ce2f1b';
+import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js?v=8135f38a30ce2f1b';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
@@ -59,127 +60,6 @@ function mergeGeometries(parts) {
   return geo;
 }
 const lathe = (pts, seg = 24) => new THREE.LatheGeometry(pts.map(([r, y]) => new THREE.Vector2(r, y)), seg);
-
-// A flat striking face and a gently bevelled perimeter keep the regulation .108 x .62 m
-// blade legible up close. The short toe radius avoids the old paddle-shaped outline.
-function bladeGeometry() {
-  const zFace = -.012, stations = [-.31, -.308, -.303, -.296, -.292];
-  for (let y = -.274; y < .225; y += .022) stations.push(y);
-  stations.push(.225, .248, .27, .29, .304, .31);
-  const rings = stations.map(y => {
-    const t = (y + .31) / .62, bevel = .0016;
-    let hw = .054;
-    if (y < -.292) hw = .036 + .018 * Math.sqrt(Math.max(0, 1 - ((y + .292) / .018) ** 2));
-    else if (y > .225) hw -= .028 * smooth((y - .225) / .085);
-    const depth = y < -.05 ? lerp(.025, .043, smooth((y + .31) / .26)) : lerp(.043, .018, smooth((y + .05) / .36));
-    const zEdge = zFace + Math.min(.018, depth - .004), zSpine = zFace + depth, points = [];
-    const push = (x, z, u) => points.push([x, y, z, u, t]);
-    // Seen from in front of the face, +x is on the viewer's left, so u runs the other way.
-    push(-hw + bevel, zFace, .25 + (hw - bevel) / .054 * .23);
-    push(hw - bevel, zFace, .25 - (hw - bevel) / .054 * .23);
-    // Duplicate the face boundary so the striking surface stays perfectly flat.
-    push(hw - bevel, zFace, .49);
-    push(hw - bevel * .3, zFace + bevel * .3, .49);
-    push(hw, zFace + bevel, .49);
-    push(hw, zEdge - bevel, .49);
-    push(hw - bevel * .3, zEdge - bevel * .3, .98);
-    for (let j = 0; j <= 12; j++) {
-      const k = 1 - j / 6, x = k * (hw - bevel);
-      push(x, zEdge + (zSpine - zEdge) * Math.pow(1 - Math.abs(k), 1.2), .75 + x / .054 * .23);
-    }
-    push(-hw + bevel * .3, zEdge - bevel * .3, .52);
-    push(-hw, zEdge - bevel, .01);
-    push(-hw, zFace + bevel, .01);
-    push(-hw + bevel * .3, zFace + bevel * .3, .01);
-    push(-hw + bevel, zFace, .01);
-    return points;
-  });
-  const count = rings[0].length, positions = [], uvs = [], indices = [];
-  for (const ring of rings) for (const [x, y, z, u, v] of ring) { positions.push(x, y, z); uvs.push(u, v); }
-  for (let i = 0; i < rings.length - 1; i++) for (let j = 0; j < count - 1; j++) {
-    if (j === 1) continue;
-    const a = i * count + j, b = a + 1, c = a + count + 1, d = a + count;
-    indices.push(a, c, b, a, d, c);
-  }
-  const cap = (ring, up) => {
-    const outline = [ring[0], ...ring.slice(2, -1)], base = positions.length / 3;
-    positions.push(0, ring[0][1], zFace + .01); uvs.push(.25, up ? 1 : 0);
-    for (const [x, y, z, u, v] of outline) { positions.push(x, y, z); uvs.push(u, v); }
-    for (let j = 0; j < outline.length; j++) {
-      const a = base + 1 + j, b = base + 1 + (j + 1) % outline.length;
-      if (up) indices.push(base, b, a); else indices.push(base, a, b);
-    }
-  };
-  cap(rings[0], false); cap(rings[rings.length - 1], true);
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
-  geo.setIndex(indices); geo.computeVertexNormals();
-  return geo;
-}
-
-// A small upholstered panel. Rounded corners and bevels catch light without a separate
-// mesh or material; all of the panels are baked into the glove/pad geometry once at load.
-function paddedPanel(width, height, depth, radius = .004) {
-  const x = -width / 2, y = -height / 2, r = Math.min(radius, width / 2, height / 2), shape = new THREE.Shape();
-  shape.moveTo(x + r, y); shape.lineTo(x + width - r, y); shape.quadraticCurveTo(x + width, y, x + width, y + r);
-  shape.lineTo(x + width, y + height - r); shape.quadraticCurveTo(x + width, y + height, x + width - r, y + height);
-  shape.lineTo(x + r, y + height); shape.quadraticCurveTo(x, y + height, x, y + height - r);
-  shape.lineTo(x, y + r); shape.quadraticCurveTo(x, y, x + r, y);
-  const bevel = Math.min(.0015, depth / 4);
-  return new THREE.ExtrudeGeometry(shape, { depth: depth - bevel * 2, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 1, steps: 1, curveSegments: 3 }).translate(0, 0, -depth / 2 + bevel);
-}
-
-// Four separately articulated fingers curl round the handle, each a different length,
-// with rounded sausage pads over leather undersides and real gaps at every joint. A
-// fitted leather palm, a domed back-of-hand pad, split metacarpal blocks, a padded
-// thumb and an elasticated cuff with a strap give the close-up silhouette a human grip.
-function gloveGeometry(thumbUp, mirror) {
-  const cream = '#f1eee2', pad = '#f8f5ec', leather = '#e3d8bc', tan = '#cdb48b', green = '#284738', parts = [];
-  const M = mirror ? new THREE.Matrix4().makeScale(-1, 1, 1) : _identity;
-  const add = (g, m, c) => parts.push({ g, m: new THREE.Matrix4().multiplyMatrices(M, m), c });
-  const rc = .027, a = new THREE.Vector3(), b = new THREE.Vector3(), pa = new THREE.Vector3(), pb = new THREE.Vector3();
-  const curl = (out, t, y, r) => out.set(r * Math.cos(t), y, -r * Math.sin(t));
-  // Palm heel on the handle's near side, the web of the hand and the domed back of the hand.
-  add(new THREE.SphereGeometry(1, 14, 10), mat4(.04, 0, .017, 0, 0, 0, .021, .048, .037), leather);
-  add(new THREE.SphereGeometry(1, 14, 10), mat4(.053, 0, .04, 0, 0, 0, .016, .05, .036), cream);
-  // Two protective blocks over the metacarpals, a knuckle row, leather channels between.
-  add(paddedPanel(.046, .044, .013, .009), mat4(.066, .024, .046, 0, Math.PI / 2, 0), pad);
-  add(paddedPanel(.046, .044, .013, .009), mat4(.066, -.024, .046, 0, Math.PI / 2, 0), pad);
-  add(paddedPanel(.024, .09, .012, .008), mat4(.064, 0, .008, 0, Math.PI / 2, 0), pad);
-  // Fingers: middle longest, little shortest; three padded phalanges each.
-  const reach = [2.42, 2.62, 2.52, 2.12], radius = [.0098, .0103, .0098, .009], split = [0, .42, .74, 1];
-  for (let k = 0; k < 4; k++) {
-    const y = (k - 1.5) * .0225, rf = radius[k], tEnd = reach[k], t0 = .14;
-    for (let segment = 0; segment < 3; segment++) {
-      const s0 = t0 + (tEnd - t0) * split[segment], s1 = t0 + (tEnd - t0) * split[segment + 1];
-      // Leather finger underneath, continuous round the handle.
-      curl(a, s0, y, rc); curl(b, s1, y, rc);
-      add(new THREE.CapsuleGeometry(rf * .72, Math.max(.002, a.distanceTo(b) - rf * .5), 2, 8), betweenMat(a, b), segment === 2 ? tan : leather);
-      // Sausage pad outside it, shorter than the phalanx so the joints show as gaps.
-      const pr = rc + rf * .8, gap = .045;
-      curl(pa, s0 + gap, y, pr); curl(pb, s1 - gap, y, pr);
-      add(new THREE.CapsuleGeometry(rf, Math.max(.004, pa.distanceTo(pb) - rf * .5), 3, 10), betweenMat(pa, pb), segment === 2 ? cream : pad);
-    }
-  }
-  // Thumb: two padded joints splayed up (or down) the handle from the palm's edge.
-  const ty = thumbUp ? 1 : -1;
-  a.set(.036, ty * .028, .03); b.set(.006, ty * .056, .018);
-  add(new THREE.CapsuleGeometry(.0085, a.distanceTo(b) - .006, 2, 8), betweenMat(a, b), leather);
-  pa.copy(a).add(_v[0].set(.004, ty * .004, .004)); pb.copy(b).add(_v[0].set(.004, ty * .004, .004));
-  add(new THREE.CapsuleGeometry(.0115, pa.distanceTo(pb) - .014, 3, 10), betweenMat(pa, pb), pad);
-  a.copy(b); b.set(-.018, ty * .044, .002);
-  add(new THREE.CapsuleGeometry(.0075, a.distanceTo(b) - .005, 2, 8), betweenMat(a, b), tan);
-  pa.copy(a).add(_v[0].set(.003, ty * .004, .004)); pb.copy(b).add(_v[0].set(.003, ty * .004, .004));
-  add(new THREE.CapsuleGeometry(.0095, pa.distanceTo(pb) - .012, 3, 10), betweenMat(pa, pb), cream);
-  // Cuff: elasticated band flaring to the wrist, green strap with a tab, and a wrist pad.
-  add(lathe([[0, -.012], [.037, -.012], [.043, -.004], [.046, .012], [.047, .03], [.045, .04], [.04, .042], [0, .042]], 24), mat4(.034, 0, .062, Math.PI / 2), cream);
-  add(new THREE.TorusGeometry(.0465, .004, 8, 36), mat4(.034, 0, .086), green);
-  add(new THREE.TorusGeometry(.045, .003, 8, 36), mat4(.034, 0, .056), '#d6cfb8');
-  add(paddedPanel(.022, .03, .006, .003), mat4(.082, 0, .086, 0, Math.PI / 2, 0), green);
-  add(paddedPanel(.012, .018, .002, .002), mat4(.086, 0, .086, 0, Math.PI / 2, 0), '#c9f26b');
-  add(paddedPanel(.03, .036, .008, .006), mat4(.079, 0, .07, 0, Math.PI / 2, 0), cream);
-  return mergeGeometries(parts);
-}
 
 export async function createScene(canvas, onProgress = () => {}, initialQuality = {}) {
   let quality = { id: 'balanced', maxPixelRatio: 1.25, maxPixels: 1800000, shadowMapSize: 1024, shadows: true, grassDensity: .6, details: true, ...initialQuality };
@@ -380,11 +260,6 @@ export async function createScene(canvas, onProgress = () => {}, initialQuality 
     noiseOn(x, 256, 256, 6000, () => `rgba(${rng() < .5 ? 60 : 200},${rng() < .5 ? 60 : 200},${rng() < .5 ? 60 : 200},${.15 + rng() * .25})`, 1);
     return texOf(c, { repeat: [3, 2] });
   }
-  function slatTextures() {
-    const c = makeCanvas(64, 256), x = c.getContext('2d'), b = makeCanvas(64, 256), bx = b.getContext('2d');
-    for (let i = 0; i < 4; i++) { const y = i * 64; const g = x.createLinearGradient(0, y, 0, y + 56); g.addColorStop(0, '#f4f5ef'); g.addColorStop(1, '#dfe2d8'); x.fillStyle = g; x.fillRect(0, y, 64, 56); x.fillStyle = '#9ea39a'; x.fillRect(0, y + 56, 64, 8); const gb = bx.createLinearGradient(0, y, 0, y + 56); gb.addColorStop(0, '#c0c0c0'); gb.addColorStop(1, '#a0a0a0'); bx.fillStyle = gb; bx.fillRect(0, y, 64, 56); bx.fillStyle = '#404040'; bx.fillRect(0, y + 56, 64, 8); }
-    return { map: texOf(c, { srgb: true, repeat: [1, 14.7] }), bump: texOf(b, { repeat: [1, 14.7] }) };
-  }
   // Weatherboard: 150 mm boards with a shadow under each lap, as colour and relief, so the
   // cladding still reads at forty metres. Slates: staggered courses with a shadow line.
   function weatherboardTextures() {
@@ -476,26 +351,65 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   const bayFrac = (u, len, bay) => { const b = u * len / bay; return b - Math.floor(b); };
   const netMeshes = [];
   const addNet = (geo, x, y, z, ry, rx = 0) => { const m = new THREE.Mesh(geo, netMat); m.position.set(x, y, z); m.rotation.set(rx, ry, 0); scene.add(m); netMeshes.push(m); return m; };
-  const sideGeo = netPanel(28, 5.8, 28, 6, (u, v) => [0, -0.07 * Math.sin(Math.PI * bayFrac(u, 28, 7)) * v, 0]);
+  const sideGeo = netPanel(28, 5.8, 56, 12, (u, v) => {
+    const span = Math.sin(Math.PI * bayFrac(u, 28, 7));
+    return [0, -.09 * span * v, .065 * span * Math.sin(Math.PI * v)];
+  }, (u, v) => Math.sin(Math.PI * bayFrac(u, 28, 7)) * Math.sin(Math.PI * v));
   for (const x of [-9.6, -3.1, 3.1, 9.6]) addNet(sideGeo, x, 2.9, -10, Math.PI / 2);
   const endGeo = netPanel(19.2, 5.8, 20, 6, (u, v) => { const xx = (u - .5) * 19.2; const f = xx < -3.1 ? (xx + 9.6) / 6.5 : xx < 3.1 ? (xx + 3.1) / 6.2 : (xx - 3.1) / 6.5; return [0, -0.07 * Math.sin(Math.PI * f) * v, 0]; });
   addNet(endGeo, 0, 2.9, -24, 0); addNet(endGeo, 0, 2.9, 3.6, 0);
   const roofGeo = netPanel(19.2, 28, 20, 28, (u, v) => { const xx = (u - .5) * 19.2; const f = xx < -3.1 ? (xx + 9.6) / 6.5 : xx < 3.1 ? (xx + 3.1) / 6.2 : (xx - 3.1) / 6.5; return [0, 0, 0.14 * Math.sin(Math.PI * f) * Math.sin(Math.PI * bayFrac(v, 28, 7))]; }, (u, v) => .5 * Math.sin(Math.PI * bayFrac(v, 28, 7)));
   const roofNet = addNet(roofGeo, 0, 5.8, -10, 0, Math.PI / 2); void roofNet;
-  const skirtMat = new THREE.MeshStandardMaterial({ map: skirtTexture(), roughness: .72, side: THREE.DoubleSide });
-  const skirtParts = [];
-  for (const x of [-9.6, -3.1, 3.1, 9.6]) skirtParts.push({ g: new THREE.PlaneGeometry(28, 1.0), m: mat4(x + Math.sign(x) * .012, .5, -10, 0, Math.PI / 2), uv: [14, 1] });
-  skirtParts.push({ g: new THREE.PlaneGeometry(19.2, 1.0), m: mat4(0, .5, -24.02), uv: [9.6, 1] });
-  const skirt = new THREE.Mesh(mergeGeometries(skirtParts), skirtMat); scene.add(skirt);
-  const steelMat = new THREE.MeshStandardMaterial({ color: '#8d968f', metalness: .85, roughness: .38 });
-  const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(.04, .046, 5.9, 10), steelMat, 20); posts.castShadow = true; posts.receiveShadow = true;
+  // Windbreak fabric hangs between tied supports. The hems follow the same
+  // authored sag as the sheet, so there are no floating edges or rigid rectangles.
+  const skirtMat = new THREE.MeshStandardMaterial({ map: skirtTexture(), roughness: .93, side: THREE.DoubleSide });
+  const skirtParts = [], hemParts = [], hardware = [];
+  const skirtPoint = (u, v, w) => {
+    const span = Math.sin(Math.PI * bayFrac(u, w, 7));
+    return new THREE.Vector3((u - .5) * w, v - .04 * span * v,
+      .026 * Math.sin(u * w * 9.5) * Math.sin(Math.PI * v) + .048 * span * Math.sin(Math.PI * v));
+  };
+  const drapedSkirt = (w, transform) => {
+    const g = new THREE.PlaneGeometry(w, 1, Math.ceil(w * 6), 8), p = g.attributes.position, uv = g.attributes.uv;
+    for (let i = 0; i < p.count; i++) {
+      const v = skirtPoint(uv.getX(i), uv.getY(i), w); p.setXYZ(i, v.x, v.y, v.z);
+      uv.setX(i, uv.getX(i) * w / 2);
+    }
+    g.computeVertexNormals(); skirtParts.push({ g, m: transform });
+    for (const v of [.035, .975]) {
+      const points = Array.from({ length: Math.ceil(w * 6) + 1 }, (_, i) => skirtPoint(i / Math.ceil(w * 6), v, w));
+      hemParts.push({ g: new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), Math.ceil(w * 6), .008, 5, false), m: transform });
+    }
+  };
+  for (const x of [-9.6, -3.1, 3.1, 9.6]) drapedSkirt(28, mat4(x + Math.sign(x) * .012, .015, -10, 0, Math.PI / 2));
+  drapedSkirt(19.2, mat4(0, .015, -24.02));
+  const skirt = new THREE.Mesh(mergeGeometries(skirtParts), skirtMat); skirt.receiveShadow = true; scene.add(skirt);
+  const hems = new THREE.Mesh(mergeGeometries(hemParts), new THREE.MeshStandardMaterial({ color: '#244833', roughness: .95 })); hems.receiveShadow = true; scene.add(hems);
+  // Galvanised tube has irregular zinc bloom and broad, restrained reflections.
+  const zinc = makeCanvas(128, 128), zx = zinc.getContext('2d'); zx.fillStyle = '#a5aaa5'; zx.fillRect(0, 0, 128, 128);
+  noiseOn(zx, 128, 128, 950, () => `rgba(232,236,230,${.05 + rng() * .14})`, 2);
+  noiseOn(zx, 128, 128, 650, () => `rgba(62,72,67,${.04 + rng() * .1})`, 1);
+  const steelMat = new THREE.MeshStandardMaterial({ map: texOf(zinc, { srgb: true, repeat: [2, 4] }), metalness: .76, roughness: .48 });
+  const posts = new THREE.InstancedMesh(new THREE.CylinderGeometry(.04, .046, 5.9, 14), steelMat, 20); posts.castShadow = true; posts.receiveShadow = true;
   const dummy = new THREE.Object3D(); let n = 0;
-  for (const x of [-9.6, -3.1, 3.1, 9.6]) for (let z = -24; z <= 4; z += 7) { dummy.position.set(x, 2.95, z); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1); dummy.updateMatrix(); posts.setMatrixAt(n++, dummy.matrix); }
+  const ties = [], tieGeo = new THREE.TorusGeometry(.05, .004, 5, 12);
+  for (const x of [-9.6, -3.1, 3.1, 9.6]) for (let z = -24; z <= 4; z += 7) {
+    dummy.position.set(x, 2.95, z); dummy.rotation.set(0, 0, 0); dummy.scale.setScalar(1); dummy.updateMatrix(); posts.setMatrixAt(n++, dummy.matrix);
+    for (const y of [1.015, 5.76]) {
+      hardware.push({ g: new THREE.CylinderGeometry(.053, .053, .075, 12), m: mat4(x, y, z) });
+      hardware.push({ g: new THREE.CylinderGeometry(.012, .012, .014, 6), m: mat4(x + .056, y, z, 0, 0, Math.PI / 2) });
+    }
+    hardware.push({ g: new THREE.SphereGeometry(.043, 12, 6, 0, TAU, 0, Math.PI / 2), m: mat4(x, 5.9, z) });
+    for (const y of [.16, .98, 2.5, 4.1, 5.7]) ties.push({ g: tieGeo, m: mat4(x, y, z, Math.PI / 2) });
+  }
   scene.add(posts);
-  const bars = new THREE.InstancedMesh(new THREE.BoxGeometry(1, .06, .06), steelMat, 31); bars.castShadow = true; n = 0;
+  // Round rails share the post construction and meet inside the clamp collars.
+  const bars = new THREE.InstancedMesh(new THREE.CylinderGeometry(.033, .033, 1, 12).rotateZ(Math.PI / 2), steelMat, 31); bars.castShadow = true; n = 0;
   for (const x of [-9.6, -3.1, 3.1, 9.6]) for (let z = -24; z < 4; z += 7) { dummy.position.set(x, 5.82, z + 3.5); dummy.rotation.set(0, Math.PI / 2, 0); dummy.scale.set(7, 1, 1); dummy.updateMatrix(); bars.setMatrixAt(n++, dummy.matrix); }
   for (let z = -24; z <= 4; z += 7) for (const [x0, x1] of [[-9.6, -3.1], [-3.1, 3.1], [3.1, 9.6]]) { dummy.position.set((x0 + x1) / 2, 5.82, z); dummy.rotation.set(0, 0, 0); dummy.scale.set(x1 - x0, 1, 1); dummy.updateMatrix(); bars.setMatrixAt(n++, dummy.matrix); }
   scene.add(bars);
+  const fittings = new THREE.Mesh(mergeGeometries(hardware), steelMat); fittings.castShadow = true; fittings.receiveShadow = true; scene.add(fittings);
+  const netTies = new THREE.Mesh(mergeGeometries(ties), new THREE.MeshStandardMaterial({ color: '#24392a', roughness: .95 })); scene.add(netTies);
 
   // ---------------------------------------------------------------- grass tufts
   const tuftGeo = mergeGeometries([{ g: new THREE.PlaneGeometry(.4, .28, 1, 3), m: mat4(0, .14, 0) }, { g: new THREE.PlaneGeometry(.4, .28, 1, 3), m: mat4(0, .14, 0, 0, Math.PI / 2) }]);
@@ -595,12 +509,28 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   for (const [x, z] of [[-7.4, -6.2], [-5.4, -6.2], [5.6, -11.5], [7.2, -11.5]]) props.push({ g: new THREE.ConeGeometry(.13, .32, 10), m: mat4(x, .17, z), c: '#f0702a' }, { g: new THREE.BoxGeometry(.3, .02, .3), m: mat4(x, .01, z), c: '#f0702a' });
   const addMerged = (parts, material, shadow = true) => { if (!parts.length) return null; const m = new THREE.Mesh(mergeGeometries(parts), material); m.castShadow = shadow; m.receiveShadow = true; scene.add(m); return m; };
   addMerged(cream, creamMat); addMerged(trim, trimMat); addMerged(timber, timberMat); addMerged(slate, slateMat); addMerged(deck, deckMat); addMerged(glass, glassMat, false); addMerged(steel, steelMat); addMerged(props, propMat);
-  // Sight screen: slatted 7 x 4 m board on a steel A-frame with wheels, behind the back net.
-  const slats = slatTextures();
-  const screen = new THREE.Mesh(new THREE.PlaneGeometry(7, 4), new THREE.MeshStandardMaterial({ map: slats.map, bumpMap: slats.bump, bumpScale: .02, color: '#ffffff', roughness: .7 })); screen.position.set(0, 2.25, -26.5); screen.castShadow = true; screen.receiveShadow = true; scene.add(screen);
-  const frame = [{ g: new THREE.PlaneGeometry(7, 4), m: mat4(0, 2.25, -26.55, 0, Math.PI) }];
-  for (const x of [-3.3, 3.3]) { frame.push({ g: new THREE.BoxGeometry(.1, 4.3, .1), m: mat4(x, 2.3, -26.65, -.2) }, { g: new THREE.BoxGeometry(.1, 4.3, .1), m: mat4(x, 2.3, -27.1, .2) }, { g: new THREE.BoxGeometry(.08, .08, 1.8), m: mat4(x, .3, -26.9) }); for (const z of [-26.1, -27.7]) frame.push({ g: new THREE.CylinderGeometry(.2, .2, .1, 12), m: mat4(x, .2, z, 0, 0, Math.PI / 2) }); }
-  addMerged(frame, new THREE.MeshStandardMaterial({ color: '#3a4441', metalness: .5, roughness: .5 }));
+  // Real, bevelled sight-screen boards: shallow gaps, edge thickness and
+  // cast shadows replace the painted-on slats of the former single plane.
+  const slatParts = [], screenFrame = [], screenTyres = [], screenHubs = [];
+  const boardSection = new THREE.Shape();
+  boardSection.moveTo(-.0205, -.0575); boardSection.lineTo(.0205, -.0575);
+  boardSection.lineTo(.0205, .0575); boardSection.lineTo(-.0205, .0575); boardSection.closePath();
+  const slatGeo = new THREE.ExtrudeGeometry(boardSection, { depth: 6.996, bevelEnabled: true, bevelThickness: .002, bevelSize: .002, bevelSegments: 1, steps: 1 }).translate(0, 0, -3.498).rotateY(Math.PI / 2);
+  for (let i = 0; i < 32; i++) slatParts.push({ g: slatGeo, m: mat4(0, .3125 + i * .125, -26.5), c: i < 3 ? '#d9dcd0' : i % 7 === 0 ? '#e7e9df' : '#f1f1e7' });
+  const screen = addMerged(slatParts, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .72 })); screen.name = 'Bevelled sight-screen slats';
+  for (const x of [-3.49, 3.49]) screenFrame.push({ g: new THREE.BoxGeometry(.065, 4.08, .08), m: mat4(x, 2.25, -26.54) });
+  for (const y of [.24, 4.26]) screenFrame.push({ g: new THREE.BoxGeometry(7.05, .07, .09), m: mat4(0, y, -26.54) });
+  for (const x of [-3.3, 0, 3.3]) screenFrame.push({ g: new THREE.BoxGeometry(.09, 4, .075), m: mat4(x, 2.25, -26.57) });
+  for (const x of [-3.3, 3.3]) {
+    screenFrame.push({ g: new THREE.BoxGeometry(.1, 4.3, .1), m: mat4(x, 2.3, -26.65, -.2) }, { g: new THREE.BoxGeometry(.1, 4.3, .1), m: mat4(x, 2.3, -27.1, .2) }, { g: new THREE.BoxGeometry(.08, .08, 1.8), m: mat4(x, .3, -26.9) });
+    for (const z of [-26.1, -27.7]) {
+      screenTyres.push({ g: new THREE.TorusGeometry(.155, .047, 8, 18), m: mat4(x, .205, z, 0, Math.PI / 2) });
+      screenHubs.push({ g: new THREE.CylinderGeometry(.105, .105, .075, 14), m: mat4(x, .205, z, 0, 0, Math.PI / 2) });
+      screenFrame.push({ g: new THREE.BoxGeometry(.065, .18, .065), m: mat4(x, .34, z) });
+    }
+  }
+  addMerged(screenFrame, steelMat); addMerged(screenHubs, steelMat);
+  addMerged(screenTyres, new THREE.MeshStandardMaterial({ color: '#292c28', roughness: .94 }));
   // Floodlights: tapered poles with 2 x 3 lamp arrays; lamps glow after dark.
   const lampMat = new THREE.MeshStandardMaterial({ color: '#cfd6d2', roughness: .4, emissive: '#fff1c8', emissiveIntensity: 0 });
   const lightPositions = [[-13, -30], [13, -30], [-16, 9], [16, 9]], poles = [];
@@ -642,19 +572,29 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
 
   // ---------------------------------------------------------------- bowler
   const addPart = (geo, material, x, y, z, parent, shadow = true) => { const m = new THREE.Mesh(geo, material); m.position.set(x, y, z); m.castShadow = shadow; parent.add(m); return m; };
-  // Ball leather: dyed red with pore grain, a faint quarter seam, three rows of stitching
-  // either side of the equator (which the raised seam tori sit on) and a gold maker's stamp.
+  // Ball leather: dyed red with pore grain, quarter seams and a gold maker's stamp.
+  // Six rows of real thread geometry are added to the delivery ball below.
   function ballTexture() {
-    const W = 512, H = 256, c = makeCanvas(W, H), x = c.getContext('2d'); x.fillStyle = '#a8141f'; x.fillRect(0, 0, W, H);
+    const W = 512, H = 256, c = makeCanvas(W, H), x = c.getContext('2d'), r = makeCanvas(W, H), rx = r.getContext('2d');
+    x.fillStyle = '#a8141f'; x.fillRect(0, 0, W, H);
+    // One hemisphere is polished; the other keeps a rougher leather finish.
+    const polish = rx.createLinearGradient(0, 0, 0, H);
+    polish.addColorStop(0, '#aaa'); polish.addColorStop(.46, '#b6b6b6'); polish.addColorStop(.54, '#ededed'); polish.addColorStop(1, '#e1e1e1');
+    rx.fillStyle = polish; rx.fillRect(0, 0, W, H);
+    for (let i = 0; i < 100; i++) {
+      const u = rng() * W, v = H * (.52 + rng() * .46), length = 2 + rng() * 9;
+      x.strokeStyle = `rgba(224,147,116,${.06 + rng() * .11})`; rx.strokeStyle = '#f4f4f4';
+      for (const context of [x, rx]) { context.lineWidth = .6; context.beginPath(); context.moveTo(u, v); context.lineTo(u + length, v + length * .35); context.stroke(); }
+    }
     noiseOn(x, W, H, 9000, () => `rgba(${rng() < .5 ? 60 : 230},${rng() < .5 ? 10 : 90},${rng() < .5 ? 10 : 80},${.05 + rng() * .1})`, 1);
     for (const u of [0, W / 2]) { x.strokeStyle = 'rgba(70,10,14,0.55)'; x.lineWidth = 1.5; x.beginPath(); x.moveTo(u, 0); x.lineTo(u, H); x.stroke(); }
-    for (const row of [-21, -15, -9, 9, 15, 21]) { const y = H / 2 + row; x.fillStyle = row % 2 ? '#f1e6cc' : '#e8dcc0'; for (let u = 0; u < W; u += 7) x.fillRect(u + (row > 0 ? 2 : 0), y - 1, 4, 2); }
-    x.fillStyle = 'rgba(60,8,12,0.5)'; x.fillRect(0, H / 2 - 4, W, 8);
+    x.fillStyle = 'rgba(60,8,12,0.5)'; x.fillRect(0, H / 2 - 1, W, 2);
     x.fillStyle = '#c8a24a'; x.font = 'bold 15px sans-serif'; x.textAlign = 'center'; x.fillText('CRICSIM', W * .25, H * .3); x.font = '600 9px sans-serif'; x.fillText('FOUR PIECE', W * .25, H * .3 + 12);
     x.strokeStyle = '#c8a24a'; x.lineWidth = 1.5; x.beginPath(); x.ellipse(W * .25, H * .3 - 2, 36, 17, 0, 0, TAU); x.stroke();
-    return texOf(c, { srgb: true, clampEdge: true, aniso: 16 });
+    return { map: texOf(c, { srgb: true, clampEdge: true, aniso: 16 }), roughness: texOf(r, { clampEdge: true, aniso: 16 }) };
   }
-  const ballMat = new THREE.MeshPhysicalMaterial({ map: ballTexture(), color: '#ffffff', roughness: .35, clearcoat: 1, clearcoatRoughness: .12, bumpMap: leatherBump(), bumpScale: .0006 });
+  const ballSurface = ballTexture();
+  const ballMat = new THREE.MeshPhysicalMaterial({ map: ballSurface.map, roughnessMap: ballSurface.roughness, color: '#ffffff', roughness: .48, clearcoat: .4, clearcoatRoughness: .32, bumpMap: leatherBump(), bumpScale: .00035 });
   const athlete = createBowler({ ballMaterial: ballMat });
   const bowler = athlete.group, heldBall = athlete.heldBall;
   scene.add(bowler);
@@ -665,8 +605,21 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   const ballGroup = new THREE.Group(); ballGroup.scale.setScalar(1.2); scene.add(ballGroup); ballGroup.visible = false;
   const ball = addPart(new THREE.SphereGeometry(.036, 32, 24).rotateX(Math.PI / 2), ballMat, 0, 0, 0, ballGroup, false); // poles on z, so the texture equator sits under the seam tori // the blob below is its only shadow, straight under it
   const seamMat = new THREE.MeshStandardMaterial({ color: '#f1e5cf', roughness: .7 }), grooveMat = new THREE.MeshStandardMaterial({ color: '#5a0d14', roughness: .5 });
-  for (const off of [-.0038, .0038]) { const s = new THREE.Mesh(new THREE.TorusGeometry(Math.sqrt(.036 ** 2 - off ** 2) + .0004, .0009, 5, 64), seamMat); s.position.z = off; ballGroup.add(s); }
-  const groove = new THREE.Mesh(new THREE.TorusGeometry(.0362, .0012, 4, 64), grooveMat); ballGroup.add(groove);
+  // Six rows of separate sewn stitches follow the leather, with a narrow
+  // recessed join. Merged once: the seam costs one draw, independent of stitch count.
+  const stitchParts = [];
+  for (const side of [-1, 1]) for (let row = 0; row < 3; row++) for (let i = 0; i < 72; i++) {
+    const theta = i * TAU / 72 + row * .012, z = side * (.0015 + row * .0014);
+    const a = new THREE.Vector3(), b = new THREE.Vector3();
+    for (const [point, direction] of [[a, -1], [b, 1]]) {
+      const depth = z + direction * .00043, angle = theta + direction * side * .016;
+      const radius = Math.sqrt(.03635 ** 2 - depth ** 2);
+      point.set(Math.cos(angle) * radius, Math.sin(angle) * radius, depth);
+    }
+    stitchParts.push({ g: new THREE.CylinderGeometry(.0003, .0003, a.distanceTo(b), 5), m: betweenMat(a, b) });
+  }
+  const stitches = new THREE.Mesh(mergeGeometries(stitchParts), seamMat); ballGroup.add(stitches);
+  const groove = new THREE.Mesh(new THREE.TorusGeometry(.0359, .0006, 5, 80), grooveMat); ballGroup.add(groove);
   const ballGlow = new THREE.Sprite(new THREE.SpriteMaterial({ map: radialTexture(64, [[0, 'rgba(255,236,200,1)'], [.35, 'rgba(255,220,170,0.45)'], [1, 'rgba(255,210,150,0)']]), blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: .55 })); scene.add(ballGlow); ballGlow.visible = false;
   const shadowTex = radialTexture(64, [[0, 'rgba(10,20,12,1)'], [.5, 'rgba(10,20,12,0.55)'], [1, 'rgba(10,20,12,0)']]);
   const ballShadow = new THREE.Mesh(new THREE.PlaneGeometry(.24, .24), new THREE.MeshBasicMaterial({ map: shadowTex, transparent: true, opacity: .32, depthWrite: false })); ballShadow.rotation.x = -Math.PI / 2; scene.add(ballShadow); ballShadow.visible = false;
@@ -734,7 +687,7 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   const spareBlade = new THREE.Mesh(blade.geometry, wood.clone()); spareBlade.position.y = .31; spareBlade.castShadow = true; spareBat.add(spareBlade); // its own material, so the contact flash stays on the bat in hand
   const spareHandle = new THREE.Mesh(handle.geometry, handle.material); spareHandle.position.y = .765; spareHandle.scale.z = .85; spareHandle.castShadow = true; spareBat.add(spareHandle);
   scene.add(spareBat);
-  const gloveMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .76, bumpMap: quiltBump(), bumpScale: .00045 });
+  const gloveMat = createGloveMaterial();
   const gloveGeos = { right: gloveGeometry(true, false), rightTop: gloveGeometry(false, false), left: gloveGeometry(true, true), leftTop: gloveGeometry(false, true) };
   const gloves = [new THREE.Mesh(gloveGeos.right, gloveMat), new THREE.Mesh(gloveGeos.rightTop, gloveMat)];
   for (const g of gloves) { g.castShadow = true; g.receiveShadow = true; scene.add(g); }
@@ -953,7 +906,7 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     pitchMat.color.set(c.pitch === 'green' ? '#c4c79c' : c.pitch === 'soft' ? '#aaa386' : c.pitch === 'dry' ? '#e8d6ab' : '#d6cba6');
     pitchMat.normalScale.setScalar(c.pitch === 'dry' ? .45 : c.pitch === 'soft' ? .2 : .3);
     pitchMat.roughness = c.pitch === 'soft' ? (over ? .5 : .45) : .95; pitchMat.clearcoat = c.pitch === 'soft' ? .25 : 0;
-    const wear = clamp(c.age / 80, 0, 1); ballMat.roughness = .3 + c.age / 200; ballMat.clearcoat = Math.max(0, 1 - c.age / 50); ballMat.color.setRGB(1 - .4 * wear, 1 - .52 * wear, 1 - .55 * wear);
+    const wear = clamp(c.age / 80, 0, 1); ballMat.roughness = .45 + wear * .36; ballMat.clearcoat = .45 * Math.max(0, 1 - c.age / 70); ballMat.color.setRGB(1 - .4 * wear, 1 - .52 * wear, 1 - .55 * wear);
   }
   setEnvironment({ weather: 'clear', pitch: 'hard', age: 8, wind: 0, hand: 'right' });
   // The other surfaces' wear textures take a moment to paint; do it while the browser is idle rather than on a click or at run-up.

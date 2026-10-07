@@ -1,9 +1,9 @@
-import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, batBasis, createDelivery, stepDelivery } from './physics.js?v=18ea47ad492f0842';
-import { NetsAudio } from './audio.js?v=18ea47ad492f0842';
-import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setBatMode, setSwipeLength, setSwingTrigger, setBatTimeScale, restartFlow, SWIPE_LENGTHS, SWING_TRIGGERS, STANDARD_STROKE, FLOW, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, contactPreview, CONTACT_Z } from './bat-control.js?v=18ea47ad492f0842';
-import { describeShot, describeMiss, missDiagram, isControlled, isPlayingShot, missTitle } from './shot-feedback.js?v=18ea47ad492f0842';
-import { SHORTCUTS, SHORTCUT_GROUPS, keyLabel, createShortcutState, serializeShortcutState, isShortcutEnabled, setShortcutEnabled, matchShortcut, cycleValue } from './shortcuts.js?v=18ea47ad492f0842';
-import { normalizeGraphicsMode, qualityProfile, targetRenderFps, createFramePacer, createAdaptiveQuality } from './render-policy.js?v=18ea47ad492f0842';
+import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, batBasis, createDelivery, stepDelivery } from './physics.js?v=8135f38a30ce2f1b';
+import { NetsAudio } from './audio.js?v=8135f38a30ce2f1b';
+import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setBatMode, setSwipeLength, setSwingTrigger, setBatTimeScale, restartFlow, SWIPE_LENGTHS, SWING_TRIGGERS, STANDARD_STROKE, FLOW, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, contactPreview, CONTACT_Z } from './bat-control.js?v=8135f38a30ce2f1b';
+import { describeShot, describeMiss, missDiagram, isControlled, isPlayingShot, missTitle } from './shot-feedback.js?v=8135f38a30ce2f1b';
+import { SHORTCUTS, SHORTCUT_GROUPS, keyLabel, createShortcutState, serializeShortcutState, isShortcutEnabled, setShortcutEnabled, matchShortcut, cycleValue } from './shortcuts.js?v=8135f38a30ce2f1b';
+import { normalizeGraphicsMode, qualityProfile, targetRenderFps, createFramePacer, createAdaptiveQuality } from './render-policy.js?v=8135f38a30ce2f1b';
 const $=id=>document.getElementById(id);
 const config={...DEFAULTS};
 try {const saved=JSON.parse(localStorage.getItem('cricsim-preferences')||'null');if(saved){for(const key of Object.keys(DEFAULTS))if(typeof saved[key]===typeof DEFAULTS[key])config[key]=saved[key];}}
@@ -383,7 +383,7 @@ if(buildLabel){$('build-label').textContent=buildLabel;$('build-label').hidden=f
 $('start-button').disabled=true;$('start-slow-button').disabled=true;$('next-button').disabled=true;
 try{
   $('asset-status').textContent='Preparing the nets…';
-  const {createScene}=await import('./scene.js?v=18ea47ad492f0842');view=await createScene(canvas,status=>{$('asset-status').textContent=status;},activeQuality);applyGraphicsQuality();applyEnvironment();ready=true;$('start-button').disabled=false;$('start-slow-button').disabled=false;$('next-button').disabled=false;
+  const {createScene}=await import('./scene.js?v=8135f38a30ce2f1b');view=await createScene(canvas,status=>{$('asset-status').textContent=status;},activeQuality);applyGraphicsQuality();applyEnvironment();ready=true;$('start-button').disabled=false;$('start-slow-button').disabled=false;$('next-button').disabled=false;
   $('asset-status').textContent='Ready to play';
   function updateMenuFrame(){
     if(phase!=='intro'){view.setMenuFrame(null);return;}
