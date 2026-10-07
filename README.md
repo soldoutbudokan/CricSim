@@ -48,6 +48,8 @@ The opening view renders at up to 20 fps. Pausing retains the last frame, redraw
 
 These are rendering budgets, not guaranteed frame rates. At a 1440×900 CSS-pixel window with device scale 2, Balanced allocates about 55% fewer drawing-buffer pixels and 75% fewer shadow-map pixels than the previous build. Actual responsiveness depends on the device and other running apps.
 
+The models use shaped surfaces and material-specific detail: the bowler has contoured facial features, fitted clothing with tension folds, continuous curved fingers and layered running shoes. Batting gloves have separate curved finger pads, sewn edges, knuckle protection, hollow cuffs and stitched wrist straps; leather and fabric retain different surface roughness. The willow blade has rounded edges and a crowned spine. The ball has six rows of individual raised stitches and distinct polished and worn leather surfaces. Nets hang between round galvanised rails with clamps and ties; their skirts have folds and reinforced hems. The sight screen uses individual bevelled boards and rubber wheels, and the hedge has an uneven foliage silhouette. Details are merged into shared meshes or instanced, with no new downloaded assets or runtime dependencies.
+
 ## Controls
 
 **Flow** is the default and needs no click. Rest the blade outline where the ball will arrive, choose Grounded or Lofted, then push the mouse up. The push plays the same complete stroke as a Standard click, with the same repeatable power and the same timing window, aimed at the point where your hand rested before it pushed. Slow movement only aims, and so does any sideways or downward movement: a push counts when it is fast enough, long enough and within about sixty degrees of straight up. The bat reaches the contact area about 100 ms after the push begins at normal speed (200 ms at half speed); the aim is locked from that moment. A mouse click still plays the same stroke. To leave a ball, keep your hand still. With Defend chosen a push only aims; hold to block. **Swing trigger** in Practice tools sets how decisive a push must be (Light, Normal or Firm), and the stroke panel says "Push a little harder to swing" after an upward move that fell short.
@@ -146,6 +148,8 @@ This remains a simulation foundation, **not a finished photorealistic or validat
 - `dist/physics.js`: deterministic simulation, presets, collision model.
 - `dist/scene.js`: Three.js environment, procedural textures and models, batter rig, camera.
 - `dist/bowler.js`: merged articulated bowler, continuous delivery timeline and planted-foot leg animation.
+- `dist/equipment.js`: shaped bat and gloves, sewn panel geometry and leather/fabric surface material.
+- `tests/scene-geometry.test.mjs`: real scene construction and geometry checks with browser/GPU boundaries stubbed; environment, quality, handedness and delivery-animation coverage. This does not compile shaders or verify rendered pixels.
 - `dist/render-policy.js`: quality budgets, frame pacing and sustained-load adaptation.
 - `tests/runtime-smoke.mjs`: actual game entrypoint with a simulated browser lifecycle and real bat/ball physics; run with `npm run test:runtime` (also included in `npm test`).
 - `dist/game.js`: input, delivery lifecycle, session state, HUD choreography, settings.
@@ -171,6 +175,10 @@ npm run check
 ```
 
 `dist` is portable to any static host and uses relative asset paths, including under GitHub Pages' `/CricSim/` prefix and the `/CricSim/preview/<slug>/` previews. Publication is configured by `.github/workflows/deploy-prod.yml` and `deploy-preview.yml`; `scripts/build-pages.mjs` prepares the versioned static output and `scripts/publish-pages.sh` commits it to `gh-pages`.
+
+### Verification status, 2026-10-07
+
+The model detail pass preserves collision dimensions, batting controls, the bowler's release and its existing 14-mesh / under-10,000-triangle budget. Automated checks include the actual scene construction, finite geometry and transforms, valid indices, mirrored gloves, and environment, quality, resize and delivery transitions. All 130 automated tests, 21 entrypoint lifecycle checks, JavaScript syntax checks and the static Pages build pass. Bat, glove and bowler geometry was also inspected using offline mesh renders with simplified lighting; that review corrected detached stitching, leg joins and shoe grounding. These renders do not verify the game's WebGL materials, textures or lighting. The available browser cannot create a WebGL context, including for the unchanged production game, so final in-game appearance and GPU performance need a player check on the branch preview.
 
 ### Verification status, 2026-10-05
 
