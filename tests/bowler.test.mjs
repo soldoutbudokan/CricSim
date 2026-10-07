@@ -61,6 +61,21 @@ test('support feet plant on the pitch instead of sliding through the delivery', 
   }
 });
 
+test('planted shoe tread meets the raised pitch surface', () => {
+  const vertex = new THREE.Vector3();
+  for (const arm of ['right', 'left']) for (const t of [1.97, 2.2, 2.53]) {
+    pose(t <= 2.2 ? 'runup' : 'flight', t <= 2.2 ? t : t - 2.2, arm);
+    const foot = rig.legs.find(l => l.side === (arm === 'right' ? 1 : -1)).foot;
+    const positions = foot.geometry.attributes.position;
+    let lowest = Infinity;
+    for (let i = 0; i < positions.count; i++) {
+      vertex.fromBufferAttribute(positions, i).applyMatrix4(foot.matrixWorld);
+      lowest = Math.min(lowest, vertex.y);
+    }
+    assert.ok(Math.abs(lowest - .03) < .00001, `${arm} shoe floats or clips the pitch at ${t}: ${lowest}`);
+  }
+});
+
 test('the articulated model stays within its small draw-call and geometry budget', () => {
   let meshes = 0, triangles = 0;
   rig.group.traverse(o => { if (o.isMesh) { meshes++; triangles += o.geometry.index.count / 3; } });

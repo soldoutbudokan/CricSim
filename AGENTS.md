@@ -4,7 +4,7 @@ CricSim is a first-person cricket nets practice simulator: aim a contact point a
 
 ## Layout
 
-- `dist/` is the shipped source. What is in `dist` is what players run; there is no compile step. `dist/index.html`, `dist/style.css` and `dist/menu.css` are the interface, `dist/game.js` the entry point, and `dist/physics.js`, `dist/bat-control.js`, `dist/bowler.js`, `dist/scene.js`, `dist/render-policy.js`, `dist/batter-motion.js`, `dist/shot-feedback.js`, `dist/shortcuts.js` and `dist/audio.js` the modules. `dist/vendor/` holds Three.js, `dist/assets/` the CC0 ground maps and HDR skies (see `ASSETS.md`), `dist/fonts/` the self-hosted fonts. All asset paths are relative so the game works from any directory, including `/CricSim/` and `/CricSim/preview/<slug>/` on GitHub Pages.
+- `dist/` is the shipped source. What is in `dist` is what players run; there is no compile step. `dist/index.html`, `dist/style.css` and `dist/menu.css` are the interface, `dist/game.js` the entry point, and `dist/physics.js`, `dist/bat-control.js`, `dist/bowler.js`, `dist/equipment.js`, `dist/scene.js`, `dist/render-policy.js`, `dist/batter-motion.js`, `dist/shot-feedback.js`, `dist/shortcuts.js` and `dist/audio.js` the modules. `dist/vendor/` holds Three.js, `dist/assets/` the CC0 ground maps and HDR skies (see `ASSETS.md`), `dist/fonts/` the self-hosted fonts. All asset paths are relative so the game works from any directory, including `/CricSim/` and `/CricSim/preview/<slug>/` on GitHub Pages.
 - `tests/` holds `node:test` files (`*.test.mjs`) and `runtime-smoke.mjs`, which boots the real game entry point against a simulated DOM, frame scheduler, renderer and audio. Tests import modules straight from `dist/`.
 - `scripts/build-pages.mjs` copies `dist` into `.pages-dist` and gives every local script, import and stylesheet a content-versioned `?v=` URL so a fresh page never mixes cached modules from an older release. `scripts/publish-pages.sh` commits a built directory into the `gh-pages` branch.
 - `.github/workflows/deploy-prod.yml` and `deploy-preview.yml` publish production and branch previews (below).
@@ -14,7 +14,7 @@ CricSim is a first-person cricket nets practice simulator: aim a contact point a
 
 | Command | What it does |
 | --- | --- |
-| `npm test` | All `tests/*.test.mjs` with Node's built-in runner, then the runtime smoke test. Needs no `npm install`; the publish-script tests need `git` on `PATH`. |
+| `npm test` | All `tests/*.test.mjs` with Node's built-in runner (under `--experimental-vm-modules`, which `tests/scene-geometry.test.mjs` needs to boot `dist/scene.js`), then the runtime smoke test. Needs no `npm install`; the publish-script tests need `git` on `PATH`. |
 | `npm run check` | `node --check` on every shipped module (syntax only). |
 | `npm run build:pages` | Builds `.pages-dist/` (gitignored) from `dist/`. Set `CRICSIM_BUILD_LABEL` to stamp the build (see below). |
 | `npm run dev` | Vite dev server over `dist` with reload (`npm ci` first). Node 22.12 or newer. |
