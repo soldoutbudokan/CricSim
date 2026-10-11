@@ -208,7 +208,7 @@ function cuffGeometry(profile, ribs = false) {
 
 export function gloveGeometry(thumbUp, mirror) {
   const parts = [], mirrorMatrix = new THREE.Matrix4().makeScale(mirror ? -1 : 1, 1, 1);
-  const cream = '#ebe8df', pad = '#f4f1e8', leather = '#d5c5a7', seam = '#beb8a7', green = '#30473b';
+  const cream = '#e6e2d4', pad = '#f4f1e8', leather = '#c9b793', seam = '#a39d8c', green = '#30473b', shield = '#3b5a49';
   const add = (g, m = matrix(), c = pad, roughness = .73, grain = .04) => parts.push({ g, m: new THREE.Matrix4().multiplyMatrices(mirrorMatrix, m), c, roughness, grain });
   const thread = (points, radius = .0004, color = seam, closed = false) => add(cord(points, radius, closed), matrix(), color, .92, .015);
   const panel = (w, h, d, r, m, color = pad, sewn = true) => {
@@ -235,14 +235,14 @@ export function gloveGeometry(thumbUp, mirror) {
   // Split back-of-hand shields: tapered toward the cuff with sewn perimeter
   // welts, then four independently raised knuckle blocks.
   for (const side of [-1, 1]) {
-    panel(.037, .040, .013, .008, matrix(.060, side * .0215, .038, 0, Math.PI / 2, side * -.035));
+    panel(.037, .040, .013, .008, matrix(.060, side * .0215, .038, 0, Math.PI / 2, side * -.035), shield);
     panel(.024, .033, .010, .006, matrix(.058, side * .018, .065, 0, Math.PI / 2, side * .055), cream);
   }
   const reach = [2.45, 2.62, 2.53, 2.19], widths = [.0092, .0098, .0093, .0082], split = [0, .40, .73, 1];
   for (let k = 0; k < 4; k++) {
     const y = (k - 1.5) * .0221, start = -.36, end = reach[k], w = widths[k];
     const knuckleX = k === 1 || k === 2 ? .057 : .053;
-    panel(.022, w * 1.95, .012, .0055, matrix(knuckleX, y, .005, 0, Math.PI / 2 + .13), k === 3 ? cream : pad);
+    panel(.022, w * 1.95, .012, .0055, matrix(knuckleX, y, .005, 0, Math.PI / 2 + .13), k === 3 ? cream : shield);
     add(fingerSection(start - .06, end + .025, y, .028, w * .84, .0064, 14), matrix(), leather, .88, .06);
     for (let segment = 0; segment < 3; segment++) {
       const t0 = start + (end - start) * split[segment] + .06, t1 = start + (end - start) * split[segment + 1] - .065;

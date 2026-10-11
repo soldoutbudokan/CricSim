@@ -115,7 +115,7 @@ function syncControls(){
   syncBattingMode();
 }
 function syncMenu(){
-  $('menu-bowling').textContent=`${bowlingStyle()} · ${config.wicket} the wicket`;
+  $('menu-bowling').textContent=bowlingStyle();
   $('menu-speed').innerHTML=`${Math.round(config.speed)} <small>km/h</small>`;
   $('menu-surface').textContent=PITCHES[config.pitch].name;
   $('menu-length').textContent=(config.length==='mixed'?'Mixed length':optionText('length',config.length))+' · '+(config.line==='mixed'?'mixed line':optionText('line',config.line).toLowerCase());
@@ -129,9 +129,9 @@ function syncMenu(){
   $('menu-batting').textContent=battingMode==='flow'?'Flow · '+(coarsePointer?'swipe':'push')+' to swing':battingMode==='standard'?'Standard · '+(coarsePointer?'tap':'click')+' to swing':'Manual · hold and swipe';
   $('menu-gesture').textContent=battingMode==='flow'?(coarsePointer?'Touch to aim. Swipe to swing.':'Move to aim. Push to swing. No click.'):battingMode==='standard'?(coarsePointer?'Tap to aim and swing.':'Move to aim. Click to swing.'):(coarsePointer?'Touch to aim. Hold, then swipe.':'Move to aim. Hold, then swipe.');
 }
-// "Right-arm pace" on the title sheet; the in-play readout adds the side of the wicket the way a scorer would: "Right-arm over · pace".
-function bowlingStyle(){return `${config.arm==='left'?'Left':'Right'}-arm ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
-function applyEnvironment(){view?.setEnvironment(config);audio.setWind(config.wind);audio.setSurface(config.pitch);$('scene-weather').textContent=optionText('weather',config.weather);$('scene-pitch').textContent=PITCHES[config.pitch].name;$('delivery-speed').textContent=Math.round(config.speed);$('delivery-style').textContent=`${config.arm==='left'?'Left':'Right'}-arm ${config.wicket} · ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
+// The side of the wicket the way a scorer would say it: "Right-arm over · pace", on the title sheet and in the in-play readout.
+function bowlingStyle(){return `${config.arm==='left'?'Left':'Right'}-arm ${config.wicket} · ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
+function applyEnvironment(){view?.setEnvironment(config);audio.setWind(config.wind);audio.setSurface(config.pitch);$('scene-weather').textContent=optionText('weather',config.weather);$('scene-pitch').textContent=PITCHES[config.pitch].name;$('delivery-speed').textContent=Math.round(config.speed);$('delivery-style').textContent=bowlingStyle();}
 // One path for every setting change, whether it came from the drawer or a key.
 function applySetting(key,value){
   config[key]=['auto','guide'].includes(key)?Boolean(value):['timeScale','speed','age','wind'].includes(key)?Number(value):value;
