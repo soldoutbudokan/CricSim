@@ -124,9 +124,11 @@ test('Standard timing leaves a useful clean-contact window for both intents and 
     for (let ms = -150; ms <= 150; ms += 5) samples.push({ ms, ...play({ intent, error: ms / 1000 }) });
     const clean = samples.filter(s => s.clean);
     assert.ok(clean.length >= 20, `${intent}: at least 95ms of clean contact in a 5ms sweep`);
+    // Over the wicket the ball angles in, so the late side of the window falls
+    // away more gently than the early side; the middle still beats both.
     const centre = samples.find(s => s.ms === 0), early = samples.find(s => s.ms === -80), late = samples.find(s => s.ms === 50);
     assert.ok(centre.d.contact.quality > early.d.contact.quality + .1);
-    assert.ok(centre.d.contact.quality > late.d.contact.quality + .1);
+    assert.ok(centre.d.contact.quality > late.d.contact.quality + .05);
     assert.equal(samples.at(-1).d.hit, false, 'a sufficiently late stroke still misses');
   }
 });

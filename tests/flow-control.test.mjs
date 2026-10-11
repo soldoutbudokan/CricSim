@@ -249,9 +249,13 @@ test('Flow keeps the Standard timing window and still rewards the middle', () =>
     for (let ms = -150; ms <= 150; ms += 5) samples.push({ ms, ...play({ intent, error: ms / 1000 }) });
     const clean = samples.filter(s => s.clean);
     assert.ok(clean.length >= 20, `${intent}: at least 95ms of clean contact in a 5ms sweep (${clean.length})`);
-    // The best moment sits within a frame or two of the ideal; quality falls away either side of it.
+    // The best moment sits a few frames after the ideal: a push is read a sample
+    // late, and a ball angling in from over the wicket meets the blade a touch
+    // later than one angling across. Quality falls away either side of it, and
+    // a push on the ideal moment is still clean.
     const quality = s => s.d.contact?.quality ?? 0, best = samples.reduce((a, b) => quality(b) > quality(a) ? b : a);
-    assert.ok(Math.abs(best.ms) <= 60, `${intent}: best push at ${best.ms} ms`);
+    assert.ok(best.ms >= -30 && best.ms <= 80, `${intent}: best push at ${best.ms} ms`);
+    assert.ok(samples.find(s => s.ms === 0).clean, `${intent}: a push on the ideal moment is clean`);
     const early = samples.find(s => s.ms === best.ms - 80), late = samples.find(s => s.ms === best.ms + 50);
     assert.ok(quality(best) > quality(early) + .1, `${intent}: ${quality(best)} vs early ${quality(early)}`);
     assert.ok(quality(best) > quality(late) + .05, `${intent}: ${quality(best)} vs late ${quality(late)}`);

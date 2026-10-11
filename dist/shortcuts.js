@@ -14,6 +14,7 @@ export const SHORTCUTS = [
   { id: 'trimClear', group: 'Fine adjustment', keys: ['KeyC'], label: 'Clear fine adjustments' },
   { id: 'bowler', group: 'The bowler', keys: ['KeyB'], label: 'Bowling style' },
   { id: 'arm', group: 'The bowler', keys: ['KeyH'], label: 'Bowling arm' },
+  { id: 'wicket', group: 'The bowler', keys: ['KeyR'], label: 'Over · around the wicket' },
   { id: 'hand', group: 'The bowler', keys: ['KeyY'], label: 'Your stance' },
   { id: 'speedDown', group: 'The bowler', keys: ['BracketLeft'], label: 'Release speed −5 km/h', repeat: true },
   { id: 'speedUp', group: 'The bowler', keys: ['BracketRight'], label: 'Release speed +5 km/h', repeat: true },

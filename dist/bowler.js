@@ -170,36 +170,59 @@ function curve(keys, t) {
   }
   return keys[keys.length - 1][1];
 }
-const ROOT = [[0, -23.4, .4], [.38, -22.6, 3.3], [1.3, -19.2, 3.5], [1.63, -18.3, 2], [1.9, -17.91, .95], [2.2, -17.7, .6], [2.53, -17.23, 2.0], [3.06, -16.4, 1], [3.8, -16.02, .1], [4.4, -16, 0]];
-const ROOT_SPIN = ROOT.map(([t, z, speed]) => [t, t <= 1.63 ? -18.3 + (z + 18.3) * .64 : z, t <= 1.3 ? speed * .64 : speed]);
-const LEAN = [[0, .02], [.5, .11], [1.3, .13], [1.64, -.11], [1.9, -.15], [2.2, .15, 1], [2.5, .42], [2.9, .16], [3.8, .02]];
+// Where the bowler runs, measured from the middle stump. Over the wicket keeps
+// the bowling arm beside the stumps; around the wicket crosses to the other
+// side, so the front foot is the one nearest them. Both lines keep the whole
+// body, feet included, clear of the stumps as the bowler passes the crease.
+export const LINE = { over: .44, around: .54 };
+export function bowlerLine(config) {
+  const arm = config.arm === 'left' ? -1 : 1;
+  return config.wicket === 'around' ? -LINE.around * arm : LINE.over * arm;
+}
+// The delivery stride ends behind the popping crease (z = -17.705, the back edge
+// of the line at -17.68): the front heel lands about 12 cm inside it.
+const ROOT = [[0, -23.55, .4], [.38, -22.85, 3.4], [1.3, -19.61, 3.6], [1.63, -18.71, 2], [1.9, -18.32, .95], [2.2, -18.11, .6], [2.53, -17.64, 2.0], [3.06, -16.81, 1], [3.8, -16.43, .1], [4.4, -16.41, 0]];
+const ROOT_SPIN = ROOT.map(([t, z, speed]) => [t, t <= 1.63 ? -18.71 + (z + 18.71) * .64 : z, t <= 1.3 ? speed * .64 : speed]);
+// After release the bowler runs off to the side he came in on, clear of the strip's middle.
+const DRIFT = [[2.2, 0], [2.6, .12], [3.2, .4], [4.4, .62]];
+// Trunk: forward lean (x), the turn toward side-on at back-foot contact and back
+// through release (y), and lateral flexion away from the bowling arm (z), which
+// lifts the bowling shoulder and carries the arm over the head at release.
+const LEAN = [[0, .04], [.5, .12], [1.3, .14], [1.64, -.1], [1.9, -.12], [2.2, .36, 1.3], [2.5, .62], [2.9, .32], [3.8, .06]];
 const TWIST = [[0, 0], [1.25, .06], [1.64, .92], [1.85, .98], [2.2, .04, -3], [2.52, -.48], [3.1, -.12], [3.8, 0]];
-const BOWL_UPPER = [[1.2, .42], [1.56, .65], [1.83, 1.1, 1], [2.2, Math.PI, 8], [2.52, 5.25, 3], [2.86, 5.9], [3.6, TAU - .2], [4.4, TAU - .25]];
+const ROLL = [[0, 0], [1.4, 0], [1.9, .08], [2.2, .3, .3], [2.45, .22], [3.0, .04], [3.8, 0]];
+const BOWL_UPPER = [[1.2, .42], [1.56, .65], [1.83, 1.1, 1], [2.2, Math.PI + .12, 8], [2.52, 5.25, 3], [2.86, 5.9], [3.6, TAU - .2], [4.4, TAU - .25]];
 const BOWL_ELBOW = [[1.2, -.9], [1.58, -.65], [1.87, -.06], [2.2, 0], [2.55, -.38], [3.3, -.9], [4.4, -1.0]];
-const GUIDE_UPPER = [[1.2, -.5], [1.62, -2.2], [1.86, -2.8], [2.2, -.45, 4], [2.55, .42], [3.25, -.22], [4.4, -.35]];
-const GUIDE_ELBOW = [[1.2, -.9], [1.62, -.45], [1.85, -.16], [2.2, -.8], [2.6, -1.3], [3.4, -.8], [4.4, -.85]];
+// The front arm reaches at the batter from the gather, then is pulled down and
+// tucked against the chest by release, elbow bent.
+const GUIDE_UPPER = [[1.2, -.5], [1.62, -2.05], [1.86, -2.45], [2.2, -.3, 4], [2.55, .3], [3.25, -.22], [4.4, -.35]];
+const GUIDE_ELBOW = [[1.2, -.9], [1.62, -.45], [1.85, -.16], [2.2, -1.7], [2.6, -1.3], [3.4, -.8], [4.4, -.85]];
 
 function footTrack(back, spin) {
   const root = spin ? ROOT_SPIN : ROOT, at = t => curve(root, t), marks = [];
-  const add = (time, z, lift = 0, height = 0) => marks.push([time, z, lift, height]);
+  // Each mark remembers the sideways drift at its time, so a planted foot keeps
+  // the world position it landed on while the body runs off to the side.
+  const add = (time, z, lift = 0, height = 0) => marks.push([time, z, lift, height, lift || !marks.length ? curve(DRIFT, time) : marks[marks.length - 1][4]]);
   if (back) {
     add(0, at(0) - .14); add(.07, at(0) - .14); add(.29, at(.29) + .23, .16); add(.5, at(.29) + .23);
     add(.73, at(.73) + .29, .19); add(.88, at(.73) + .29); add(1.17, at(1.17) + .25, .2); add(1.28, at(1.17) + .25);
-    add(1.67, -18.29, .27); add(2.16, -18.29); add(2.55, -16.91, .25); add(2.87, -16.91); add(3.22, -16.15, .14); add(4.4, -16.15);
+    // Lands at the bowling crease, then leaves the ground as the front foot
+    // braces: the back leg bends and drags through release instead of propping.
+    add(1.67, -18.7, .27); add(2.08, -18.7); add(2.52, -17.3, .1); add(2.87, -17.3); add(3.22, -16.56, .14); add(4.4, -16.56);
   } else {
     add(0, at(0) + .14); add(.28, at(0) + .14); add(.51, at(.51) + .27, .18); add(.73, at(.51) + .27);
-    add(.96, at(.96) + .27, .2); add(1.12, at(.96) + .27); add(1.52, at(1.52) + .08, .15, .42); add(1.94, -17.31, .05); add(2.55, -17.31);
-    add(2.91, -16.22, .18); add(3.23, -16.22); add(3.62, -15.84, .1); add(4.4, -15.84);
+    add(.96, at(.96) + .27, .2); add(1.12, at(.96) + .27); add(1.52, at(1.52) + .08, .15, .42); add(1.94, -17.72, .05); add(2.55, -17.72);
+    add(2.91, -16.63, .18); add(3.23, -16.63); add(3.62, -16.25, .1); add(4.4, -16.25);
   }
   return marks;
 }
 function sampleFoot(keys, t, out) {
-  let prev = keys[0]; out.z = prev[1]; out.y = ANKLE; out.pitch = 0;
+  let prev = keys[0]; out.z = prev[1]; out.y = ANKLE; out.pitch = 0; out.dx = prev[4];
   for (let i = 1; i < keys.length; i++) {
     const next = keys[i];
     if (t <= next[0]) {
       const u = clamp((t - prev[0]) / (next[0] - prev[0])), s = ease(u), lifting = next[2];
-      out.z = mix(prev[1], next[1], s);
+      out.z = mix(prev[1], next[1], s); out.dx = mix(prev[4], next[4], s);
       // Flat contacts remain locked in world space; only swing feet interpolate.
       out.y = ANKLE + mix(prev[3], next[3], s) + Math.sin(Math.PI * s) * lifting;
       out.pitch = lifting ? Math.sin(TAU * u) * -.18 : 0;
@@ -207,7 +230,11 @@ function sampleFoot(keys, t, out) {
     }
     prev = next;
   }
-  out.z = prev[1]; return out;
+  out.z = prev[1]; out.dx = prev[4]; return out;
+}
+// The bowler's root along the run-up, for anything that follows him (footfall sounds).
+export function runupPosition(config, t) {
+  return { x: bowlerLine(config), z: curve(config.bowler?.includes('spin') ? ROOT_SPIN : ROOT, clamp(t, 0, 4.4)) };
 }
 
 export function createBowler({ ballMaterial }) {
@@ -224,12 +251,12 @@ export function createBowler({ ballMaterial }) {
   // folded polo collar (open at the front), placket, buttons, badge and side panels.
   const collarArc = TAU * .78;
   mesh(merge([
-    [cloth([[.028, .151, .107], [.045, .157, .113], [.062, .158, .114], [.088, .16, .112], [.12, .16, .112], [.15, .165, .115], [.18, .171, .119], [.225, .182, .123], [.275, .193, .128], [.32, .207, .131], [.36, .219, .13], [.41, .228, .123], [.46, .224, .114], [.485, .204, .107], [.5, .177, .099], [.52, .124, .085], [.54, .087, .069], [.56, .067, .06]], 20, [[.062, .013, .007, .009], [.12, .019, -.005, .015], [.18, .027, .005, .013], [.32, .034, -.004, .028], [.45, .023, .004, .016]], .0015), C.shirt],
+    [cloth([[.028, .148, .104], [.045, .153, .109], [.062, .155, .11], [.088, .157, .109], [.12, .158, .109], [.15, .162, .111], [.18, .167, .114], [.225, .176, .118], [.275, .185, .122], [.32, .195, .124], [.36, .203, .123], [.41, .208, .117], [.46, .204, .109], [.485, .188, .103], [.5, .165, .096], [.52, .118, .083], [.54, .085, .068], [.56, .066, .06]], 20, [[.062, .013, .007, .009], [.12, .019, -.005, .015], [.18, .027, .005, .013], [.32, .034, -.004, .028], [.45, .023, .004, .016]], .0015), C.shirt],
     [loft([[.486, .11, .117, .009], [.497, .103, .104, .009], [.514, .089, .083, .009], [.541, .068, .06, .005]], 16, collarArc, Math.PI - collarArc / 2), C.dark],
     box(0, .419, .123, .015, .132, .006, C.dark), box(0, .461, .127, .006, .006, .004, C.trim), box(0, .423, .128, .006, .006, .004, C.trim),
     oval(-.115, .364, .11, .022, .029, .004, C.trim, 0, R.cloth, 8), box(-.115, .369, .116, .006, .028, .002, C.panel),
     box(.12, .37, .111, .043, .005, .002, C.white), box(.12, .354, .112, .026, .004, .002, C.trim),
-    piping([-.17, .29, .063], [-.148, .04, .039], .0035, C.panel), piping([.17, .29, .063], [.148, .04, .039], .0035, C.panel),
+    piping([-.16, .29, .06], [-.145, .04, .038], .0035, C.panel), piping([.16, .29, .06], [.145, .04, .038], .0035, C.panel),
   ]), body, 'Shaped shirt, collar and embroidered kit');
   // Trousers from the waistband down over the hips, closing between the thighs so
   // the legs never open a gap at the crotch. Belt loops and buckle on the band.
@@ -268,28 +295,28 @@ export function createBowler({ ballMaterial }) {
 
   const arms = [];
   for (const side of [-1, 1]) {
-    const pivot = new THREE.Group(); pivot.position.set(side * .217, .465, 0); body.add(pivot);
+    const pivot = new THREE.Group(); pivot.position.set(side * .192, .468, 0); body.add(pivot);
     // Deltoid domed over the joint, sleeve to a trimmed hem, upper arm with a biceps swell.
     mesh(merge([
-      [cloth([[.05, .012, .014, -.004], [.03, .045, .05, -.004], [0, .067, .07, -.002], [-.05, .071, .069], [-.085, .069, .067], [-.115, .065, .064], [-.14, .063, .062], [-.17, .06, .059], [-.194, .058, .057]], 14, [[-.11, .022, .004, .012], [-.17, .014, -.002, .005]]), C.shirt],
-      [loft([[-.18, .063, .061], [-.188, .062, .06]], 14), C.trim],
-      [loft([[-.188, .062, .06], [-.202, .058, .057]], 14), C.dark],
-      [tone(loft([[-.192, .052, .051, -.001], [-.228, .056, .051, .003], [-.253, .053, .047, .004], [-.28, .047, .041, .001], [-.3, .042, .039, -.001], [-.316, .039, .038, -.002]], 12), (x, y, z) => 1 - .06 * Math.exp(-(((y + .295) / .022) ** 2))), C.skin, undefined, R.skin],
+      [cloth([[.032, .01, .012, -.004], [.018, .04, .044, -.004], [-.005, .054, .056, -.002], [-.04, .056, .056], [-.08, .054, .054], [-.115, .051, .051], [-.14, .049, .049], [-.17, .047, .047], [-.194, .046, .046]], 14, [[-.11, .022, .004, .01], [-.17, .014, -.002, .005]]), C.shirt],
+      [loft([[-.18, .048, .048], [-.188, .047, .047]], 14), C.trim],
+      [loft([[-.188, .047, .047], [-.202, .045, .045]], 14), C.dark],
+      [tone(loft([[-.192, .041, .041, -.001], [-.228, .044, .042, .003], [-.253, .042, .039, .004], [-.28, .038, .035, .001], [-.3, .035, .033, -.001], [-.316, .033, .032, -.002]], 12), (x, y, z) => 1 - .06 * Math.exp(-(((y + .295) / .022) ** 2))), C.skin, undefined, R.skin],
     ]), pivot, 'Sleeve and upper arm');
     const lower = new THREE.Group(); lower.position.y = -.307; pivot.add(lower);
     // Forearm tapering to the wrist, a flattened palm, four curled fingers and a thumb.
     const handParts = [
       oval(0, -.003, 0, .044, .047, .042, C.skin, 0, R.skin, 10),
-      [loft([[.015, .024, .026], [0, .045, .042], [-.07, .048, .042], [-.15, .04, .035], [-.233, .031, .027], [-.268, .029, .024]], 12), C.skin, undefined, R.skin],
-      [loft([[-.262, .03, .025, 0], [-.285, .038, .021, .004], [-.305, .042, .018, .008], [-.318, .038, .016, .01], [-.325, .02, .011, .012]], 10), C.skin, undefined, R.skin],
+      [loft([[.015, .024, .026], [0, .045, .042], [-.07, .048, .042], [-.16, .041, .036], [-.25, .032, .028], [-.3, .029, .025], [-.323, .029, .024]], 12), C.skin, undefined, R.skin],
+      [loft([[-.317, .03, .025, 0], [-.34, .038, .021, .004], [-.36, .042, .018, .008], [-.373, .038, .016, .01], [-.38, .02, .011, .012]], 10), C.skin, undefined, R.skin],
     ];
     for (let i = 0; i < 4; i++) {
-      const x = -.024 + i * .016, k = i === 1 || i === 2 ? 1.08 : .92, root = [x, -.316, .009];
+      const x = -.024 + i * .016, k = i === 1 || i === 2 ? 1.08 : .92, root = [x, -.371, .009];
       const j1 = [x, root[1] - .024 * k, root[2] + .012 * k], j2 = [x, j1[1] - .011 * k, j1[2] + .019 * k], tip = [x, j2[1] + .001, j2[2] + .017 * k];
       handParts.push(finger([root, j1, j2, tip], .0072, C.skin));
       handParts.push(oval(x, j1[1] + .003, j1[2] - .003, .007, .006, .006, C.skin, 0, R.skin, 6));
     }
-    const t0 = [side * .03, -.298, .012], t1 = [side * .04, -.312, .034], t2 = [side * .034, -.318, .054];
+    const t0 = [side * .03, -.353, .012], t1 = [side * .04, -.367, .034], t2 = [side * .034, -.373, .054];
     handParts.push(finger([t0, t1, t2], .0084, C.skin));
     mesh(merge(handParts), lower, 'Forearm and curled fingers');
     arms.push({ pivot, lower });
@@ -297,14 +324,14 @@ export function createBowler({ ballMaterial }) {
   const thighGeometry = merge([[cloth([[.032, .001, .001], [.022, .05, .055], [0, .092, .096], [-.07, .096, .099], [-.12, .095, .098], [-.2, .087, .09], [-.27, .078, .081], [-.34, .07, .073], [-.385, .066, .069], [-.425, .062, .066], [-.466, .063, .065]], 14, [[-.095, .03, .004, .027], [-.34, .025, -.003, .013], [-.425, .022, .006, .01]]), C.pants]]);
   const shinGeometry = merge([oval(0, -.008, 0, .064, .06, .067, C.pants, 0, R.cloth, 10), [cloth([[.023, .04, .042], [0, .065, .068], [-.045, .064, .069], [-.085, .067, .067, -.003], [-.16, .062, .062, -.007], [-.23, .054, .053, -.004], [-.28, .049, .047], [-.34, .047, .043], [-.374, .045, .043], [-.403, .047, .045], [-.423, .048, .046], [-.445, .042, .04]], 14, [[-.045, .021, .004, .009], [-.34, .019, -.003, .007], [-.4, .017, .005, .006]]), C.pants], [loft([[-.423, .048, .046], [-.441, .045, .043]], 12), C.seam]]);
   const footGeometry = shoeGeometry();
-  const legs = [-1, 1].map(side => ({ side, upper: mesh(thighGeometry, group, 'Tailored thigh'), lower: mesh(shinGeometry, group, 'Trouser calf and cuff'), foot: mesh(footGeometry, group, 'Running shoe'), target: { z: 0, y: ANKLE, pitch: 0 } }));
-  const heldBall = new THREE.Mesh(new THREE.SphereGeometry(.036, 12, 8), ballMaterial); heldBall.position.set(0, -.332, .035); arms[0].lower.add(heldBall);
+  const legs = [-1, 1].map(side => ({ side, upper: mesh(thighGeometry, group, 'Tailored thigh'), lower: mesh(shinGeometry, group, 'Trouser calf and cuff'), foot: mesh(footGeometry, group, 'Running shoe'), target: { z: 0, y: ANKLE, pitch: 0, dx: 0, yaw: 0 } }));
+  const heldBall = new THREE.Mesh(new THREE.SphereGeometry(.036, 12, 8), ballMaterial); heldBall.position.set(0, -.387, .035); arms[0].lower.add(heldBall);
   const tracks = { pace: [footTrack(true, false), footTrack(false, false)], spin: [footTrack(true, true), footTrack(false, true)] };
   const hip = new THREE.Vector3(), ankle = new THREE.Vector3(), axis = new THREE.Vector3(), pole = new THREE.Vector3(), knee = new THREE.Vector3(), aim = new THREE.Vector3();
 
-  function solveLeg(leg, z, lift) {
+  function solveLeg(leg, x, z, lift) {
     hip.set(leg.side * .101, 0, 0).applyQuaternion(pelvis.quaternion).add(pelvis.position);
-    ankle.set(leg.side * .112, leg.target.y - lift, leg.target.z - z);
+    ankle.set(leg.side * .112 + leg.target.dx - x, leg.target.y - lift, leg.target.z - z);
     axis.subVectors(ankle, hip); let distance = axis.length(); axis.multiplyScalar(1 / Math.max(distance, .001));
     distance = clamp(distance, Math.abs(UPPER_LEG - LOWER_LEG) + .001, UPPER_LEG + LOWER_LEG - .001);
     // Keep limb lengths fixed if an airborne target exceeds anatomical reach.
@@ -314,11 +341,12 @@ export function createBowler({ ballMaterial }) {
     knee.copy(hip).addScaledVector(axis, along).addScaledVector(pole, height);
     leg.upper.position.copy(hip); leg.upper.quaternion.setFromUnitVectors(DOWN, aim.subVectors(knee, hip).normalize());
     leg.lower.position.copy(knee); leg.lower.quaternion.setFromUnitVectors(DOWN, aim.subVectors(ankle, knee).normalize());
-    leg.foot.position.copy(ankle); leg.foot.rotation.set(leg.target.pitch, -leg.side * .045, 0);
+    leg.foot.position.copy(ankle); leg.foot.rotation.set(leg.target.pitch, -leg.side * .045 + leg.target.yaw, 0);
   }
   function setArm(arm, upper, lower, splay) { arm.pivot.rotation.set(upper, 0, splay); arm.lower.rotation.x = lower; }
   function animate(phase, time, config, idleClock = 0) {
     const sign = config.arm === 'left' ? -1 : 1, spin = config.bowler.includes('spin'), bowling = arms[sign > 0 ? 0 : 1], guide = arms[sign > 0 ? 1 : 0];
+    const line = bowlerLine(config);
     if (heldBall.parent !== bowling.lower) bowling.lower.add(heldBall);
     heldBall.visible = phase === 'runup' || phase === 'intro' || phase === 'ready';
     heldBall.rotation.y = idleClock * 2;
@@ -327,23 +355,32 @@ export function createBowler({ ballMaterial }) {
     const root = spin ? ROOT_SPIN : ROOT, z = curve(root, t);
     const fade = ease(t / .32), runFade = 1 - ease((t - 1.1) / .24), running = fade * runFade;
     const stride = Math.sin(t * (spin ? 12 : 15)) * (spin ? .4 : .62);
-    let lean = curve(LEAN, t), twist = curve(TWIST, t), lift = .012 * Math.sin(t * 30) * running;
+    let lean = curve(LEAN, t), twist = curve(TWIST, t), roll = curve(ROLL, t), lift = .012 * Math.sin(t * 30) * running;
     if (idle) { lean += .006 * Math.sin(idleClock * 1.8); body.scale.y = 1 + .002 * Math.sin(idleClock * 1.8); } else body.scale.y = 1;
-    body.rotation.set(lean, sign * twist, -sign * .025 * Math.sin(t * Math.PI / 2.2));
-    head.rotation.set(-lean * .42, -sign * twist * .65, 0);
-    pelvis.rotation.set(0, sign * twist * .3, 0);
-    const footKeys = tracks[spin ? 'spin' : 'pace'];
+    // A positive turn brings the front (non-bowling) shoulder round to point at
+    // the batter, so the action is side-on at back-foot contact; the head keeps
+    // facing down the pitch and stays level through the forward lean.
+    body.rotation.set(lean, -sign * twist, -sign * roll);
+    head.rotation.set(-lean * .85, sign * twist * .65, sign * roll * .5);
+    pelvis.rotation.set(0, -sign * twist * .3, 0);
+    const footKeys = tracks[spin ? 'spin' : 'pace'], drift = Math.sign(line) * curve(DRIFT, t);
     for (const leg of legs) {
       const back = leg.side === -sign;
-      sampleFoot(footKeys[back ? 0 : 1], t, leg.target);
-      // Solve root height continuously against both feet. Including the
-      // airborne target avoids a height snap when it becomes the support foot.
+      sampleFoot(footKeys[back ? 0 : 1], t, leg.target); leg.target.dx *= Math.sign(line);
+      // The back foot lands parallel to the crease in the side-on position and
+      // pivots on its heel as the hips open through release.
+      leg.target.yaw = back ? -sign * twist * .8 * ease((t - 1.3) / .3) * (1 - ease((t - 2.2) / .3)) : 0;
+      // Solve root height continuously against the planted feet. A foot in the
+      // air lets its leg bend instead of pulling the hips down, so the trunk
+      // stays tall over the braced front leg at release; the allowance fades in
+      // with the foot's height, which keeps the hips continuous at lift-off.
       hip.set(leg.side * .101, 0, 0).applyQuaternion(pelvis.quaternion);
-      const dx = leg.side * .112 - hip.x, dz = leg.target.z - z - hip.z;
-      lift = Math.min(lift, leg.target.y + Math.sqrt(Math.max(.02, .895 ** 2 - dx * dx - dz * dz)) - .98);
+      const dx = leg.side * .112 + leg.target.dx - drift - hip.x, dz = leg.target.z - z - hip.z;
+      const airborne = ease((leg.target.y - ANKLE) / .08);
+      lift = Math.min(lift, leg.target.y + Math.sqrt(Math.max(.02, .895 ** 2 - dx * dx - dz * dz)) - .98 + airborne * .25);
     }
-    group.position.set(-.195 * sign, lift, z);
-    for (const leg of legs) solveLeg(leg, z, lift);
+    group.position.set(line + drift, lift, z);
+    for (const leg of legs) solveLeg(leg, drift, z, lift);
     const deliveryBlend = ease((t - 1.12) / .24);
     const bowlingUpper = mix(-.25 + stride * .7 * fade, curve(BOWL_UPPER, t), deliveryBlend);
     const guideUpper = mix(-.35 - stride * .7 * fade, curve(GUIDE_UPPER, t), deliveryBlend);

@@ -296,7 +296,8 @@ test('the batting camera includes release and contact across desktop and portrai
     const camera = new THREE.PerspectiveCamera(battingFov(aspect), aspect, .035, 400);
     camera.position.copy(BATTING_VIEW.eye);
     camera.lookAt(BATTING_VIEW.look.x, BATTING_VIEW.look.y, BATTING_VIEW.look.z); camera.updateMatrixWorld();
-    for (const point of [{ x: -.42, y: 2.18, z: -17.7 }, { x: 0, y: .35, z: CONTACT_Z }, { x: .6, y: .8, z: CONTACT_Z }]) {
+    // The release over and around the wicket, the lowest contact and a wide one all stay in frame.
+    for (const point of [{ x: .57, y: 2.08, z: -17.7 }, { x: -.45, y: 2.08, z: -17.7 }, { x: 0, y: .35, z: CONTACT_Z }, { x: .6, y: .8, z: CONTACT_Z }]) {
       const p = new THREE.Vector3().copy(point).project(camera);
       assert.ok(Math.abs(p.x) < 1 && Math.abs(p.y) < 1 && p.z > -1 && p.z < 1, JSON.stringify({ aspect, point, projection: p }));
     }

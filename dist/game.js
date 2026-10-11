@@ -1,5 +1,6 @@
 import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, batBasis, createDelivery, stepDelivery } from './physics.js';
 import { NetsAudio } from './audio.js';
+import { runupPosition } from './bowler.js';
 import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setBatMode, setSwipeLength, setSwingTrigger, setBatTimeScale, restartFlow, SWIPE_LENGTHS, SWING_TRIGGERS, STANDARD_STROKE, FLOW, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, contactPreview, CONTACT_Z } from './bat-control.js';
 import { describeShot, describeMiss, missDiagram, isControlled, isPlayingShot, missTitle } from './shot-feedback.js';
 import { SHORTCUTS, SHORTCUT_GROUPS, keyLabel, createShortcutState, serializeShortcutState, isShortcutEnabled, setShortcutEnabled, matchShortcut, cycleValue } from './shortcuts.js';
@@ -10,6 +11,7 @@ try {const saved=JSON.parse(localStorage.getItem('cricsim-preferences')||'null')
 catch { /* Private browsing may disable device-local preferences. */ }
 if(!BOWLERS[config.bowler])config.bowler='fast';if(!PITCHES[config.pitch])config.pitch='hard';
 for(const key of ['arm','hand'])if(!['left','right'].includes(config[key]))config[key]='right';
+if(!['over','around'].includes(config.wicket))config.wicket='over';
 if(!['clear','overcast','evening'].includes(config.weather))config.weather='clear';
 if(!['yorker','full','good','short','mixed'].includes(config.length))config.length='good';
 if(!['leg','middle','off','wide','mixed'].includes(config.line))config.line='off';
@@ -98,7 +100,7 @@ function notice(label,value=''){
 function optionText(id,value){return [...$(id).options].find(option=>option.value===String(value))?.text??String(value);}
 function paint(el){const pct=(el.value-el.min)/(el.max-el.min)*100;el.style.setProperty('--pct',pct+'%');}
 function syncControls(){
-  for(const key of ['bowler','arm','hand','length','line','weather','timeScale','swipe','speedSpread','trigger'])$(key).value=String(config[key]);
+  for(const key of ['bowler','arm','wicket','hand','length','line','weather','timeScale','swipe','speedSpread','trigger'])$(key).value=String(config[key]);
   for(const key of ['auto','guide'])$(key).checked=config[key];
   const b=BOWLERS[config.bowler];$('speed').min=b.min;$('speed').max=b.max;$('speed-min').textContent=b.min;$('speed-max').textContent=b.max+' km/h';$('bowler-tag').textContent=b.short;$('bowler-description').textContent=b.description;
   for(const key of ['speed','age','wind']){$(key).value=config[key];$(key+'-value').innerHTML=`${config[key]} <span>${key==='age'?'overs':'km/h'}</span>`;paint($(key));}
@@ -113,7 +115,7 @@ function syncControls(){
   syncBattingMode();
 }
 function syncMenu(){
-  $('menu-bowling').textContent=`${config.arm==='left'?'Left':'Right'}-arm ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;
+  $('menu-bowling').textContent=`${bowlingStyle()} · ${config.wicket} the wicket`;
   $('menu-speed').innerHTML=`${Math.round(config.speed)} <small>km/h</small>`;
   $('menu-surface').textContent=PITCHES[config.pitch].name;
   $('menu-length').textContent=(config.length==='mixed'?'Mixed length':optionText('length',config.length))+' · '+(config.line==='mixed'?'mixed line':optionText('line',config.line).toLowerCase());
@@ -127,7 +129,9 @@ function syncMenu(){
   $('menu-batting').textContent=battingMode==='flow'?'Flow · '+(coarsePointer?'swipe':'push')+' to swing':battingMode==='standard'?'Standard · '+(coarsePointer?'tap':'click')+' to swing':'Manual · hold and swipe';
   $('menu-gesture').textContent=battingMode==='flow'?(coarsePointer?'Touch to aim. Swipe to swing.':'Move to aim. Push to swing. No click.'):battingMode==='standard'?(coarsePointer?'Tap to aim and swing.':'Move to aim. Click to swing.'):(coarsePointer?'Touch to aim. Hold, then swipe.':'Move to aim. Hold, then swipe.');
 }
-function applyEnvironment(){view?.setEnvironment(config);audio.setWind(config.wind);audio.setSurface(config.pitch);$('scene-weather').textContent=optionText('weather',config.weather);$('scene-pitch').textContent=PITCHES[config.pitch].name;$('delivery-speed').textContent=Math.round(config.speed);$('delivery-style').textContent=`${config.arm==='left'?'Left':'Right'}-arm ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
+// "Right-arm pace" on the title sheet; the in-play readout adds the side of the wicket the way a scorer would: "Right-arm over · pace".
+function bowlingStyle(){return `${config.arm==='left'?'Left':'Right'}-arm ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
+function applyEnvironment(){view?.setEnvironment(config);audio.setWind(config.wind);audio.setSurface(config.pitch);$('scene-weather').textContent=optionText('weather',config.weather);$('scene-pitch').textContent=PITCHES[config.pitch].name;$('delivery-speed').textContent=Math.round(config.speed);$('delivery-style').textContent=`${config.arm==='left'?'Left':'Right'}-arm ${config.wicket} · ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
 // One path for every setting change, whether it came from the drawer or a key.
 function applySetting(key,value){
   config[key]=['auto','guide'].includes(key)?Boolean(value):['timeScale','speed','age','wind'].includes(key)?Number(value):value;
@@ -135,7 +139,7 @@ function applySetting(key,value){
   if(key==='hand'&&(phase==='intro'||phase==='ready'))resetBatControl(batControl,config.hand);
   syncControls();savePreferences();
 }
-for(const key of ['bowler','arm','hand','length','line','weather','timeScale','swipe','speedSpread','trigger','speed','age','wind','auto','guide']){
+for(const key of ['bowler','arm','wicket','hand','length','line','weather','timeScale','swipe','speedSpread','trigger','speed','age','wind','auto','guide']){
   $(key).addEventListener(['speed','age','wind'].includes(key)?'input':'change',event=>applySetting(key,['auto','guide'].includes(key)?event.target.checked:event.target.value));
 }
 for(const button of document.querySelectorAll('[data-pitch]'))button.addEventListener('click',()=>applySetting('pitch',button.dataset.pitch));
@@ -213,7 +217,7 @@ function tick(dt){
     phaseTime+=dt;
     // Footfalls follow the run-up cycle in scene.js; the gather before delivery lands harder.
     const stride=phaseTime<1.45?Math.floor(phaseTime*(deliveryConfig.bowler.includes('spin')?11:16)/Math.PI):phaseTime<1.85?12:13;
-    if(stride!==strideIndex){strideIndex=stride;const arm=deliveryConfig.arm==='left'?-1:1;sound('step',{x:-.195*arm,z:-23.4+Math.min(phaseTime/1.45,1)*4.5},stride>=12?1.7:.8);}
+    if(stride!==strideIndex){strideIndex=stride;sound('step',runupPosition(deliveryConfig,phaseTime),stride>=12?1.7:.8);}
     if(phaseTime>=2.2){view.animateBowler('runup',2.2,deliveryConfig);delivery=createDelivery(deliveryConfig,(Date.now()+ballSerial*4723)>>>0,view.getReleasePosition());setPhase('flight');phaseTime=0;setState('Ball in flight');$('delivery-speed').textContent=Math.round(delivery.speed);}
   }else if((phase==='flight'||phase==='result')&&delivery&&delivery.time<5){
     phaseTime+=dt;
@@ -328,7 +332,7 @@ const shortcutActions={
   grounded:()=>{if(canBat())chooseIntent('grounded');},lofted:()=>{if(canBat())chooseIntent('lofted');},defend:()=>{if(canBat())chooseIntent('defend');},
   pause:()=>pause(),
   trimClear:()=>{resetBatTrim(batControl);if(phase!=='intro')notice('Fine adjustments cleared');},
-  bowler:()=>{cycleSetting('bowler','Bowling');},arm:()=>cycleSetting('arm','Bowling arm'),hand:()=>cycleSetting('hand','Your stance'),
+  bowler:()=>{cycleSetting('bowler','Bowling');},arm:()=>cycleSetting('arm','Bowling arm'),wicket:()=>cycleSetting('wicket','Bowling side'),hand:()=>cycleSetting('hand','Your stance'),
   speedDown:()=>stepSetting('speed',-5,BOWLERS[config.bowler].min,BOWLERS[config.bowler].max,'Release speed','km/h'),
   speedUp:()=>stepSetting('speed',5,BOWLERS[config.bowler].min,BOWLERS[config.bowler].max,'Release speed','km/h'),
   speedSpread:()=>cycleSetting('speedSpread','Pace variation'),
