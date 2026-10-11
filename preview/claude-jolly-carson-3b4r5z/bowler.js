@@ -3,7 +3,7 @@
 // per-frame geometry updates, material switches, or separate buttons / shoelaces.
 // Roughness travels with the vertices too, so skin, eyes, cloth and rubber shade
 // differently inside the same draw call.
-import * as THREE from './vendor/three.module.js?v=46c2186758a767fe';
+import * as THREE from './vendor/three.module.js?v=ffc9d877301abfb0';
 
 const DOWN = new THREE.Vector3(0, -1, 0), UP = new THREE.Vector3(0, 1, 0);
 const TAU = Math.PI * 2, UPPER_LEG = .455, LOWER_LEG = .445, ANKLE = .165;
@@ -188,7 +188,7 @@ const DRIFT = [[2.2, 0], [2.6, .12], [3.2, .4], [4.4, .62]];
 // Trunk: forward lean (x), the turn toward side-on at back-foot contact and back
 // through release (y), and lateral flexion away from the bowling arm (z), which
 // lifts the bowling shoulder and carries the arm over the head at release.
-const LEAN = [[0, .04], [.5, .12], [1.3, .14], [1.64, -.1], [1.9, -.12], [2.2, .36, 1.3], [2.5, .62], [2.9, .32], [3.8, .06]];
+const LEAN = [[0, .05], [.5, .16], [1.2, .19], [1.64, -.1], [1.9, -.12], [2.2, .36, 1.3], [2.5, .62], [2.9, .32], [3.8, .06]];
 const TWIST = [[0, 0], [1.25, .06], [1.64, .92], [1.85, .98], [2.2, .04, -3], [2.52, -.48], [3.1, -.12], [3.8, 0]];
 const ROLL = [[0, 0], [1.4, 0], [1.9, .08], [2.2, .3, .3], [2.45, .22], [3.0, .04], [3.8, 0]];
 const BOWL_UPPER = [[1.2, .42], [1.56, .65], [1.83, 1.1, 1], [2.2, Math.PI + .12, 8], [2.52, 5.25, 3], [2.86, 5.9], [3.6, TAU - .2], [4.4, TAU - .25]];
@@ -354,7 +354,7 @@ export function createBowler({ ballMaterial }) {
     const t = idle ? 0 : clamp(time + (phase === 'runup' ? 0 : 2.2), 0, 4.4);
     const root = spin ? ROOT_SPIN : ROOT, z = curve(root, t);
     const fade = ease(t / .32), runFade = 1 - ease((t - 1.1) / .24), running = fade * runFade;
-    const stride = Math.sin(t * (spin ? 12 : 15)) * (spin ? .4 : .62);
+    const stride = Math.sin(t * (spin ? 12 : 15)) * (spin ? .45 : .78);
     let lean = curve(LEAN, t), twist = curve(TWIST, t), roll = curve(ROLL, t), lift = .012 * Math.sin(t * 30) * running;
     if (idle) { lean += .006 * Math.sin(idleClock * 1.8); body.scale.y = 1 + .002 * Math.sin(idleClock * 1.8); } else body.scale.y = 1;
     // A positive turn brings the front (non-bowling) shoulder round to point at
@@ -384,8 +384,8 @@ export function createBowler({ ballMaterial }) {
     const deliveryBlend = ease((t - 1.12) / .24);
     const bowlingUpper = mix(-.25 + stride * .7 * fade, curve(BOWL_UPPER, t), deliveryBlend);
     const guideUpper = mix(-.35 - stride * .7 * fade, curve(GUIDE_UPPER, t), deliveryBlend);
-    setArm(bowling, bowlingUpper, mix(-1.0, curve(BOWL_ELBOW, t), deliveryBlend), sign * -.035);
-    setArm(guide, guideUpper, mix(-.85, curve(GUIDE_ELBOW, t), deliveryBlend), sign * .055);
+    setArm(bowling, bowlingUpper, mix(-1.35, curve(BOWL_ELBOW, t), deliveryBlend), sign * -.035);
+    setArm(guide, guideUpper, mix(-1.3, curve(GUIDE_ELBOW, t), deliveryBlend), sign * .055);
     // No stateful interpolation: skipped frames and low-power frame caps sample
     // the exact same pose, including the held ball at the physics release time.
     return group;

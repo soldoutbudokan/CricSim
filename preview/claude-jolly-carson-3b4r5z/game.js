@@ -1,10 +1,10 @@
-import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, batBasis, createDelivery, stepDelivery } from './physics.js?v=46c2186758a767fe';
-import { NetsAudio } from './audio.js?v=46c2186758a767fe';
-import { runupPosition } from './bowler.js?v=46c2186758a767fe';
-import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setBatMode, setSwipeLength, setSwingTrigger, setBatTimeScale, restartFlow, SWIPE_LENGTHS, SWING_TRIGGERS, STANDARD_STROKE, FLOW, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, contactPreview, CONTACT_Z } from './bat-control.js?v=46c2186758a767fe';
-import { describeShot, describeMiss, missDiagram, isControlled, isPlayingShot, missTitle } from './shot-feedback.js?v=46c2186758a767fe';
-import { SHORTCUTS, SHORTCUT_GROUPS, keyLabel, createShortcutState, serializeShortcutState, isShortcutEnabled, setShortcutEnabled, matchShortcut, cycleValue } from './shortcuts.js?v=46c2186758a767fe';
-import { normalizeGraphicsMode, qualityProfile, targetRenderFps, createFramePacer, createAdaptiveQuality } from './render-policy.js?v=46c2186758a767fe';
+import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, batBasis, createDelivery, stepDelivery } from './physics.js?v=ffc9d877301abfb0';
+import { NetsAudio } from './audio.js?v=ffc9d877301abfb0';
+import { runupPosition } from './bowler.js?v=ffc9d877301abfb0';
+import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setBatMode, setSwipeLength, setSwingTrigger, setBatTimeScale, restartFlow, SWIPE_LENGTHS, SWING_TRIGGERS, STANDARD_STROKE, FLOW, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, contactPreview, CONTACT_Z } from './bat-control.js?v=ffc9d877301abfb0';
+import { describeShot, describeMiss, missDiagram, isControlled, isPlayingShot, missTitle } from './shot-feedback.js?v=ffc9d877301abfb0';
+import { SHORTCUTS, SHORTCUT_GROUPS, keyLabel, createShortcutState, serializeShortcutState, isShortcutEnabled, setShortcutEnabled, matchShortcut, cycleValue } from './shortcuts.js?v=ffc9d877301abfb0';
+import { normalizeGraphicsMode, qualityProfile, targetRenderFps, createFramePacer, createAdaptiveQuality } from './render-policy.js?v=ffc9d877301abfb0';
 const $=id=>document.getElementById(id);
 const config={...DEFAULTS};
 try {const saved=JSON.parse(localStorage.getItem('cricsim-preferences')||'null');if(saved){for(const key of Object.keys(DEFAULTS))if(typeof saved[key]===typeof DEFAULTS[key])config[key]=saved[key];}}
@@ -115,7 +115,7 @@ function syncControls(){
   syncBattingMode();
 }
 function syncMenu(){
-  $('menu-bowling').textContent=`${bowlingStyle()} · ${config.wicket} the wicket`;
+  $('menu-bowling').textContent=bowlingStyle();
   $('menu-speed').innerHTML=`${Math.round(config.speed)} <small>km/h</small>`;
   $('menu-surface').textContent=PITCHES[config.pitch].name;
   $('menu-length').textContent=(config.length==='mixed'?'Mixed length':optionText('length',config.length))+' · '+(config.line==='mixed'?'mixed line':optionText('line',config.line).toLowerCase());
@@ -129,9 +129,9 @@ function syncMenu(){
   $('menu-batting').textContent=battingMode==='flow'?'Flow · '+(coarsePointer?'swipe':'push')+' to swing':battingMode==='standard'?'Standard · '+(coarsePointer?'tap':'click')+' to swing':'Manual · hold and swipe';
   $('menu-gesture').textContent=battingMode==='flow'?(coarsePointer?'Touch to aim. Swipe to swing.':'Move to aim. Push to swing. No click.'):battingMode==='standard'?(coarsePointer?'Tap to aim and swing.':'Move to aim. Click to swing.'):(coarsePointer?'Touch to aim. Hold, then swipe.':'Move to aim. Hold, then swipe.');
 }
-// "Right-arm pace" on the title sheet; the in-play readout adds the side of the wicket the way a scorer would: "Right-arm over · pace".
-function bowlingStyle(){return `${config.arm==='left'?'Left':'Right'}-arm ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
-function applyEnvironment(){view?.setEnvironment(config);audio.setWind(config.wind);audio.setSurface(config.pitch);$('scene-weather').textContent=optionText('weather',config.weather);$('scene-pitch').textContent=PITCHES[config.pitch].name;$('delivery-speed').textContent=Math.round(config.speed);$('delivery-style').textContent=`${config.arm==='left'?'Left':'Right'}-arm ${config.wicket} · ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
+// The side of the wicket the way a scorer would say it: "Right-arm over · pace", on the title sheet and in the in-play readout.
+function bowlingStyle(){return `${config.arm==='left'?'Left':'Right'}-arm ${config.wicket} · ${config.bowler==='fast'?'pace':BOWLERS[config.bowler].name.toLowerCase()}`;}
+function applyEnvironment(){view?.setEnvironment(config);audio.setWind(config.wind);audio.setSurface(config.pitch);$('scene-weather').textContent=optionText('weather',config.weather);$('scene-pitch').textContent=PITCHES[config.pitch].name;$('delivery-speed').textContent=Math.round(config.speed);$('delivery-style').textContent=bowlingStyle();}
 // One path for every setting change, whether it came from the drawer or a key.
 function applySetting(key,value){
   config[key]=['auto','guide'].includes(key)?Boolean(value):['timeScale','speed','age','wind'].includes(key)?Number(value):value;
@@ -387,7 +387,7 @@ if(buildLabel){$('build-label').textContent=buildLabel;$('build-label').hidden=f
 $('start-button').disabled=true;$('start-slow-button').disabled=true;$('next-button').disabled=true;
 try{
   $('asset-status').textContent='Preparing the nets…';
-  const {createScene}=await import('./scene.js?v=46c2186758a767fe');view=await createScene(canvas,status=>{$('asset-status').textContent=status;},activeQuality);applyGraphicsQuality();applyEnvironment();ready=true;$('start-button').disabled=false;$('start-slow-button').disabled=false;$('next-button').disabled=false;
+  const {createScene}=await import('./scene.js?v=ffc9d877301abfb0');view=await createScene(canvas,status=>{$('asset-status').textContent=status;},activeQuality);applyGraphicsQuality();applyEnvironment();ready=true;$('start-button').disabled=false;$('start-slow-button').disabled=false;$('next-button').disabled=false;
   $('asset-status').textContent='Ready to play';
   function updateMenuFrame(){
     if(phase!=='intro'){view.setMenuFrame(null);return;}

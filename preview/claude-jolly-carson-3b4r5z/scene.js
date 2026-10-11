@@ -1,13 +1,13 @@
 // CricSim scene: procedural textures, merged/instanced geometry, first-person batter rig.
 // Every texture in here is generated on a canvas at load time; the only files loaded are
 // the CC0 Poly Haven ground maps and HDR skies. No per-frame allocations in hot paths.
-import * as THREE from './vendor/three.module.js?v=46c2186758a767fe';
-import { HDRLoader } from './vendor/HDRLoader.js?v=46c2186758a767fe';
-import { createBowler } from './bowler.js?v=46c2186758a767fe';
-import { bladeGeometry, gloveGeometry, paddedPanel, createGloveMaterial } from './equipment.js?v=46c2186758a767fe';
-import { batBasis, random } from './physics.js?v=46c2186758a767fe';
-import { CONTACT_Z } from './bat-control.js?v=46c2186758a767fe';
-import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js?v=46c2186758a767fe';
+import * as THREE from './vendor/three.module.js?v=ffc9d877301abfb0';
+import { HDRLoader } from './vendor/HDRLoader.js?v=ffc9d877301abfb0';
+import { createBowler } from './bowler.js?v=ffc9d877301abfb0';
+import { bladeGeometry, gloveGeometry, paddedPanel, createGloveMaterial } from './equipment.js?v=ffc9d877301abfb0';
+import { batBasis, random } from './physics.js?v=ffc9d877301abfb0';
+import { CONTACT_Z } from './bat-control.js?v=ffc9d877301abfb0';
+import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js?v=ffc9d877301abfb0';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
@@ -282,8 +282,9 @@ export async function createScene(canvas, onProgress = () => {}, initialQuality 
     return { map: texOf(c, { srgb: true }), bump: texOf(b) };
   }
   function stumpTexture() {
-    const c = makeCanvas(32, 256), x = c.getContext('2d'); x.fillStyle = '#e6d4a4'; x.fillRect(0, 0, 32, 256);
-    for (let i = 0; i < 7; i++) { x.strokeStyle = `rgba(150,118,66,${.14 + rng() * .22})`; x.lineWidth = .6 + rng() * .8; x.beginPath(); x.moveTo(i * 4.5 + 2, 0); x.lineTo(i * 4.5 + 2 + (rng() - .5) * 4, 256); x.stroke(); }
+    const c = makeCanvas(32, 256), x = c.getContext('2d'); x.fillStyle = '#d9bf85'; x.fillRect(0, 0, 32, 256);
+    for (let i = 0; i < 11; i++) { x.strokeStyle = `rgba(128,92,44,${.16 + rng() * .26})`; x.lineWidth = .5 + rng() * 1.1; x.beginPath(); x.moveTo(i * 3 + 1, 0); x.lineTo(i * 3 + 1 + (rng() - .5) * 5, 256); x.stroke(); }
+    for (let i = 0; i < 40; i++) { x.fillStyle = `rgba(110,78,36,${.08 + rng() * .14})`; x.fillRect(rng() * 32, rng() * 240, 1 + rng() * 1.5, 3 + rng() * 14); }
     const sheen = x.createLinearGradient(0, 0, 32, 0); sheen.addColorStop(0, 'rgba(90,60,30,0.22)'); sheen.addColorStop(.35, 'rgba(255,255,255,0.08)'); sheen.addColorStop(.7, 'rgba(255,255,255,0)'); sheen.addColorStop(1, 'rgba(90,60,30,0.28)'); x.fillStyle = sheen; x.fillRect(0, 0, 32, 256);
     // v runs bottom to top: steel shoe below, lacquered shaft, a brass ferrule under the domed cap.
     x.fillStyle = '#7d8280'; x.fillRect(0, 244, 32, 12); x.fillStyle = '#b08d3e'; x.fillRect(0, 0, 32, 13); x.fillStyle = 'rgba(255,240,180,0.45)'; x.fillRect(0, 3, 32, 2); x.fillStyle = 'rgba(0,0,0,0.3)'; x.fillRect(0, 12, 32, 2);
@@ -298,7 +299,7 @@ export async function createScene(canvas, onProgress = () => {}, initialQuality 
   // ---------------------------------------------------------------- lawn
   const mottle = mottleTexture();
   for (const tex of [turfColor, turfNormal, turfRoughness]) tex.repeat.set(410, 410);
-  const groundMat = new THREE.MeshStandardMaterial({ map: turfColor, normalMap: turfNormal, normalScale: new THREE.Vector2(.6, .6), roughnessMap: turfRoughness, color: '#ffffff', roughness: 1 });
+  const groundMat = new THREE.MeshStandardMaterial({ map: turfColor, normalMap: turfNormal, normalScale: new THREE.Vector2(.4, .4), roughnessMap: turfRoughness, color: '#ffffff', roughness: 1 });
   // The sparse-grass photo is mostly soil: keep its luminance detail but remap it to mown-lawn greens (linear).
   groundMat.onBeforeCompile = shader => {
     shader.uniforms.mottleMap = { value: mottle };
@@ -547,7 +548,7 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   scene.add(fencePosts); addMerged(rails, fenceMat, false);
 
   // ---------------------------------------------------------------- wickets
-  const stumpMat = new THREE.MeshStandardMaterial({ map: stumpTexture(), roughness: .42, metalness: .05 }), bailMat = new THREE.MeshStandardMaterial({ color: '#e2cc92', roughness: .5 });
+  const stumpMat = new THREE.MeshStandardMaterial({ map: stumpTexture(), roughness: .38, metalness: .05 }), bailMat = new THREE.MeshStandardMaterial({ color: '#d2b878', roughness: .45 });
   // Turned stumps: a steel shoe, a lacquered shaft swelling slightly toward the top, a brass
   // ferrule and a domed cap. Bails are barrels with spigots either end. Both are lathes
   // centred as the old cylinders were, so the wicket placement and bail flight are unchanged.
