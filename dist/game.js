@@ -1,6 +1,5 @@
 import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, batBasis, createDelivery, stepDelivery } from './physics.js';
 import { NetsAudio } from './audio.js';
-import { runupPosition } from './bowler.js';
 import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setBatMode, setSwipeLength, setSwingTrigger, setBatTimeScale, restartFlow, SWIPE_LENGTHS, SWING_TRIGGERS, STANDARD_STROKE, FLOW, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, contactPreview, CONTACT_Z } from './bat-control.js';
 import { describeShot, describeMiss, missDiagram, isControlled, isPlayingShot, missTitle } from './shot-feedback.js';
 import { SHORTCUTS, SHORTCUT_GROUPS, keyLabel, createShortcutState, serializeShortcutState, isShortcutEnabled, setShortcutEnabled, matchShortcut, cycleValue } from './shortcuts.js';
@@ -215,9 +214,9 @@ function tick(dt){
   const previous=stepBat(batControl,dt,input.keys);
   if(phase==='runup'){
     phaseTime+=dt;
-    // Footfalls follow the run-up cycle in scene.js; the gather before delivery lands harder.
+    // Footfalls follow the bowler's run-up curve (through the view, so this entry point never loads Three.js); the gather before delivery lands harder.
     const stride=phaseTime<1.45?Math.floor(phaseTime*(deliveryConfig.bowler.includes('spin')?11:16)/Math.PI):phaseTime<1.85?12:13;
-    if(stride!==strideIndex){strideIndex=stride;sound('step',runupPosition(deliveryConfig,phaseTime),stride>=12?1.7:.8);}
+    if(stride!==strideIndex){strideIndex=stride;sound('step',view.runupPosition(deliveryConfig,phaseTime),stride>=12?1.7:.8);}
     if(phaseTime>=2.2){view.animateBowler('runup',2.2,deliveryConfig);delivery=createDelivery(deliveryConfig,(Date.now()+ballSerial*4723)>>>0,view.getReleasePosition());setPhase('flight');phaseTime=0;setState('Ball in flight');$('delivery-speed').textContent=Math.round(delivery.speed);}
   }else if((phase==='flight'||phase==='result')&&delivery&&delivery.time<5){
     phaseTime+=dt;

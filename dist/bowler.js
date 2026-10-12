@@ -180,11 +180,11 @@ export function bowlerLine(config) {
   return config.wicket === 'around' ? -LINE.around * arm : LINE.over * arm;
 }
 // The delivery stride ends behind the popping crease (z = -17.705, the back edge
-// of the line at -17.68): the front heel lands about 12 cm inside it.
+// of the line at -17.68): the front heel lands about 13 cm inside it.
 const ROOT = [[0, -23.55, .4], [.38, -22.85, 3.4], [1.3, -19.61, 3.6], [1.63, -18.71, 2], [1.9, -18.32, .95], [2.2, -18.11, .6], [2.53, -17.64, 2.0], [3.06, -16.81, 1], [3.8, -16.43, .1], [4.4, -16.41, 0]];
 const ROOT_SPIN = ROOT.map(([t, z, speed]) => [t, t <= 1.63 ? -18.71 + (z + 18.71) * .64 : z, t <= 1.3 ? speed * .64 : speed]);
 // After release the bowler runs off to the side he came in on, clear of the strip's middle.
-const DRIFT = [[2.2, 0], [2.6, .12], [3.2, .4], [4.4, .62]];
+const DRIFT = [[2.2, 0], [2.6, .12], [3.22, .46], [3.62, .5], [4.4, .5]];
 // Trunk: forward lean (x), the turn toward side-on at back-foot contact and back
 // through release (y), and lateral flexion away from the bowling arm (z), which
 // lifts the bowling shoulder and carries the arm over the head at release.
@@ -324,14 +324,17 @@ export function createBowler({ ballMaterial }) {
   const thighGeometry = merge([[cloth([[.032, .001, .001], [.022, .05, .055], [0, .092, .096], [-.07, .096, .099], [-.12, .095, .098], [-.2, .087, .09], [-.27, .078, .081], [-.34, .07, .073], [-.385, .066, .069], [-.425, .062, .066], [-.466, .063, .065]], 14, [[-.095, .03, .004, .027], [-.34, .025, -.003, .013], [-.425, .022, .006, .01]]), C.pants]]);
   const shinGeometry = merge([oval(0, -.008, 0, .064, .06, .067, C.pants, 0, R.cloth, 10), [cloth([[.023, .04, .042], [0, .065, .068], [-.045, .064, .069], [-.085, .067, .067, -.003], [-.16, .062, .062, -.007], [-.23, .054, .053, -.004], [-.28, .049, .047], [-.34, .047, .043], [-.374, .045, .043], [-.403, .047, .045], [-.423, .048, .046], [-.445, .042, .04]], 14, [[-.045, .021, .004, .009], [-.34, .019, -.003, .007], [-.4, .017, .005, .006]]), C.pants], [loft([[-.423, .048, .046], [-.441, .045, .043]], 12), C.seam]]);
   const footGeometry = shoeGeometry();
-  const legs = [-1, 1].map(side => ({ side, upper: mesh(thighGeometry, group, 'Tailored thigh'), lower: mesh(shinGeometry, group, 'Trouser calf and cuff'), foot: mesh(footGeometry, group, 'Running shoe'), target: { z: 0, y: ANKLE, pitch: 0, dx: 0, yaw: 0 } }));
+  const legs = [-1, 1].map(side => ({ side, upper: mesh(thighGeometry, group, 'Tailored thigh'), lower: mesh(shinGeometry, group, 'Trouser calf and cuff'), foot: mesh(footGeometry, group, 'Running shoe'), target: { z: 0, y: ANKLE, pitch: 0, dx: 0, yaw: 0, sx: 0, sz: 0 } }));
+  // A foot pitches about its own side axis, then turns about the vertical, so a
+  // turned back foot rolls onto its toes without tipping sideways.
+  for (const leg of legs) leg.foot.rotation.order = 'YXZ';
   const heldBall = new THREE.Mesh(new THREE.SphereGeometry(.036, 12, 8), ballMaterial); heldBall.position.set(0, -.387, .035); arms[0].lower.add(heldBall);
   const tracks = { pace: [footTrack(true, false), footTrack(false, false)], spin: [footTrack(true, true), footTrack(false, true)] };
   const hip = new THREE.Vector3(), ankle = new THREE.Vector3(), axis = new THREE.Vector3(), pole = new THREE.Vector3(), knee = new THREE.Vector3(), aim = new THREE.Vector3();
 
   function solveLeg(leg, x, z, lift) {
     hip.set(leg.side * .101, 0, 0).applyQuaternion(pelvis.quaternion).add(pelvis.position);
-    ankle.set(leg.side * .112 + leg.target.dx - x, leg.target.y - lift, leg.target.z - z);
+    ankle.set(leg.side * .112 + leg.target.dx + leg.target.sx - x, leg.target.y - lift, leg.target.z + leg.target.sz - z);
     axis.subVectors(ankle, hip); let distance = axis.length(); axis.multiplyScalar(1 / Math.max(distance, .001));
     distance = clamp(distance, Math.abs(UPPER_LEG - LOWER_LEG) + .001, UPPER_LEG + LOWER_LEG - .001);
     // Keep limb lengths fixed if an airborne target exceeds anatomical reach.
@@ -367,17 +370,25 @@ export function createBowler({ ballMaterial }) {
     for (const leg of legs) {
       const back = leg.side === -sign;
       sampleFoot(footKeys[back ? 0 : 1], t, leg.target); leg.target.dx *= Math.sign(line);
-      // The back foot lands parallel to the crease in the side-on position and
-      // pivots on its heel as the hips open through release.
-      leg.target.yaw = back ? -sign * twist * .8 * ease((t - 1.3) / .3) * (1 - ease((t - 2.2) / .3)) : 0;
+      // The back foot lands turned across the crease in the side-on position and
+      // pivots on the ball of the foot as the hips open through release: the
+      // ankle and heel swing round that contact point, 12 cm ahead of the ankle,
+      // so the toes stay where they landed, clear of the stumps, instead of the
+      // whole sole sliding.
+      const yaw = back ? -sign * twist * 1.3 * ease((t - 1.3) / .3) * (1 - ease((t - 2.2) / .3)) : 0;
+      leg.target.yaw = yaw; leg.target.sx = -.12 * Math.sin(yaw); leg.target.sz = .12 * (1 - Math.cos(yaw));
       // Solve root height continuously against the planted feet. A foot in the
       // air lets its leg bend instead of pulling the hips down, so the trunk
       // stays tall over the braced front leg at release; the allowance fades in
       // with the foot's height, which keeps the hips continuous at lift-off.
       hip.set(leg.side * .101, 0, 0).applyQuaternion(pelvis.quaternion);
-      const dx = leg.side * .112 + leg.target.dx - drift - hip.x, dz = leg.target.z - z - hip.z;
-      const airborne = ease((leg.target.y - ANKLE) / .08);
-      lift = Math.min(lift, leg.target.y + Math.sqrt(Math.max(.02, .895 ** 2 - dx * dx - dz * dz)) - .98 + airborne * .25);
+      const dx = leg.side * .112 + leg.target.dx + leg.target.sx - drift - hip.x, dz = leg.target.z + leg.target.sz - z - hip.z;
+      const airborne = ease((leg.target.y - ANKLE) / .12);
+      // A planted foot left behind by the stride rolls onto its toes, as a
+      // runner's does, rather than dragging the hips down to keep the sole flat.
+      const heel = dz < 0 ? Math.max(0, .98 - ANKLE - Math.sqrt(Math.max(0, .895 ** 2 - dx * dx - dz * dz))) * (1 - airborne) : 0;
+      leg.target.y += heel; leg.target.pitch += Math.asin(Math.min(1, heel / .19));
+      lift = Math.min(lift, leg.target.y + Math.sqrt(Math.max(.02, .895 ** 2 - dx * dx - dz * dz)) - .98 + airborne * .3);
     }
     group.position.set(line + drift, lift, z);
     for (const leg of legs) solveLeg(leg, drift, z, lift);

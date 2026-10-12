@@ -3,7 +3,7 @@
 // the CC0 Poly Haven ground maps and HDR skies. No per-frame allocations in hot paths.
 import * as THREE from './vendor/three.module.js';
 import { HDRLoader } from './vendor/HDRLoader.js';
-import { createBowler } from './bowler.js';
+import { createBowler, runupPosition } from './bowler.js';
 import { bladeGeometry, gloveGeometry, paddedPanel, createGloveMaterial } from './equipment.js';
 import { batBasis, random } from './physics.js';
 import { CONTACT_Z } from './bat-control.js';
@@ -495,10 +495,10 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   // Benches beside the lanes and a hedge behind the pavilion.
   for (const x of [-13.5, 13.5]) { for (let i = 0; i < 3; i++) deck.push({ g: new THREE.BoxGeometry(2.6, .05, .1), m: mat4(x, .48, -13.15 + i * .12) }); for (let j = 0; j < 2; j++) deck.push({ g: new THREE.BoxGeometry(2.6, .1, .05), m: mat4(x, .72 + j * .13, -13.32 - j * .035, -.25) }); for (const s of [-1, 1]) steel.push({ g: new THREE.BoxGeometry(.06, .46, .5), m: mat4(x + s * 1.2, .23, -13.05) }, { g: new THREE.BoxGeometry(.06, .45, .05), m: mat4(x + s * 1.2, .7, -13.3, -.25) }); }
   const hedge = new THREE.Mesh(new THREE.BoxGeometry(40, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: '#2f4a2a', roughness: 1, bumpMap: leatherBump(), bumpScale: .05 })); hedge.position.set(20, .8, -42.5); scene.add(hedge);
-  // Kit in the lanes: concrete footings under every net post, the bowler's marker disc, a ball
-  // bucket and kit bags at the far end, cones in the neighbouring lanes, a water bottle.
+  // Kit in the lanes: concrete footings under every net post, a ball bucket and kit bags at
+  // the far end, cones in the neighbouring lanes, a water bottle. The bowler's marker disc is
+  // its own mesh, placed at the start of whichever run-up the conditions choose.
   for (const x of [-9.6, -3.1, 3.1, 9.6]) for (let z = -24; z <= 4; z += 7) props.push({ g: new THREE.CylinderGeometry(.09, .11, .1, 10), m: mat4(x, .05, z), c: '#a4a39a' });
-  props.push({ g: new THREE.CylinderGeometry(.11, .11, .012, 16), m: mat4(-.2, .006, -23.9), c: '#f4f2ea' });
   props.push({ g: lathe([[0, 0], [.14, 0], [.145, .02], [.16, .3], [.168, .32], [.152, .32], [.147, .3], [.133, .025], [0, .025]], 16), m: mat4(2.25, 0, -21.6), c: '#eceae2' });
   const bag = (x, z, ry) => {
     props.push({ g: new THREE.CapsuleGeometry(.21, .62, 6, 14), m: mat4(x, .2, z, Math.PI / 2, ry, 0, 1, 1, .85), c: '#1f3a2c' });
@@ -508,6 +508,7 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   bag(-2.3, -22.9, .35); bag(8.9, -22.6, -.2); bag(-8.5, -8.2, 1.3);
   props.push({ g: new THREE.CylinderGeometry(.038, .038, .24, 10), m: mat4(-1.85, .12, -22.4), c: '#2b6fb5' }, { g: new THREE.CylinderGeometry(.02, .02, .03, 8), m: mat4(-1.85, .255, -22.4), c: '#eef0ee' });
   for (const [x, z] of [[-7.4, -6.2], [-5.4, -6.2], [5.6, -11.5], [7.2, -11.5]]) props.push({ g: new THREE.ConeGeometry(.13, .32, 10), m: mat4(x, .17, z), c: '#f0702a' }, { g: new THREE.BoxGeometry(.3, .02, .3), m: mat4(x, .01, z), c: '#f0702a' });
+  const markerDisc = new THREE.Mesh(new THREE.CylinderGeometry(.11, .11, .012, 16), new THREE.MeshStandardMaterial({ color: '#f4f2ea', roughness: .62 })); markerDisc.position.set(.44, .006, -23.75); markerDisc.receiveShadow = true; scene.add(markerDisc);
   const addMerged = (parts, material, shadow = true) => { if (!parts.length) return null; const m = new THREE.Mesh(mergeGeometries(parts), material); m.castShadow = shadow; m.receiveShadow = true; scene.add(m); return m; };
   addMerged(cream, creamMat); addMerged(trim, trimMat); addMerged(timber, timberMat); addMerged(slate, slateMat); addMerged(deck, deckMat); addMerged(glass, glassMat, false); addMerged(steel, steelMat); addMerged(props, propMat);
   // Real, bevelled sight-screen boards: shallow gaps, edge thickness and
@@ -903,17 +904,18 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     scene.backgroundRotation.set(0, theta, 0); scene.environmentRotation.set(0, theta, 0); scene.backgroundBlurriness = 0;
     lampMat.emissiveIntensity = evening ? 3 : 0; for (const g of glows) g.material.opacity = evening ? .9 : 0; for (const s of spots) s.intensity = evening ? 4.2 : 0;
     sunGlow.position.copy(sun.position).normalize().multiplyScalar(300); sunGlow.scale.setScalar(evening ? 46 : 0); sunGlow.material.opacity = evening ? .8 : 0;
+    const start = runupPosition(c, 0); markerDisc.position.set(start.x, .006, start.z - .2);
     wearUniform.value = pitchTexture(c.pitch);
     pitchMat.color.set(c.pitch === 'green' ? '#c4c79c' : c.pitch === 'soft' ? '#aaa386' : c.pitch === 'dry' ? '#e8d6ab' : '#d6cba6');
     pitchMat.normalScale.setScalar(c.pitch === 'dry' ? .45 : c.pitch === 'soft' ? .2 : .3);
     pitchMat.roughness = c.pitch === 'soft' ? (over ? .5 : .45) : .95; pitchMat.clearcoat = c.pitch === 'soft' ? .25 : 0;
     const wear = clamp(c.age / 80, 0, 1); ballMat.roughness = .45 + wear * .36; ballMat.clearcoat = .45 * Math.max(0, 1 - c.age / 70); ballMat.color.setRGB(1 - .4 * wear, 1 - .52 * wear, 1 - .55 * wear);
   }
-  setEnvironment({ weather: 'clear', pitch: 'hard', age: 8, wind: 0, hand: 'right' });
+  setEnvironment({ weather: 'clear', pitch: 'hard', age: 8, wind: 0, hand: 'right', arm: 'right', bowler: 'fast', wicket: 'over' });
   // The other surfaces' wear textures take a moment to paint; do it while the browser is idle rather than on a click or at run-up.
   const idle = window.requestIdleCallback || (fn => setTimeout(fn, 200)), warm = ['hard', 'green', 'dry', 'soft'];
   const warmNext = () => { const kind = warm.shift(); if (!kind) return; pitchTexture(kind); idle(warmNext); };
   idle(warmNext);
   setQuality(quality);
-  return { renderer, scene, camera, setQuality, getPerformanceInfo, setEnvironment, setMenuFrame, updateBat, updateBall, updateGaze, animateBowler, getReleasePosition, pointerWorld, project, render, resetWicket, hitWicket };
+  return { renderer, scene, camera, setQuality, getPerformanceInfo, setEnvironment, setMenuFrame, updateBat, updateBall, updateGaze, animateBowler, getReleasePosition, runupPosition, pointerWorld, project, render, resetWicket, hitWicket };
 }

@@ -50,7 +50,7 @@ async function boot(saved='eco',battingMode=null,{coarse=false}={}){
   get('game').parentElement=get('viewport');
   const view={
     setQuality(q){this.quality=q;stats.qualityCalls.push(q.id);},setEnvironment(){},setMenuFrame(){},resetWicket(){},hitWicket(){},animateBowler(){},
-    getReleasePosition(){return {x:-.2,y:2,z:-18.5};},project(p){return {x:640+p.x*100,y:360-(p.y-1)*100};},pointerWorld(x,y){return {x,y:1+y*.5,z:0};},
+    getReleasePosition(){return {x:.57,y:2.05,z:-17.65};},runupPosition(c,t){return {x:.44,z:-23.55+Math.min(t/1.45,1)*4.5};},project(p){return {x:640+p.x*100,y:360-(p.y-1)*100};},pointerWorld(x,y){return {x,y:1+y*.5,z:0};},
     updateGaze(d,dt,paused){stats.gazeDeltas.push({dt,paused});},updateBat(){},updateBall(){},render(){stats.renders++;},
     getPerformanceInfo(){return {frames:stats.renders,quality:this.quality.id};},
   };
