@@ -10,8 +10,8 @@
   <link rel="preload" href="./fonts/barlow-condensed-700.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./fonts/dm-sans.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="./fonts/newsreader-400.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="./style.css?v=8135f38a30ce2f1b">
-  <link rel="stylesheet" href="./menu.css?v=8135f38a30ce2f1b">
+  <link rel="stylesheet" href="./style.css?v=5037f0b96f78b8cf">
+  <link rel="stylesheet" href="./menu.css?v=5037f0b96f78b8cf">
 </head>
 <body>
   <main>
@@ -47,7 +47,7 @@
       <footer class="hud hud-bottom">
         <div class="delivery-info">
           <span id="delivery-state" class="eyebrow state-label">Ready when you are</span>
-          <div class="delivery-readout"><strong id="delivery-speed">140</strong><span class="unit">km/h</span><span class="delivery-separator" aria-hidden="true"></span><span id="delivery-style">Right-arm pace</span></div>
+          <div class="delivery-readout"><strong id="delivery-speed">140</strong><span class="unit">km/h</span><span class="delivery-separator" aria-hidden="true"></span><span id="delivery-style">Right-arm over · pace</span></div>
           <p id="coach-tip" class="coach-tip" aria-live="polite"></p>
         </div>
         <div class="hud-cluster hud-bottom-right">
@@ -95,7 +95,7 @@
           <section class="menu-session" aria-labelledby="menu-session-title">
             <div class="menu-section-heading"><h2 id="menu-session-title">Your session</h2><span>At the crease</span></div>
             <dl class="menu-conditions">
-              <div><dt>Bowling</dt><dd id="menu-bowling">Right-arm pace</dd></div>
+              <div><dt>Bowling</dt><dd id="menu-bowling">Right-arm over · pace</dd></div>
               <div><dt>Release</dt><dd id="menu-speed">140 <small>km/h</small></dd></div>
               <div><dt>Surface</dt><dd id="menu-surface">Hard &amp; true</dd></div>
               <div class="menu-extra"><dt>Length · line</dt><dd id="menu-length">Good length · off stump</dd></div>
@@ -174,7 +174,10 @@
           <label for="bowler">Bowling style</label>
           <select id="bowler"><option value="fast">Fast pace</option><option value="outswing">Outswing</option><option value="inswing">Inswing</option><option value="offspin">Off spin</option><option value="legspin">Leg spin</option></select>
           <p id="bowler-description" class="field-note">Hit the deck. Read the bounce.</p>
-          <div class="split-fields"><div><label for="arm">Bowling arm</label><select id="arm"><option value="right">Right arm</option><option value="left">Left arm</option></select></div><div><label for="hand">Your stance</label><select id="hand"><option value="right">Right handed</option><option value="left">Left handed</option></select></div></div>
+          <div class="split-fields"><div><label for="arm">Bowling arm</label><select id="arm"><option value="right">Right arm</option><option value="left">Left arm</option></select></div><div><label for="wicket">Side of the wicket</label><select id="wicket"><option value="over">Over the wicket</option><option value="around">Around the wicket</option></select></div></div>
+          <p class="field-note">Over the wicket, the bowling arm comes past the stumps and the ball angles in at a batter of the same hand. Around the wicket, the bowler crosses to the other side and the ball angles across.</p>
+          <label for="hand">Your stance</label>
+          <select id="hand"><option value="right">Right handed</option><option value="left">Left handed</option></select>
           <div class="range-heading"><label for="speed">Release speed</label><output id="speed-value">140 <span>km/h</span></output></div>
           <input type="range" id="speed" min="120" max="160" value="140">
           <div class="range-scale"><span id="speed-min">120</span><span id="speed-max">160 km/h</span></div>
@@ -251,6 +254,6 @@
     </div>
     <div class="dialog-foot"><button id="help-done" class="primary-button">Got it. Let’s bat.</button></div>
   </dialog>
-  <script type="module" src="./game.js?v=8135f38a30ce2f1b"></script>
+  <script type="module" src="./game.js?v=5037f0b96f78b8cf"></script>
 </body>
 </html>

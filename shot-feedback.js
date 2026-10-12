@@ -1,7 +1,7 @@
 // Feedback describes the stroke at contact / at the crease, never the current
 // mouse button after the ball has gone. Timing is relative to the stroke's middle.
 
-import { BALL, batBasis, clamp } from './physics.js?v=8135f38a30ce2f1b';
+import { BALL, batBasis, clamp } from './physics.js?v=5037f0b96f78b8cf';
 
 // Standard clicks and Flow pushes commit a full shot, including after release
 // and recovery. Manual mode retains its existing held/released leave convention.

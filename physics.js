@@ -18,7 +18,7 @@ export const BOWLERS = {
 // Ball-to-ball pace spread in km/h (one standard deviation). Real bowlers vary a
 // few km/h between deliveries; a mixed bag adds the occasional slower ball.
 export const PACE_SPREADS = { none: 0, slight: 2, natural: 4, mixed: 7 };
-export const DEFAULTS = { bowler: 'fast', arm: 'right', speed: 140, pitch: 'hard', length: 'good', line: 'off', weather: 'clear', wind: 0, age: 8, timeScale: 1, auto: false, guide: true, hand: 'right', audio: true, swipe: 'standard', speedSpread: 'none', trigger: 'normal' };
+export const DEFAULTS = { bowler: 'fast', arm: 'right', wicket: 'over', speed: 140, pitch: 'hard', length: 'good', line: 'off', weather: 'clear', wind: 0, age: 8, timeScale: 1, auto: false, guide: true, hand: 'right', audio: true, swipe: 'standard', speedSpread: 'none', trigger: 'normal' };
 const lengths = { yorker: -0.65, full: -2.1, good: -4.0, short: -7.0 };
 const lines = { leg: -0.25, middle: 0, off: 0.30, wide: 0.70 };
 export const clamp = (x, min, max) => Math.max(min, Math.min(max, x));
@@ -76,7 +76,9 @@ export function createDelivery(config, seed = Date.now(), release = null) {
   // Preserve the selected release speed after accounting for the downward angle.
   const adjustedZ = Math.sqrt(Math.max(16, vz * vz - vy * vy));
   const adjustedY = initialVertical(adjustedZ, delivery.length, config, delivery);
-  const releaseX = release?.x ?? -0.42 * arm;
+  // Without an animated hand, release from where the bowler's arm comes over:
+  // beside the stumps over the wicket, on the far side of them around it.
+  const releaseX = release?.x ?? (config.wicket === 'around' ? -0.45 : 0.55) * arm;
   const flightEstimate = -delivery.releaseZ / adjustedZ * 1.08;
   const vx = (targetLine - releaseX) / flightEstimate;
   delivery.p = { x: releaseX, y: delivery.releaseY, z: delivery.releaseZ };
