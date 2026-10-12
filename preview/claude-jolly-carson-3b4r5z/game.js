@@ -1,10 +1,9 @@
-import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, batBasis, createDelivery, stepDelivery } from './physics.js?v=ffc9d877301abfb0';
-import { NetsAudio } from './audio.js?v=ffc9d877301abfb0';
-import { runupPosition } from './bowler.js?v=ffc9d877301abfb0';
-import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setBatMode, setSwipeLength, setSwingTrigger, setBatTimeScale, restartFlow, SWIPE_LENGTHS, SWING_TRIGGERS, STANDARD_STROKE, FLOW, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, contactPreview, CONTACT_Z } from './bat-control.js?v=ffc9d877301abfb0';
-import { describeShot, describeMiss, missDiagram, isControlled, isPlayingShot, missTitle } from './shot-feedback.js?v=ffc9d877301abfb0';
-import { SHORTCUTS, SHORTCUT_GROUPS, keyLabel, createShortcutState, serializeShortcutState, isShortcutEnabled, setShortcutEnabled, matchShortcut, cycleValue } from './shortcuts.js?v=ffc9d877301abfb0';
-import { normalizeGraphicsMode, qualityProfile, targetRenderFps, createFramePacer, createAdaptiveQuality } from './render-policy.js?v=ffc9d877301abfb0';
+import { DEFAULTS, BOWLERS, PITCHES, PACE_SPREADS, DT, clamp, batBasis, createDelivery, stepDelivery } from './physics.js?v=59a1e6d5acb07734';
+import { NetsAudio } from './audio.js?v=59a1e6d5acb07734';
+import { createBatControl, resetBatControl, resetBatTrim, setBatIntent, setBatMode, setSwipeLength, setSwingTrigger, setBatTimeScale, restartFlow, SWIPE_LENGTHS, SWING_TRIGGERS, STANDARD_STROKE, FLOW, startStroke, moveBatTarget, releaseStroke, stepBat, shotName, strokeSnapshot, contactPreview, CONTACT_Z } from './bat-control.js?v=59a1e6d5acb07734';
+import { describeShot, describeMiss, missDiagram, isControlled, isPlayingShot, missTitle } from './shot-feedback.js?v=59a1e6d5acb07734';
+import { SHORTCUTS, SHORTCUT_GROUPS, keyLabel, createShortcutState, serializeShortcutState, isShortcutEnabled, setShortcutEnabled, matchShortcut, cycleValue } from './shortcuts.js?v=59a1e6d5acb07734';
+import { normalizeGraphicsMode, qualityProfile, targetRenderFps, createFramePacer, createAdaptiveQuality } from './render-policy.js?v=59a1e6d5acb07734';
 const $=id=>document.getElementById(id);
 const config={...DEFAULTS};
 try {const saved=JSON.parse(localStorage.getItem('cricsim-preferences')||'null');if(saved){for(const key of Object.keys(DEFAULTS))if(typeof saved[key]===typeof DEFAULTS[key])config[key]=saved[key];}}
@@ -215,9 +214,9 @@ function tick(dt){
   const previous=stepBat(batControl,dt,input.keys);
   if(phase==='runup'){
     phaseTime+=dt;
-    // Footfalls follow the run-up cycle in scene.js; the gather before delivery lands harder.
+    // Footfalls follow the bowler's run-up curve (through the view, so this entry point never loads Three.js); the gather before delivery lands harder.
     const stride=phaseTime<1.45?Math.floor(phaseTime*(deliveryConfig.bowler.includes('spin')?11:16)/Math.PI):phaseTime<1.85?12:13;
-    if(stride!==strideIndex){strideIndex=stride;sound('step',runupPosition(deliveryConfig,phaseTime),stride>=12?1.7:.8);}
+    if(stride!==strideIndex){strideIndex=stride;sound('step',view.runupPosition(deliveryConfig,phaseTime),stride>=12?1.7:.8);}
     if(phaseTime>=2.2){view.animateBowler('runup',2.2,deliveryConfig);delivery=createDelivery(deliveryConfig,(Date.now()+ballSerial*4723)>>>0,view.getReleasePosition());setPhase('flight');phaseTime=0;setState('Ball in flight');$('delivery-speed').textContent=Math.round(delivery.speed);}
   }else if((phase==='flight'||phase==='result')&&delivery&&delivery.time<5){
     phaseTime+=dt;
@@ -387,7 +386,7 @@ if(buildLabel){$('build-label').textContent=buildLabel;$('build-label').hidden=f
 $('start-button').disabled=true;$('start-slow-button').disabled=true;$('next-button').disabled=true;
 try{
   $('asset-status').textContent='Preparing the nets…';
-  const {createScene}=await import('./scene.js?v=ffc9d877301abfb0');view=await createScene(canvas,status=>{$('asset-status').textContent=status;},activeQuality);applyGraphicsQuality();applyEnvironment();ready=true;$('start-button').disabled=false;$('start-slow-button').disabled=false;$('next-button').disabled=false;
+  const {createScene}=await import('./scene.js?v=59a1e6d5acb07734');view=await createScene(canvas,status=>{$('asset-status').textContent=status;},activeQuality);applyGraphicsQuality();applyEnvironment();ready=true;$('start-button').disabled=false;$('start-slow-button').disabled=false;$('next-button').disabled=false;
   $('asset-status').textContent='Ready to play';
   function updateMenuFrame(){
     if(phase!=='intro'){view.setMenuFrame(null);return;}

@@ -60,7 +60,7 @@ export function createDelivery(config, seed = Date.now(), release = null) {
   const length = config.length === 'mixed' ? Object.values(lengths)[Math.floor(rng() * 4)] : lengths[config.length];
   const hand = config.hand === 'left' ? -1 : 1;
   const targetLine = (config.line === 'mixed' ? (rng() - 0.35) * 1.0 : lines[config.line]) * hand;
-  const delivery = { seed, swing: b.swing * arm, turn: b.turn * arm, spin: b.spin, seam: (rng() - 0.5) * b.seam, releaseY: b.turn ? 2.13 : 2.18, releaseZ: -18.1, speed: config.speed + (rng() - 0.5) * 3, length: length + (rng() - 0.5) * 0.22, targetLine, hit: false, bounces: 0, time: 0, resolved: false, seamNoise: rng(), bounceNoise: rng(), path: [] };
+  const delivery = { seed, swing: b.swing * arm, turn: b.turn * arm, spin: b.spin, seam: (rng() - 0.5) * b.seam, releaseY: b.turn ? 2.13 : 2.18, releaseZ: -17.7, speed: config.speed + (rng() - 0.5) * 3, length: length + (rng() - 0.5) * 0.22, targetLine, hit: false, bounces: 0, time: 0, resolved: false, seamNoise: rng(), bounceNoise: rng(), path: [] };
   if(release){delivery.releaseY=release.y;delivery.releaseZ=release.z;}
   const spread = PACE_SPREADS[config.speedSpread] ?? 0;
   if (spread > 0) {
