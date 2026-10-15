@@ -20,6 +20,7 @@ async function boot(saved='eco',battingMode=null,{coarse=false}={}){
     dispatch(type,extra={}){const event={target:this,preventDefault(){},...extra};for(const fn of this.listeners.get(type)||[])fn(event);}
   }
   class Element extends Target{
+    capturedPointers=new Set();
     constructor(id='',tag='div'){
       super();this.id=id;this.tagName=tag.toUpperCase();this.dataset={};this.style={setProperty(k,v){this[k]=v;}};this.options=[];this.value='';this.min=0;this.max=100;this.textContent='';this.innerHTML='';this.children=[];this.attributes={};this.hidden=false;this.disabled=false;this.open=false;this.clientWidth=1280;this.clientHeight=720;this.offsetWidth=1280;
       const classes=new Set();this.classList={add:(...a)=>a.forEach(v=>classes.add(v)),remove:(...a)=>a.forEach(v=>classes.delete(v)),contains:v=>classes.has(v),toggle:(v,b)=>{b??=!classes.has(v);b?classes.add(v):classes.delete(v);return b;}};
@@ -31,9 +32,9 @@ async function boot(saved='eco',battingMode=null,{coarse=false}={}){
     focus(){document.activeElement=this;}
     querySelector(){return null;}
     getBoundingClientRect(){return {left:0,top:0,width:this.clientWidth,height:this.clientHeight};}
-    hasPointerCapture(){return false;}
-    releasePointerCapture(){}
-    setPointerCapture(){}
+    hasPointerCapture(id){return this.capturedPointers.has(id);}
+    releasePointerCapture(id){if(this.capturedPointers.delete(id))this.dispatch('lostpointercapture',{pointerId:id});}
+    setPointerCapture(id){this.capturedPointers.add(id);}
     showModal(){this.open=true;}
     close(){this.open=false;this.dispatch('close');}
     click(){assert.ok(!this.disabled,`${this.id} is enabled`);this.dispatch('click');}
@@ -55,7 +56,9 @@ async function boot(saved='eco',battingMode=null,{coarse=false}={}){
     getPerformanceInfo(){return {frames:stats.renders,quality:this.quality.id};},
   };
   class Audio {setEnabled(){}setWind(){}setSurface(){}unlock(){}play(){}setSuspended(v){stats.audioSuspended=v;}}
-  const context=vm.createContext({document,window,console:{...console,error:(...args)=>errors.push(args)},matchMedia:()=>({matches:coarse}),localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,String(v))},ResizeObserver:class{constructor(callback){this.callback=callback;resizeObservers.push(this);}observe(element){this.element=element;}},requestAnimationFrame:fn=>{const id=++seq;raf.set(id,fn);return id;},cancelAnimationFrame:id=>raf.delete(id),setTimeout:()=>++seq,clearTimeout:()=>{},Date,Math,Set,Map});
+  // The entrypoint seeds deliveries from Date.now(); keep live-ball outcomes reproducible.
+  class FixedDate extends Date {static now(){return 1700000000000;}}
+  const context=vm.createContext({document,window,console:{...console,error:(...args)=>errors.push(args)},matchMedia:()=>({matches:coarse}),localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,String(v))},ResizeObserver:class{constructor(callback){this.callback=callback;resizeObservers.push(this);}observe(element){this.element=element;}},requestAnimationFrame:fn=>{const id=++seq;raf.set(id,fn);return id;},cancelAnimationFrame:id=>raf.delete(id),setTimeout:()=>++seq,clearTimeout:()=>{},Date:FixedDate,Math,Set,Map});
   const modules=new Map();
   async function dependency(specifier){
     if(modules.has(specifier))return modules.get(specifier);
@@ -103,53 +106,89 @@ const restored=await boot(app.store.get('cricsim-graphics'));assert.equal(restor
 const automatic=await boot('invalid');assert.equal(automatic.window.cricsim.performance.mode,'auto');automatic.get('start-button').click();automatic.pump(1);automatic.pump(130,1000/30);assert.equal(automatic.window.cricsim.performance.autoLevel,1);automatic.quality('balanced');assert.equal(automatic.window.cricsim.performance.autoLevel,0);assert.equal(automatic.view.quality.id,'balanced');passed('invalid preference falls back to Auto; sustained overload applies quality reduction; manual mode resets it');
 
 const flow=await boot();
-assert.equal(flow.stats.bat.mode,'flow');assert.equal(flow.get('batting-mode').value,'flow');assert.equal(flow.get('manual-controls').hidden,true);assert.equal(flow.get('flow-controls').hidden,false);assert.equal(flow.get('trigger').disabled,false);
+assert.equal(flow.stats.bat.mode,'flow');assert.equal(flow.get('batting-mode').value,'flow');assert.equal(flow.get('manual-controls').hidden,true);assert.equal(flow.get('stroke-meter').hidden,true);
 const invalidBatting=await boot('eco','invalid');assert.equal(invalidBatting.stats.bat.mode,'flow');
 const standard=await boot('eco','standard');
-assert.equal(standard.stats.bat.mode,'standard');assert.equal(standard.get('batting-mode').value,'standard');assert.equal(standard.get('manual-controls').hidden,true);assert.equal(standard.get('flow-controls').hidden,true);
+assert.equal(standard.stats.bat.mode,'standard');assert.equal(standard.get('batting-mode').value,'standard');assert.equal(standard.get('manual-controls').hidden,true);assert.equal(standard.get('stroke-meter').hidden,false);
 standard.setting('batting-mode','manual');assert.equal(standard.store.get('cricsim-batting-mode'),'manual');assert.equal(standard.get('manual-controls').hidden,false);
 const manual=await boot('eco',standard.store.get('cricsim-batting-mode'));assert.equal(manual.stats.bat.mode,'manual');assert.equal(manual.get('batting-mode').value,'manual');
 standard.setting('batting-mode','standard');assert.equal(standard.store.get('cricsim-batting-mode'),'standard');
 const restoredStandard=await boot('eco',standard.store.get('cricsim-batting-mode'));assert.equal(restoredStandard.stats.bat.mode,'standard');
-flow.setting('trigger','firm');assert.equal(flow.stats.bat.trigger,'firm');assert.equal(JSON.parse(flow.store.get('cricsim-preferences')).trigger,'firm');
-passed('Flow is the default and invalid-preference fallback; all three batting choices and the swing trigger persist and restore');
+passed('Flow is the default and invalid-preference fallback; all three batting choices persist and restore');
 
-flow.setting('trigger','normal');flow.get('start-button').click();flow.pump();
-flow.pointer('pointerdown');flow.pointer('pointerup');
-assert.equal(flow.stats.bat.committed,true,'a mouse click still plays the stroke in Flow');assert.equal(flow.stats.bat.held,false);flow.pump(240);
-assert.equal(flow.stats.bat.phase,'guard');
-// Rest on the line, then push the mouse up: 360 px in 120 ms on a 720 px window is 6.7 screen units per second.
-flow.hand({x:640,y:360},{x:640,y:360},.3);
-let flowCrossings=0,flowZ=flow.stats.bat.pose.z,flowActive=false;
-const watch=()=>{const p=flow.stats.bat.pose;if(flowZ>-.22&&p.z<=-.22)flowCrossings++;flowZ=p.z;flowActive||=p.active;};
-flow.hand({x:640,y:360},{x:640,y:0},.12);watch();
-assert.equal(flow.stats.bat.committed,true,'a push starts the stroke without any button');assert.equal(flow.stats.bat.held,false);
-assert.ok(Math.abs(flow.stats.bat.target.y-1)<1e-9&&Math.abs(flow.stats.bat.target.x)<1e-9,'the aim is where the hand rested, not where the push ended');
-for(let i=0;i<240;i++){flow.pump();watch();}
-assert.equal(flowCrossings,1,"one push carries the real blade through the contact plane exactly once");assert.ok(flowActive);assert.equal(flow.stats.bat.phase,"guard");
-flow.hand({x:640,y:0},{x:640,y:0},.2);flow.hand({x:640,y:0},{x:900,y:300},.6);flow.hand({x:900,y:300},{x:900,y:300},.2);
-assert.equal(flow.stats.bat.phase,'guard');assert.ok(Math.abs(flow.stats.bat.target.x-(900/1280*2-1))<1e-9,'slow movement aims again after the stroke');
-assert.deepEqual(Object.keys(flow.window.cricsim.stroke).filter(k=>['trigger','armed','pointerSpeed'].includes(k)).sort(),['armed','pointerSpeed','trigger']);
-passed('Flow: a rest-then-push plays one complete stroke aimed at the rest point, with no button');
+const poseDistance=(a,b)=>Math.hypot(...['x','y','z'].map(axis=>a[axis]-b[axis]),...['yaw','loft','roll'].map(axis=>Math.atan2(Math.sin(a[axis]-b[axis]),Math.cos(a[axis]-b[axis]))));
+const physicalPose=runtime=>({...runtime.stats.bat.pose});
+flow.quality('high');flow.get('start-button').click();flow.pump();
+assert.equal(flow.stats.bat.pose.active,false,'an unacquired bat cannot make a ghost hit');
+flow.pointer('pointermove',{buttons:0,clientX:640,clientY:420});flow.pump(240);
+assert.equal(flow.window.cricsim.stroke.engaged,true);assert.equal(flow.window.cricsim.stroke.acquiring,false);assert.equal(flow.stats.bat.pose.active,true);
+const readyPose=physicalPose(flow);
+flow.pointer('pointerdown',{clientX:640,clientY:420});flow.pointer('pointerup',{clientX:640,clientY:420});
+assert.equal(flow.window.cricsim.stroke.engaged,true,'left-button release does not end mouse control');assert.equal(flow.stats.bat.committed,false);
+assert.equal(poseDistance(readyPose,physicalPose(flow)),0,'clicking cannot launch an automatic stroke');
+assert.equal(flow.get('stroke-meter').hidden,true);assert.equal(flow.get('feedback-timing-label').textContent,'Contact');
+assert.equal(flow.window.cricsim.stroke.idealContactTime,null,'direct control does not expose a fixed contact timer');
+passed('Flow: the physical bat works before a delivery, holds without a button, and a click cannot launch a stroke');
 
-flow.hand({x:900,y:300},{x:900,y:300},.2);flow.stats.bat.attempted=false;
-flow.pointer('pointerdown',{button:2,buttons:2,clientX:900,clientY:300});flow.pump(20);assert.equal(flow.stats.bat.defending,true);assert.equal(flow.stats.bat.pose.active,true);
-flow.hand({x:900,y:300},{x:900,y:0},.1,{buttons:2});assert.equal(flow.stats.bat.committed,false,'a fast hand during a block does not swing');
-flow.pointer('pointerup',{button:2,clientX:900,clientY:0});flow.pump(2);assert.equal(flow.stats.bat.defending,false);assert.equal(flow.stats.bat.pose.active,false);
-flow.hand({x:900,y:0},{x:900,y:0},.3);assert.equal(flow.stats.bat.committed,false,'releasing a block after a fast hand does not swing');
-const touchFlow=await boot('eco',null,{coarse:true});touchFlow.get('start-button').click();touchFlow.pump();
-touchFlow.pointer('pointerdown',{pointerType:'touch'});touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});touchFlow.pump(30);
-assert.equal(touchFlow.stats.bat.attempted,false,'a tap does not swing in Flow');
-touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:640,clientY:400});touchFlow.hand({x:640,y:400},{x:640,y:400},.2,{pointerType:'touch',buttons:1});
-touchFlow.hand({x:640,y:400},{x:640,y:60},.12,{pointerType:'touch',buttons:1});
-assert.equal(touchFlow.stats.bat.committed,true,'a touch swipe from a rest swings');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});touchFlow.pump(240);
-assert.equal(touchFlow.stats.bat.phase,'guard');
-// A finger put down somewhere new, above where the last one lifted, is not a push; nor is a swipe that starts without resting.
-touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:640,clientY:20});touchFlow.hand({x:640,y:20},{x:640,y:20},.05,{pointerType:'touch',buttons:1});
-assert.ok(!['load','swing','follow'].includes(touchFlow.stats.bat.phase)&&touchFlow.stats.bat.pose.z>0,'a new touch starts a fresh hand');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});touchFlow.pump(30);
-touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:640,clientY:400});touchFlow.hand({x:640,y:400},{x:640,y:60},.12,{pointerType:'touch',buttons:1});
-assert.ok(!['load','swing','follow'].includes(touchFlow.stats.bat.phase),'a swipe straight from the touch, without resting, does not swing');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});
-passed('Flow: blocks stay held, taps do nothing, a touch swipe swings, and a new touch never reads as a push');
+// The complete interaction that a trigger/animation controller cannot support:
+// raise halfway, hold for a second, lower a little, lift again, then check a downswing.
+flow.hand({x:640,y:420},{x:680,y:180},.35);flow.pump(144);const raisedPose=physicalPose(flow);
+assert.ok(raisedPose.y>readyPose.y+.12,'raising the hand raises the visible blade');
+flow.pump(144);assert.ok(poseDistance(raisedPose,physicalPose(flow))<.01,'the backlift stays held instead of timing out or finishing');
+flow.hand({x:680,y:180},{x:675,y:240},.18);flow.pump(144);const loweredPose=physicalPose(flow);
+assert.ok(loweredPose.y<raisedPose.y-.02,'a small lowering movement changes the held backlift');
+flow.hand({x:675,y:240},{x:680,y:180},.18);flow.pump(144);const raisedAgain=physicalPose(flow);
+assert.ok(raisedAgain.y>loweredPose.y+.02,'the bat can lift again without a reset or new gesture');
+flow.hand({x:680,y:180},{x:620,y:360},.18);const checkedPose=physicalPose(flow);
+flow.hand({x:620,y:360},{x:680,y:180},.18);flow.pump(144);const reversedPose=physicalPose(flow);
+assert.ok(reversedPose.y>checkedPose.y+.05,'reversing halfway through the downswing reverses the bat');
+assert.equal(flow.stats.bat.committed,false);assert.equal(flow.stats.bat.phase,'direct');assert.equal(flow.window.cricsim.stroke.moving,false);
+const displayed=flow.view.project(reversedPose);
+assert.ok(Math.abs(parseFloat(flow.get('reticle').style.left)-displayed.x)<.01&&Math.abs(parseFloat(flow.get('reticle').style.top)-displayed.y)<.01,'the guide follows the current blade, not a future contact pose');
+passed('Flow: backlift, silent hold, small correction, lift, downswing and reversal remain under continuous hand control');
+
+flow.get('next-button').click();assert.equal(flow.window.cricsim.phase,'runup');assert.equal(flow.window.cricsim.stroke.engaged,true);assert.equal(flow.stats.bat.pose.active,true,'bowling preserves an already-held physical guard');
+flow.pump(20);assert.ok(poseDistance(reversedPose,physicalPose(flow))<.01,'the run-up does not reset a held bat');
+flow.pointer('pointerdown',{button:2,buttons:2,clientX:680,clientY:180});flow.pump(20);assert.equal(flow.stats.bat.pose.defending,true);
+flow.pointer('pointerup',{button:2,clientX:680,clientY:180});flow.pump(20);
+assert.equal(flow.stats.bat.pose.defending,false);assert.equal(flow.stats.bat.pose.active,true,'releasing a block returns to direct physical control');
+flow.intent('defend');assert.equal(flow.window.cricsim.stroke.engaged,true,'changing the face intent preserves a still hand');flow.pump(240);
+assert.equal(flow.stats.bat.pose.defending,true,'Defend intent supplies soft hands without a held button');assert.equal(flow.stats.bat.pose.active,true);
+passed('Flow: bowling keeps the bat engaged; right-click and Defend change soft hands without taking over its movement');
+
+for(const stop of ['pointerleave','pause','blur','settings']){
+  const direct=await boot('high');direct.get('start-button').click();direct.pump();direct.pointer('pointermove',{buttons:0,clientY:420});direct.pump(240);
+  direct.hand({x:640,y:420},{x:680,y:180},.1);const atStop=physicalPose(direct);
+  if(stop==='pause')direct.get('pause-button').click();else if(stop==='blur')direct.window.dispatch('blur');else if(stop==='settings')direct.get('settings-button').click();else direct.pointer('pointerleave');
+  assert.equal(direct.window.cricsim.stroke.engaged,false,`${stop} ends physical input`);assert.equal(direct.stats.bat.pose.active,false);
+  if(stop==='pause'||stop==='blur')direct.get('resume-button').click();else if(stop==='settings')direct.get('close-setup').click();
+  direct.pump(180);assert.ok(poseDistance(atStop,physicalPose(direct))<1e-9,`${stop} freezes the blade without an automatic finish`);assert.equal(direct.stats.bat.pose.active,false);
+  direct.pointer('pointerenter');direct.pointer('pointermove',{buttons:0,clientX:400,clientY:400});direct.pump(1);
+  assert.equal(direct.stats.bat.pose.active,false,'re-entering at another point cannot hit during acquisition');direct.pump(240);assert.equal(direct.stats.bat.pose.active,true);
+}
+passed('Flow: pointer exit, pause, blur and panels freeze movement safely; reacquisition cannot sweep into a ghost hit');
+
+for(const stop of ['pointerup','pointercancel','lostpointercapture']){
+  const touchFlow=await boot('high',null,{coarse:true});touchFlow.get('start-button').click();touchFlow.pump();
+  touchFlow.pointer('pointerdown',{pointerType:'touch',clientY:420});assert.equal(touchFlow.get('game').hasPointerCapture(1),true);touchFlow.pump(240);
+  touchFlow.hand({x:640,y:420},{x:680,y:180},.1,{pointerType:'touch',buttons:1});
+  touchFlow.pointer('pointerup',{pointerType:'touch',pointerId:2,isPrimary:false,buttons:0});assert.equal(touchFlow.window.cricsim.stroke.engaged,true,'a secondary touch cannot release the primary hand');
+  const atStop=physicalPose(touchFlow);
+  if(stop==='lostpointercapture')touchFlow.get('game').releasePointerCapture(1);else touchFlow.pointer(stop,{pointerType:'touch',buttons:0});
+  assert.equal(touchFlow.get('game').hasPointerCapture(1),false);assert.equal(touchFlow.window.cricsim.stroke.engaged,false);assert.equal(touchFlow.stats.bat.pose.active,false);
+  touchFlow.pump(240);assert.ok(poseDistance(atStop,physicalPose(touchFlow))<1e-9,`${stop} stops touch movement without completing the shot`);
+  touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:400,clientY:400});touchFlow.pump(1);assert.equal(touchFlow.stats.bat.pose.active,false);touchFlow.pump(240);assert.equal(touchFlow.stats.bat.pose.active,true);
+}
+passed('Flow: touch release and cancellation freeze the bat, secondary touches cannot interfere, and a new touch reacquires safely');
+
+const heldBlade=await boot('high');heldBlade.get('start-button').click();heldBlade.pump();
+// This fixed pointer places the real blade on the seeded off-stump delivery.
+// There are no pointer samples or buttons during the run-up or ball flight.
+heldBlade.pointer('pointermove',{buttons:0,clientX:832,clientY:576});heldBlade.pump(240);
+assert.equal(heldBlade.stats.bat.pose.active,true);heldBlade.get('next-button').click();heldBlade.pump(600);
+assert.equal(heldBlade.window.cricsim.phase,'result');assert.equal(heldBlade.window.cricsim.ball.hit,true,'a stationary physical bat blocks the real delivery without a swing gesture');
+assert.equal(heldBlade.get('feedback-timing-label').textContent,'Contact');assert.equal(heldBlade.get('feedback-timing').textContent,'Held bat');assert.equal(heldBlade.stats.bat.committed,false);
+passed('Flow: a still, button-free bat actually contacts a seeded delivery and receives physical contact feedback');
 
 standard.get('start-button').click();standard.pump();
 standard.pointer('pointerdown');standard.pointer('pointerup');
@@ -204,7 +243,7 @@ passed('pause, blur, pointer cancellation, mode, intent and settings changes can
 standard.setting('batting-mode','standard');standard.intent('grounded');standard.pointer('pointerdown',{button:2,buttons:2});standard.pump(60);
 assert.equal(standard.stats.bat.defending,true);assert.equal(standard.stats.bat.pose.active,true);assert.equal(standard.stats.bat.progress,0);
 standard.pointer('pointerup',{button:2});standard.pump(2);assert.equal(standard.stats.bat.defending,false);assert.equal(standard.stats.bat.pose.active,false);
-const touch=await boot('eco',null,{coarse:true});touch.get('start-button').click();touch.pump();touch.intent('defend');touch.pointer('pointerdown',{pointerType:'touch'});touch.pump(60);
+const touch=await boot('eco','standard',{coarse:true});touch.get('start-button').click();touch.pump();touch.intent('defend');touch.pointer('pointerdown',{pointerType:'touch'});touch.pump(60);
 assert.equal(touch.stats.bat.defending,true);assert.equal(touch.stats.bat.pose.active,true);assert.equal(touch.stats.bat.progress,0);
 touch.pointer('pointerdown',{pointerId:2,pointerType:'touch',isPrimary:false});touch.pointer('pointerup',{pointerId:2,pointerType:'touch',isPrimary:false});assert.equal(touch.stats.bat.defending,true,'a secondary touch cannot release the primary block');
 touch.pointer('pointerup',{pointerType:'touch'});touch.pump(2);assert.equal(touch.stats.bat.pose.active,false);passed('right-click defence and touch Defend remain held blocks; release and secondary-touch handling are correct');

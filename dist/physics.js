@@ -18,7 +18,7 @@ export const BOWLERS = {
 // Ball-to-ball pace spread in km/h (one standard deviation). Real bowlers vary a
 // few km/h between deliveries; a mixed bag adds the occasional slower ball.
 export const PACE_SPREADS = { none: 0, slight: 2, natural: 4, mixed: 7 };
-export const DEFAULTS = { bowler: 'fast', arm: 'right', wicket: 'over', speed: 140, pitch: 'hard', length: 'good', line: 'off', weather: 'clear', wind: 0, age: 8, timeScale: 1, auto: false, guide: true, hand: 'right', audio: true, swipe: 'standard', speedSpread: 'none', trigger: 'normal' };
+export const DEFAULTS = { bowler: 'fast', arm: 'right', wicket: 'over', speed: 140, pitch: 'hard', length: 'good', line: 'off', weather: 'clear', wind: 0, age: 8, timeScale: 1, auto: false, guide: true, hand: 'right', audio: true, swipe: 'standard', speedSpread: 'none' };
 const lengths = { yorker: -0.65, full: -2.1, good: -4.0, short: -7.0 };
 const lines = { leg: -0.25, middle: 0, off: 0.30, wide: 0.70 };
 export const clamp = (x, min, max) => Math.max(min, Math.min(max, x));
@@ -99,6 +99,7 @@ const dot = (a, b) => a.x*b.x+a.y*b.y+a.z*b.z;
 const subtract = (a,b) => ({x:a.x-b.x,y:a.y-b.y,z:a.z-b.z});
 // Swept sphere against a moving, oriented finite bat face. No frame tunnelling.
 export function batContact(from, to, bat, oldBat = bat) {
+  if (bat.direct) return directBatContact(from, to, bat, oldBat);
   const { n, w, u } = batBasis(bat);
   const oldBasis=batBasis(oldBat);
   const oldRel = subtract(from, oldBat), rel = subtract(to, bat);
@@ -109,6 +110,67 @@ export function batContact(from, to, bat, oldBat = bat) {
   const y=dot(oldRel,oldBasis.u)+(dot(rel,u)-dot(oldRel,oldBasis.u))*t;
   if (Math.abs(x) > 0.054+BALL.radius || Math.abs(y) > 0.31+BALL.radius) return null;
   return { x, y, t, normal: n, edge: Math.abs(x) > 0.047, quality: clamp(1-Math.abs(x)/0.11-Math.abs(y+0.035)/0.55,0.05,1) };
+}
+
+// Direct control can bring either face, an edge or the toe onto the ball. Sweep
+// a sphere against the entire finite blade, not just a front-face crossing.
+// At the 240 Hz physics step the endpoints are expressed in the moving blade's
+// frame; between crossings of box planes the squared separation is quadratic.
+// Solving those pieces catches lateral entry and rounded corners without
+// enlarging the blade or depending on an attack/animation state.
+function directBatContact(from, to, bat, oldBat) {
+  const old = batBasis(oldBat), current = batBasis(bat);
+  const a = subtract(from, oldBat), b = subtract(to, bat);
+  const start = [dot(a, old.w), dot(a, old.u), dot(a, old.n)];
+  const end = [dot(b, current.w), dot(b, current.u), dot(b, current.n)];
+  const velocity = end.map((value, i) => value - start[i]);
+  const half = [.054, .31, .018], cuts = [0, 1];
+  for (let i = 0; i < 3; i++) if (Math.abs(velocity[i]) > 1e-12) {
+    for (const side of [-1, 1]) {
+      const t = (side * half[i] - start[i]) / velocity[i];
+      if (t > 0 && t < 1) cuts.push(t);
+    }
+  }
+  cuts.sort((x, y) => x - y);
+  let time = null;
+  for (let part = 1; part < cuts.length; part++) {
+    const lo = cuts[part - 1], hi = cuts[part], mid = (lo + hi) / 2;
+    let A = 0, B = 0, C = -(BALL.radius ** 2);
+    for (let i = 0; i < 3; i++) {
+      const q = start[i] + velocity[i] * mid;
+      if (Math.abs(q) <= half[i]) continue;
+      const offset = start[i] - Math.sign(q) * half[i];
+      A += velocity[i] ** 2; B += 2 * velocity[i] * offset; C += offset ** 2;
+    }
+    if ((A * lo + B) * lo + C <= 1e-12) { time = lo; break; }
+    if (A < 1e-18) continue;
+    const discriminant = B * B - 4 * A * C;
+    if (discriminant < 0) continue;
+    const root = (-B - Math.sqrt(discriminant)) / (2 * A);
+    if (root >= lo - 1e-10 && root <= hi + 1e-10) { time = clamp(root, lo, hi); break; }
+  }
+  if (time === null) return null;
+  const q = start.map((value, i) => value + velocity[i] * time);
+  const point = q.map((value, i) => clamp(value, -half[i], half[i]));
+  let normal = q.map((value, i) => value - point[i]);
+  let length = Math.hypot(...normal);
+  if (length < 1e-10) {
+    // An already overlapping ball only responds when travelling farther into
+    // its nearest surface. Do not manufacture a hit as it separates.
+    const axis = half.map((value, i) => value - Math.abs(q[i])).reduce((best, value, i, values) => value < values[best] ? i : best, 0);
+    normal = [0, 0, 0]; normal[axis] = Math.sign(q[axis]) || -Math.sign(velocity[axis]) || 1;
+    length = 1; point[axis] = normal[axis] * half[axis];
+  }
+  normal = normal.map(value => value / length);
+  if (normal.reduce((sum, value, i) => sum + value * velocity[i], 0) >= -1e-12) return null;
+  const pose = {};
+  for (const key of ['yaw', 'loft', 'roll']) pose[key] = (oldBat[key] || 0) + ((bat[key] || 0) - (oldBat[key] || 0)) * time;
+  const basis = batBasis(pose), worldNormal = {};
+  for (const axis of ['x', 'y', 'z']) worldNormal[axis] = basis.w[axis] * normal[0] + basis.u[axis] * normal[1] + basis.n[axis] * normal[2];
+  const [x, y, depth] = point;
+  return { x, y, depth, t: time, normal: worldNormal,
+    edge: Math.abs(x) > .047 || Math.abs(normal[1]) > .5,
+    quality: clamp(1 - Math.abs(x) / .11 - Math.abs(y + .035) / .55, .05, 1) };
 }
 // Closest approach over a physics step, using the same moving blade frame as
 // contact detection. Sampling only the step's endpoint can overstate a near miss.
@@ -147,18 +209,34 @@ export function stepDelivery(d, config, dt = DT, bat = null, oldBat = bat) {
       const currentBasis=batBasis(bat),previousBasis=batBasis(oldBat);
       const batVelocity={};
       for(const axis of ['x','y','z']){
-        const now=bat[axis]+currentBasis.w[axis]*contact.x+currentBasis.u[axis]*contact.y;
-        const before=oldBat[axis]+previousBasis.w[axis]*contact.x+previousBasis.u[axis]*contact.y;
-        batVelocity[axis]=(now-before)/dt;
+        const now=bat[axis]+currentBasis.w[axis]*contact.x+currentBasis.u[axis]*contact.y+currentBasis.n[axis]*(contact.depth||0);
+        const before=oldBat[axis]+previousBasis.w[axis]*contact.x+previousBasis.u[axis]*contact.y+previousBasis.n[axis]*(contact.depth||0);
+        // Practice tempo slows the ball clock, not the player's hand. Direct
+        // tracking advances in real seconds, so use real hand speed at impact
+        // rather than granting extra shot power at half-speed practice.
+        batVelocity[axis]=(now-before)/dt*(bat.direct ? bat.motionTimeScale ?? 1 : 1);
       }
       const relV = subtract(d.v,batVelocity), vn = dot(relV,n);
-      const cor = bat.defending ? 0.13 : contact.edge ? 0.32 : 0.45+contact.quality*0.17;
-      d.v.x -= (1+cor)*vn*n.x; d.v.y -= (1+cor)*vn*n.y; d.v.z -= (1+cor)*vn*n.z;
-      if (contact.edge) d.v.x += (contact.x>0?1:-1)*incoming*0.30;
-      d.p.x += n.x*0.065; d.p.y += n.y*0.065; d.p.z += n.z*0.065;
-      d.hit = true; d.contact = contact; d.exitSpeed = Math.hypot(d.v.x,d.v.y,d.v.z)*3.6;
-      d.contactTime=d.time;
-      events.push({type:'contact',quality:contact.quality,edge:contact.edge,exitSpeed:d.exitSpeed});
+      // A rotating corner's linear sweep approximation can find a grazing
+      // overlap while the actual surface is separating. Contact cannot pull
+      // the ball back into the bat or count such a graze as a played shot.
+      if (!bat.direct || vn < -1e-8) {
+        const cor = bat.defending ? 0.13 : contact.edge ? 0.32 : 0.45+contact.quality*0.17;
+        d.v.x -= (1+cor)*vn*n.x; d.v.y -= (1+cor)*vn*n.y; d.v.z -= (1+cor)*vn*n.z;
+        if (contact.edge && !bat.direct) d.v.x += (contact.x>0?1:-1)*incoming*0.30;
+        if (bat.direct) {
+          // Finish the substep from the actual impact with the new velocity.
+          // A fixed nudge of the pre-impact endpoint can otherwise put a fast
+          // forward stroke's ball behind the blade for an entire frame.
+          for (const axis of ['x', 'y', 'z']) d.p[axis] = from[axis] + (d.p[axis] - from[axis]) * contact.t
+            + d.v[axis] * dt * (1 - contact.t) + n[axis] * .0001;
+        } else {
+          d.p.x += n.x*0.065; d.p.y += n.y*0.065; d.p.z += n.z*0.065;
+        }
+        d.hit = true; d.contact = contact; d.exitSpeed = Math.hypot(d.v.x,d.v.y,d.v.z)*3.6;
+        d.contactTime=bat.direct ? d.time - dt * (1 - contact.t) : d.time;
+        events.push({type:'contact',quality:contact.quality,edge:contact.edge,exitSpeed:d.exitSpeed});
+      }
     }
   }
   // Nearest the ball came to the blade while it was in the batting zone: where

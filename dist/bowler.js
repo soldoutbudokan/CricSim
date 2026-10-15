@@ -53,8 +53,9 @@ function loft(rings, segments = 14, arc = TAU, start = 0, sculpt) {
 }
 // Folds change the actual cloth silhouette and its normals. Their height drifts
 // around the body, so cloth gathers under tension instead of forming rigid rings.
-function cloth(rings, segments, folds, gather = 0) {
+function cloth(rings, segments, folds, gather = 0, shape) {
   const g = loft(rings, segments, TAU, 0, ([x, y, z], a) => {
+    if (shape) [x, y, z] = shape([x, y, z], a);
     let displacement = 0;
     for (const [height, width, depth, tilt = 0] of folds) {
       const d = (y - height - Math.sin(a * 2 + .7) * tilt) / width;
@@ -64,6 +65,37 @@ function cloth(rings, segments, folds, gather = 0) {
     return [x + x / radius * displacement, y + gather * Math.cos(a * 3 + .4), z + z / radius * displacement];
   });
   return tone(g, (x, y, z) => .97 + .03 * Math.sin(y * 31 + x * 16 + z * 11));
+}
+// A chest has a broad front, narrow waist and shoulder blades, rather than the
+// circular highlights of a cylinder. Cloth follows those larger underlying forms.
+function shirtSurface([x, y, z], a) {
+  const chest = Math.exp(-(((y - .36) / .16) ** 2));
+  const front = Math.max(0, Math.cos(a)), back = Math.max(0, -Math.cos(a));
+  x *= 1 + .055 * chest * Math.abs(Math.cos(a));
+  z += .016 * chest * front * Math.sin(a) ** 2 - .009 * chest * back * Math.sin(a * 2) ** 2;
+  z -= .004 * Math.exp(-((x / .025) ** 2)) * chest * front;
+  return [x, y, z];
+}
+// Nose, cheekbones, eye sockets and chin belong to the same skin surface. This
+// prevents separate shiny beads from reading as a toy face in the menu close-up.
+function faceSurface() {
+  const gauss = (x, center, width) => Math.exp(-(((x - center) / width) ** 2));
+  const g = loft([
+    [-.105, .018, .022, .038], [-.095, .035, .042, .033], [-.078, .052, .059, .021],
+    [-.058, .064, .069, .014], [-.042, .07, .077, .008], [-.026, .074, .084, .004],
+    [-.012, .077, .089, .001], [.006, .079, .093, -.002], [.024, .078, .094, -.004],
+    [.042, .077, .095, -.005], [.061, .077, .094, -.007], [.082, .075, .091, -.008],
+    [.111, .067, .082, -.011], [.138, .048, .061, -.014], [.153, .001, .001, -.016],
+  ], 32, TAU, 0, ([x, y, z], a) => {
+    const front = Math.max(0, Math.cos(a)) ** 8;
+    const nose = .023 * gauss(x, 0, .012) * gauss(y, -.018, .025) + .011 * gauss(x, 0, .010) * gauss(y, .020, .042);
+    const cheeks = .010 * gauss(Math.abs(x), .041, .018) * gauss(y, -.009, .023);
+    const sockets = -.011 * gauss(Math.abs(x), .032, .015) * gauss(y, .025, .013);
+    const mouth = .004 * gauss(x, 0, .023) * gauss(y, -.055, .011);
+    const chin = .007 * gauss(x, 0, .022) * gauss(y, -.082, .018);
+    return [x, y, z + front * (nose + cheeks + sockets + mouth + chin)];
+  });
+  return tone(g, (x, y, z) => 1 - .08 * gauss(Math.abs(x), .031, .018) * gauss(y, .025, .017) * Math.max(0, z / .09));
 }
 function tone(g, sample) {
   const p = g.attributes.position, tones = [];
@@ -114,11 +146,12 @@ function piping(a, b, radius, color, rough = R.cloth) {
 // capsule joints of the old hands and leaves room in the budget for cloth folds.
 function finger(points, radius, color) {
   const path = new THREE.CatmullRomCurve3(points.map(p => new THREE.Vector3(...p)));
-  const g = new THREE.TubeGeometry(path, 5, radius, 6, false), p = g.attributes.position;
+  const steps = 8, g = new THREE.TubeGeometry(path, steps, radius, 6, false), p = g.attributes.position;
   const center = new THREE.Vector3();
-  for (let ring = 0; ring <= 5; ring++) {
-    path.getPointAt(ring / 5, center);
-    const taper = ring === 5 ? .12 : ring === 4 ? .8 : ring === 0 ? .88 : 1;
+  for (let ring = 0; ring <= steps; ring++) {
+    const t = ring / steps;
+    path.getPointAt(t, center);
+    const taper = t > .8 ? Math.sqrt(Math.max(0, 1 - ((t - .8) / .2) ** 2)) : ring === 0 ? .88 : 1;
     for (let i = 0; i <= 6; i++) {
       const k = ring * 7 + i;
       p.setXYZ(k, center.x + (p.getX(k) - center.x) * taper, center.y + (p.getY(k) - center.y) * taper, center.z + (p.getZ(k) - center.z) * taper);
@@ -129,23 +162,39 @@ function finger(points, radius, color) {
 function shoeGeometry() {
   // Model a running shoe along its length: fitted heel, low toe box, raised
   // tongue and separate outsole, all in a single mesh including the laces.
-  const shoe = (shrink, bottom, top, color, rough) => {
-    const g = loft([
-      [-.115, .009, .012, 0], [-.103, .045, .033, .002], [-.07, .06, .042, .004],
-      [.025, .064, .045, -.002], [.12, .058, .026, -.018], [.175, .043, .02, -.024], [.19, .008, .008, -.025],
-    ], 12);
+  const shoe = (shrink, bottom, thickness, color, rough, upper = false) => {
+    // Every layer shares its contact plane with the next. The former scaled
+    // ellipses left 2–3 cm of daylight between upper, midsole and outsole.
+    const stations = [[-.115, .004, .022], [-.103, .043, .103], [-.07, .057, .114], [.025, .062, .090], [.12, .058, .051], [.175, .042, .034], [.19, .004, .012]];
+    const g = loft(stations.map(([z, width, height]) => {
+      const h = upper ? height : thickness;
+      return [z, width * shrink, h / 2, bottom + h / 2];
+    }), 12);
     // Convert y-axis stations into z and remap ring depth into shoe height.
     const p = g.attributes.position;
-    for (let i = 0; i < p.count; i++) { const x = p.getX(i), z = p.getY(i), y = p.getZ(i); p.setXYZ(i, x * shrink, bottom + (y + .05) * top, z); }
+    const soleX = [0, .6, .97, 1, 1, .97, 0, -.97, -1, -1, -.97, -.6, 0];
+    for (let i = 0; i < p.count; i++) {
+      const ring = Math.floor(i / 13), j = i % 13, [z, width, height] = stations[ring];
+      const a = j / 12 * TAU, c = Math.cos(a);
+      if (upper) {
+        // Flatten the lasting board: an elliptical underside lifts away from
+        // the sole near its edges, even when their centres overlap.
+        p.setXYZ(i, p.getX(i), bottom + height * (c < 0 ? .025 * (1 + c) : .025 + .975 * c), z);
+      } else {
+        const edge = Math.min(.002, thickness / 4);
+        const profile = [thickness, thickness, thickness, thickness - edge, edge, 0, 0, 0, edge, thickness - edge, thickness, thickness, thickness];
+        p.setXYZ(i, width * shrink * soleX[j], bottom + profile[j], z);
+      }
+    }
     // This coordinate swap reverses orientation.
     for (let i = 0; i < g.index.count; i += 3) { const v = g.index.getX(i + 1); g.index.setX(i + 1, g.index.getX(i + 2)); g.index.setX(i + 2, v); }
     g.computeVertexNormals(); return [g, color, undefined, rough];
   };
-  const parts = [shoe(1.05, -.154, .3, C.sole, R.sole), shoe(1.04, -.141, .4, C.white, R.sole), shoe(1, -.118, 1, C.white, R.shoe), oval(0, -.032, -.032, .042, .054, .065, C.dark, -.3, R.cloth, 10)];
+  const parts = [shoe(1.04, -.159, .016, C.sole, R.sole), shoe(1.04, -.146, .025, C.white, R.sole), shoe(1, -.126, 0, C.white, R.shoe, true), oval(0, -.036, -.032, .035, .040, .052, C.dark, -.3, R.cloth, 8)];
   // Tread meets the pitch at the ankle target; the shoes no longer float above it.
   for (const z of [-.064, .04, .123]) parts.push(box(0, -.16, z, z > .1 ? .083 : .106, .01, .022, C.sole, 0, R.sole));
   // Toe cap and heel counter in the club colour, then laces across the tongue.
-  parts.push(oval(0, -.094, .145, .042, .018, .05, C.panel, -.15, R.shoe, 10), oval(0, -.069, -.095, .047, .04, .024, C.panel, .1, R.shoe, 10));
+  parts.push(oval(0, -.094, .145, .042, .018, .05, C.panel, -.15, R.shoe, 8), oval(0, -.069, -.095, .047, .04, .024, C.panel, .1, R.shoe, 8));
   parts.push(box(0, -.015, -.082, .02, .041, .009, C.trim, 0, R.shoe));
   for (let i = 0; i < 4; i++) {
     const y = -.012 - i * .014, z = -.012 + i * .024;
@@ -153,8 +202,8 @@ function shoeGeometry() {
     parts.push(piping([.025, y, z], [-.025, y - .008, z + .017], .0024, C.white));
   }
   for (const side of [-1, 1]) {
-    parts.push(piping([side * .059, -.068, -.06], [side * .061, -.068, .057], .008, C.panel, R.shoe));
-    parts.push(piping([side * .061, -.068, .057], [side * .041, -.079, .112], .008, C.panel, R.shoe));
+    parts.push(piping([side * .058, -.102, -.06], [side * .059, -.108, .057], .004, C.panel, R.shoe));
+    parts.push(piping([side * .059, -.108, .057], [side * .050, -.103, .112], .004, C.panel, R.shoe));
   }
   const g = merge(parts); g.translate(0, .03, 0); return g;
 }
@@ -251,7 +300,7 @@ export function createBowler({ ballMaterial }) {
   // folded polo collar (open at the front), placket, buttons, badge and side panels.
   const collarArc = TAU * .78;
   mesh(merge([
-    [cloth([[.028, .148, .104], [.045, .153, .109], [.062, .155, .11], [.088, .157, .109], [.12, .158, .109], [.15, .162, .111], [.18, .167, .114], [.225, .176, .118], [.275, .185, .122], [.32, .195, .124], [.36, .203, .123], [.41, .208, .117], [.46, .204, .109], [.485, .188, .103], [.5, .165, .096], [.52, .118, .083], [.54, .085, .068], [.56, .066, .06]], 20, [[.062, .013, .007, .009], [.12, .019, -.005, .015], [.18, .027, .005, .013], [.32, .034, -.004, .028], [.45, .023, .004, .016]], .0015), C.shirt],
+    [cloth([[.028, .153, .105], [.045, .157, .110], [.062, .158, .111], [.088, .159, .109], [.12, .160, .110], [.15, .164, .113], [.18, .170, .117], [.225, .181, .122], [.275, .192, .125], [.32, .202, .126], [.36, .210, .124], [.41, .216, .118], [.46, .214, .108], [.485, .199, .100], [.5, .176, .092], [.52, .130, .078], [.54, .091, .065], [.56, .069, .059]], 20, [[.062, .013, .007, .009], [.12, .019, -.005, .015], [.18, .027, .005, .013], [.32, .034, -.004, .028], [.45, .023, .004, .016]], .0015, shirtSurface), C.shirt],
     [loft([[.486, .11, .117, .009], [.497, .103, .104, .009], [.514, .089, .083, .009], [.541, .068, .06, .005]], 16, collarArc, Math.PI - collarArc / 2), C.dark],
     box(0, .419, .123, .015, .132, .006, C.dark), box(0, .461, .127, .006, .006, .004, C.trim), box(0, .423, .128, .006, .006, .004, C.trim),
     oval(-.115, .364, .11, .022, .029, .004, C.trim, 0, R.cloth, 8), box(-.115, .369, .116, .006, .028, .002, C.panel),
@@ -271,11 +320,10 @@ export function createBowler({ ballMaterial }) {
   // ears, nose, lips, brows and eyes; hair under a peaked cap with a sweatband.
   const head = new THREE.Group(); head.position.set(0, .535, .005); body.add(head);
   const faceParts = [
-    [loft([[-.1, .028, .03, .045], [-.075, .058, .062, .025], [-.045, .07, .08, .012], [-.005, .076, .092, .002], [.04, .078, .095, -.002], [.08, .077, .092, -.006], [.115, .068, .083, -.01], [.14, .048, .06, -.014], [.153, .001, .001, -.016]], 20), C.skin, undefined, R.skin],
+    [faceSurface(), C.skin, undefined, R.skin],
     [tone(loft([[-.196, .064, .058, -.004], [-.168, .052, .05, -.004], [-.135, .047, .05, -.006], [-.105, .046, .052, -.006], [-.082, .049, .055, -.004], [-.039, .047, .059, -.013]], 14), (x, y, z) => 1 - .08 * Math.exp(-(((y + .095) / .023) ** 2))), C.skin, undefined, R.skin],
-    oval(0, -.012, .098, .012, .027, .015, C.skin, -.1, R.skin, 10), oval(0, -.038, .093, .017, .008, .01, C.shade, 0, R.skin, 8),
-    oval(0, -.056, .089, .021, .006, .007, C.lip, 0, R.skin, 8), oval(0, -.057, .093, .017, .0015, .004, C.shade, 0, R.skin, 8),
-    oval(0, -.088, .06, .026, .012, .016, C.skin, .2, R.skin, 8),
+    oval(0, -.055, .092, .018, .0024, .002, C.lip, 0, R.skin, 8),
+    oval(-.008, -.033, .102, .0035, .0016, .0015, C.shade, 0, R.skin, 6), oval(.008, -.033, .102, .0035, .0016, .0015, C.shade, 0, R.skin, 6),
     // Hair shows beneath the cap band at the temples, over the ears and down the nape.
     [warpRing(loft([[.062, .083, .099, -.005], [.04, .082, .098, -.006], [.024, .079, .095, -.008]], 22, TAU * .62, TAU * .19), 2, 22, a => .05 * Math.max(0, -Math.cos(a)) ** 2), C.hair, undefined, R.hair],
     // Cap: sweatband, six-panel crown with a button, and a curved peak as a closed shell.
@@ -287,8 +335,8 @@ export function createBowler({ ballMaterial }) {
   ];
   for (const side of [-1, 1]) {
     faceParts.push(oval(side * .083, .006, -.012, .011, .028, .019, C.skin, 0, R.skin, 8), oval(side * .085, .004, -.012, .006, .017, .011, C.shade, 0, R.skin, 8));
-    faceParts.push(oval(side * .034, .022, .085, .024, .011, .012, C.shade, 0, R.skin, 8), oval(side * .033, .024, .0905, .0135, .007, .006, C.white, 0, R.eye, 8), oval(side * .032, .024, .0945, .0055, .0055, .0035, C.eye, 0, R.eye, 8));
-    faceParts.push(oval(side * .036, .044, .088, .022, .005, .006, C.hair, side * .18, R.hair, 8));
+    faceParts.push(oval(side * .032, .024, .0805, .011, .0038, .003, '#cbbcac', 0, R.eye, 8), oval(side * .031, .024, .083, .004, .0038, .0014, C.eye, 0, R.eye, 8));
+    faceParts.push(oval(side * .033, .043, .085, .019, .0028, .003, C.hair, side * .14, R.hair, 8));
   }
   const faceGeometry = merge(faceParts); faceGeometry.translate(0, .167, 0);
   mesh(faceGeometry, head, 'Sculpted face and cap');
@@ -298,7 +346,7 @@ export function createBowler({ ballMaterial }) {
     const pivot = new THREE.Group(); pivot.position.set(side * .192, .468, 0); body.add(pivot);
     // Deltoid domed over the joint, sleeve to a trimmed hem, upper arm with a biceps swell.
     mesh(merge([
-      [cloth([[.032, .01, .012, -.004], [.018, .04, .044, -.004], [-.005, .054, .056, -.002], [-.04, .056, .056], [-.08, .054, .054], [-.115, .051, .051], [-.14, .049, .049], [-.17, .047, .047], [-.194, .046, .046]], 14, [[-.11, .022, .004, .01], [-.17, .014, -.002, .005]]), C.shirt],
+      [cloth([[.034, .027, .030, -.004], [.018, .047, .048, -.004], [-.005, .058, .058, -.002], [-.04, .058, .057], [-.08, .055, .054], [-.115, .051, .051], [-.14, .049, .049], [-.17, .047, .047], [-.194, .046, .046]], 14, [[-.11, .022, .004, .01], [-.17, .014, -.002, .005]]), C.shirt],
       [loft([[-.18, .048, .048], [-.188, .047, .047]], 14), C.trim],
       [loft([[-.188, .047, .047], [-.202, .045, .045]], 14), C.dark],
       [tone(loft([[-.192, .041, .041, -.001], [-.228, .044, .042, .003], [-.253, .042, .039, .004], [-.28, .038, .035, .001], [-.3, .035, .033, -.001], [-.316, .033, .032, -.002]], 12), (x, y, z) => 1 - .06 * Math.exp(-(((y + .295) / .022) ** 2))), C.skin, undefined, R.skin],
@@ -306,8 +354,7 @@ export function createBowler({ ballMaterial }) {
     const lower = new THREE.Group(); lower.position.y = -.307; pivot.add(lower);
     // Forearm tapering to the wrist, a flattened palm, four curled fingers and a thumb.
     const handParts = [
-      oval(0, -.003, 0, .044, .047, .042, C.skin, 0, R.skin, 10),
-      [loft([[.015, .024, .026], [0, .045, .042], [-.07, .048, .042], [-.16, .041, .036], [-.25, .032, .028], [-.3, .029, .025], [-.323, .029, .024]], 12), C.skin, undefined, R.skin],
+      [loft([[.032, .025, .025], [.018, .033, .032], [0, .037, .035, -.002], [-.04, .044, .038, -.002], [-.085, .046, .038, -.003], [-.16, .039, .032, -.003], [-.25, .031, .026], [-.3, .028, .024], [-.323, .029, .024]], 14), C.skin, undefined, R.skin],
       [loft([[-.317, .03, .025, 0], [-.34, .038, .021, .004], [-.36, .042, .018, .008], [-.373, .038, .016, .01], [-.38, .02, .011, .012]], 10), C.skin, undefined, R.skin],
     ];
     for (let i = 0; i < 4; i++) {
@@ -321,8 +368,8 @@ export function createBowler({ ballMaterial }) {
     mesh(merge(handParts), lower, 'Forearm and curled fingers');
     arms.push({ pivot, lower });
   }
-  const thighGeometry = merge([[cloth([[.032, .001, .001], [.022, .05, .055], [0, .092, .096], [-.07, .096, .099], [-.12, .095, .098], [-.2, .087, .09], [-.27, .078, .081], [-.34, .07, .073], [-.385, .066, .069], [-.425, .062, .066], [-.466, .063, .065]], 14, [[-.095, .03, .004, .027], [-.34, .025, -.003, .013], [-.425, .022, .006, .01]]), C.pants]]);
-  const shinGeometry = merge([oval(0, -.008, 0, .064, .06, .067, C.pants, 0, R.cloth, 10), [cloth([[.023, .04, .042], [0, .065, .068], [-.045, .064, .069], [-.085, .067, .067, -.003], [-.16, .062, .062, -.007], [-.23, .054, .053, -.004], [-.28, .049, .047], [-.34, .047, .043], [-.374, .045, .043], [-.403, .047, .045], [-.423, .048, .046], [-.445, .042, .04]], 14, [[-.045, .021, .004, .009], [-.34, .019, -.003, .007], [-.4, .017, .005, .006]]), C.pants], [loft([[-.423, .048, .046], [-.441, .045, .043]], 12), C.seam]]);
+  const thighGeometry = merge([[cloth([[.046, .065, .068], [.022, .084, .087], [0, .092, .094], [-.07, .096, .097], [-.12, .095, .098], [-.2, .087, .09], [-.27, .078, .081], [-.34, .07, .073], [-.385, .066, .069], [-.425, .062, .066], [-.466, .063, .065]], 14, [[-.095, .03, .004, .027], [-.34, .025, -.003, .013], [-.425, .022, .006, .01]]), C.pants]]);
+  const shinGeometry = merge([[cloth([[.048, .042, .043], [.025, .060, .061], [0, .064, .066], [-.045, .064, .069], [-.085, .067, .067, -.003], [-.16, .062, .062, -.007], [-.23, .054, .053, -.004], [-.28, .049, .047], [-.34, .047, .043], [-.374, .045, .043], [-.403, .047, .045], [-.423, .048, .046], [-.445, .042, .04]], 14, [[-.045, .021, .004, .009], [-.34, .019, -.003, .007], [-.4, .017, .005, .006]]), C.pants], [loft([[-.423, .048, .046], [-.441, .045, .043]], 12), C.seam]]);
   const footGeometry = shoeGeometry();
   const legs = [-1, 1].map(side => ({ side, upper: mesh(thighGeometry, group, 'Tailored thigh'), lower: mesh(shinGeometry, group, 'Trouser calf and cuff'), foot: mesh(footGeometry, group, 'Running shoe'), target: { z: 0, y: ANKLE, pitch: 0, dx: 0, yaw: 0, sx: 0, sz: 0 } }));
   // A foot pitches about its own side axis, then turns about the vertical, so a
