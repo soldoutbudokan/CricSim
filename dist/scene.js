@@ -384,8 +384,19 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   };
   for (const x of [-9.6, -3.1, 3.1, 9.6]) drapedSkirt(28, mat4(x + Math.sign(x) * .012, .015, -10, 0, Math.PI / 2));
   drapedSkirt(19.2, mat4(0, .015, -24.02));
-  const skirt = new THREE.Mesh(mergeGeometries(skirtParts), skirtMat); skirt.receiveShadow = true; scene.add(skirt);
+  const skirt = new THREE.Mesh(mergeGeometries(skirtParts), skirtMat); skirt.name = 'Draped windbreaks'; skirt.castShadow = true; skirt.receiveShadow = true; scene.add(skirt);
   const hems = new THREE.Mesh(mergeGeometries(hemParts), new THREE.MeshStandardMaterial({ color: '#244833', roughness: .95 })); hems.receiveShadow = true; scene.add(hems);
+  // Soft contact occlusion grounds the cloth even in Eco, without another
+  // screen-space pass. It only darkens the narrow strip touching the grass;
+  // the sun still supplies the much longer directional shadow above Eco.
+  const contactCanvas = makeCanvas(64, 16), contactContext = contactCanvas.getContext('2d');
+  const contactGradient = contactContext.createLinearGradient(0, 0, 64, 0);
+  for (const [offset, alpha] of [[0, 0], [.25, .12], [.46, .42], [.5, .52], [.54, .42], [.75, .12], [1, 0]]) contactGradient.addColorStop(offset, `rgba(15,28,13,${alpha})`);
+  contactContext.fillStyle = contactGradient; contactContext.fillRect(0, 0, 64, 16);
+  const skirtContactParts = [-9.6, -3.1, 3.1, 9.6].map(x => ({ g: new THREE.PlaneGeometry(.65, 28), m: mat4(x, .004, -10, -Math.PI / 2) }));
+  skirtContactParts.push({ g: new THREE.PlaneGeometry(.65, 19.2), m: mat4(0, .004, -24, -Math.PI / 2, 0, Math.PI / 2) });
+  const skirtContact = new THREE.Mesh(mergeGeometries(skirtContactParts), new THREE.MeshBasicMaterial({ map: texOf(contactCanvas, { srgb: true, clampEdge: true }), transparent: true, depthWrite: false, opacity: .65 }));
+  skirtContact.name = 'Windbreak contact shade'; scene.add(skirtContact);
   // Galvanised tube has irregular zinc bloom and broad, restrained reflections.
   const zinc = makeCanvas(128, 128), zx = zinc.getContext('2d'); zx.fillStyle = '#a5aaa5'; zx.fillRect(0, 0, 128, 128);
   noiseOn(zx, 128, 128, 950, () => `rgba(232,236,230,${.05 + rng() * .14})`, 2);
@@ -494,7 +505,55 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   props.push({ g: new THREE.CylinderGeometry(.02, .02, 1.14, 8), m: mat4(-17.4, .71, -32.45, 0, 0, Math.PI / 2), c: '#2e4d3a' });
   // Benches beside the lanes and a hedge behind the pavilion.
   for (const x of [-13.5, 13.5]) { for (let i = 0; i < 3; i++) deck.push({ g: new THREE.BoxGeometry(2.6, .05, .1), m: mat4(x, .48, -13.15 + i * .12) }); for (let j = 0; j < 2; j++) deck.push({ g: new THREE.BoxGeometry(2.6, .1, .05), m: mat4(x, .72 + j * .13, -13.32 - j * .035, -.25) }); for (const s of [-1, 1]) steel.push({ g: new THREE.BoxGeometry(.06, .46, .5), m: mat4(x + s * 1.2, .23, -13.05) }, { g: new THREE.BoxGeometry(.06, .45, .05), m: mat4(x + s * 1.2, .7, -13.3, -.25) }); }
-  const hedge = new THREE.Mesh(new THREE.BoxGeometry(40, 1.6, 1.6), new THREE.MeshStandardMaterial({ color: '#2f4a2a', roughness: 1, bumpMap: leatherBump(), bumpScale: .05 })); hedge.position.set(20, .8, -42.5); scene.add(hedge);
+  // A clipped hedge still has a soft crown and an irregular leaf silhouette.
+  // Model that continuous surface rather than stacking spheres or bumping a box;
+  // one closed mesh keeps the distant foliage cheap on every quality setting.
+  const hedgeRng = random(22719), hedgeRings = 161, hedgeSides = 20;
+  const hedgePositions = [], hedgeUvs = [], hedgeColors = [], hedgeIndices = [];
+  const hedgeColor = new THREE.Color(), hedgeDark = new THREE.Color('#8c9878'), hedgeLight = new THREE.Color('#ffffff');
+  for (let i = 0; i < hedgeRings; i++) {
+    const x = -20 + i * 40 / (hedgeRings - 1), end = Math.min(1, (20 - Math.abs(x)) / .65);
+    const endRound = .28 + .72 * Math.sqrt(Math.max(0, end));
+    const height = .81 + .055 * Math.sin(x * .81) + .035 * Math.sin(x * 2.3);
+    for (let j = 0; j <= hedgeSides; j++) {
+      const a = j / hedgeSides * TAU, sy = Math.sin(a), sz = Math.cos(a);
+      // Deterministic waves close the longitudinal seam exactly; finer leaves
+      // sit in the texture instead of becoming thousands of alpha cards.
+      const leafEdge = .025 * Math.sin(i * 2.19 + j / hedgeSides * TAU * 7) + .018 * Math.sin(i * 5.7 - j / hedgeSides * TAU * 4);
+      const y = Math.sign(sy) * Math.pow(Math.abs(sy), .55) * (height + leafEdge) * endRound;
+      const z = Math.sign(sz) * Math.pow(Math.abs(sz), .55) * (.8 + leafEdge) * endRound;
+      hedgePositions.push(x, y, z); hedgeUvs.push(i * .42, j / hedgeSides * 5);
+      hedgeColor.copy(hedgeDark).lerp(hedgeLight, clamp(.5 + sy * .36 + .08 * Math.sin(x * 1.7), 0, 1));
+      hedgeColors.push(hedgeColor.r, hedgeColor.g, hedgeColor.b);
+      if (i < hedgeRings - 1 && j < hedgeSides) {
+        const p = i * (hedgeSides + 1) + j, q = p + hedgeSides + 1;
+        hedgeIndices.push(p, q, p + 1, p + 1, q, q + 1);
+      }
+    }
+  }
+  for (const end of [0, hedgeRings - 1]) {
+    const center = hedgePositions.length / 3;
+    hedgePositions.push(end ? 20 : -20, 0, 0); hedgeUvs.push(0, 0); hedgeColors.push(hedgeDark.r, hedgeDark.g, hedgeDark.b);
+    for (let j = 0; j < hedgeSides; j++) { const p = end * (hedgeSides + 1) + j; hedgeIndices.push(center, end ? p + 1 : p, end ? p : p + 1); }
+  }
+  const hedgeGeo = new THREE.BufferGeometry();
+  hedgeGeo.setAttribute('position', new THREE.Float32BufferAttribute(hedgePositions, 3));
+  hedgeGeo.setAttribute('uv', new THREE.Float32BufferAttribute(hedgeUvs, 2));
+  hedgeGeo.setAttribute('color', new THREE.Float32BufferAttribute(hedgeColors, 3));
+  hedgeGeo.setIndex(hedgeIndices); hedgeGeo.computeVertexNormals();
+  const leafCanvas = makeCanvas(256, 256), leaves = leafCanvas.getContext('2d');
+  leaves.fillStyle = '#273c24'; leaves.fillRect(0, 0, 256, 256);
+  // Overlapping broad leaves have directional highlights, not leather-like noise.
+  for (let i = 0; i < 1450; i++) {
+    const x = hedgeRng() * 256, y = hedgeRng() * 256, angle = hedgeRng() * TAU, light = hedgeRng();
+    leaves.fillStyle = `rgb(${43 + light * 34},${63 + light * 39},${33 + light * 19})`;
+    for (const dx of [-256, 0, 256]) for (const dy of [-256, 0, 256]) {
+      leaves.beginPath(); leaves.ellipse(x + dx, y + dy, 3.2 + light * 2.2, 1.5 + light, angle, 0, TAU); leaves.fill();
+    }
+  }
+  const leafMap = texOf(leafCanvas, { srgb: true });
+  const hedge = new THREE.Mesh(hedgeGeo, new THREE.MeshStandardMaterial({ map: leafMap, vertexColors: true, roughness: .96 }));
+  hedge.name = 'Clipped leafy hedge'; hedge.position.set(20, .75, -42.5); hedge.castShadow = true; hedge.receiveShadow = true; scene.add(hedge);
   // Kit in the lanes: concrete footings under every net post, a ball bucket and kit bags at
   // the far end, cones in the neighbouring lanes, a water bottle. The bowler's marker disc is
   // its own mesh, placed at the start of whichever run-up the conditions choose.

@@ -8,7 +8,7 @@ import { CONTACT_Z, STANDARD_STROKE, SWING_TRIGGERS, createBatControl, moveBatTa
 
 export const RATE = 120, FRAME = 1 / 60, UP = { x: 0, y: 1 };
 
-export function hand(control, aim = { x: .1, y: .8 }, { timeScale = 1 } = {}) {
+export function hand(control, aim = { x: .1, y: .8 }, { timeScale = 1, sampleRate = RATE } = {}) {
   let t = 0, keys = new Set(), pos = { x: 0, y: 0 }, nextSample = 0, nextFrame = FRAME;
   setBatTimeScale(control, timeScale);
   const feed = (sx, sy) => { pos = { x: sx, y: sy }; moveBatTarget(control, aim.x + sx * 1.5, aim.y + sy * 1.5, { x: sx, y: sy }, t); };
@@ -21,7 +21,7 @@ export function hand(control, aim = { x: .1, y: .8 }, { timeScale = 1 } = {}) {
       const end = t + seconds;
       while (t < end - 1e-9) {
         t = Math.min(nextSample, nextFrame, end);
-        if (t >= nextSample - 1e-9) { const p = path(t); if (silent) pos = { x: p.x, y: p.y }; else feed(p.x, p.y); nextSample += 1 / RATE; }
+        if (t >= nextSample - 1e-9) { const p = path(t); if (silent) pos = { x: p.x, y: p.y }; else feed(p.x, p.y); nextSample += 1 / sampleRate; }
         if (t >= nextFrame - 1e-9) { onFrame?.(); for (let i = 0; i < Math.round(4 * timeScale); i++) { const old = stepBat(control, DT, keys); onStep?.(old); } nextFrame += FRAME; }
       }
     },

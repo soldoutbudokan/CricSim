@@ -20,6 +20,7 @@ async function boot(saved='eco',battingMode=null,{coarse=false}={}){
     dispatch(type,extra={}){const event={target:this,preventDefault(){},...extra};for(const fn of this.listeners.get(type)||[])fn(event);}
   }
   class Element extends Target{
+    capturedPointers=new Set();
     constructor(id='',tag='div'){
       super();this.id=id;this.tagName=tag.toUpperCase();this.dataset={};this.style={setProperty(k,v){this[k]=v;}};this.options=[];this.value='';this.min=0;this.max=100;this.textContent='';this.innerHTML='';this.children=[];this.attributes={};this.hidden=false;this.disabled=false;this.open=false;this.clientWidth=1280;this.clientHeight=720;this.offsetWidth=1280;
       const classes=new Set();this.classList={add:(...a)=>a.forEach(v=>classes.add(v)),remove:(...a)=>a.forEach(v=>classes.delete(v)),contains:v=>classes.has(v),toggle:(v,b)=>{b??=!classes.has(v);b?classes.add(v):classes.delete(v);return b;}};
@@ -31,9 +32,9 @@ async function boot(saved='eco',battingMode=null,{coarse=false}={}){
     focus(){document.activeElement=this;}
     querySelector(){return null;}
     getBoundingClientRect(){return {left:0,top:0,width:this.clientWidth,height:this.clientHeight};}
-    hasPointerCapture(){return false;}
-    releasePointerCapture(){}
-    setPointerCapture(){}
+    hasPointerCapture(id){return this.capturedPointers.has(id);}
+    releasePointerCapture(id){if(this.capturedPointers.delete(id))this.dispatch('lostpointercapture',{pointerId:id});}
+    setPointerCapture(id){this.capturedPointers.add(id);}
     showModal(){this.open=true;}
     close(){this.open=false;this.dispatch('close');}
     click(){assert.ok(!this.disabled,`${this.id} is enabled`);this.dispatch('click');}
@@ -55,7 +56,9 @@ async function boot(saved='eco',battingMode=null,{coarse=false}={}){
     getPerformanceInfo(){return {frames:stats.renders,quality:this.quality.id};},
   };
   class Audio {setEnabled(){}setWind(){}setSurface(){}unlock(){}play(){}setSuspended(v){stats.audioSuspended=v;}}
-  const context=vm.createContext({document,window,console:{...console,error:(...args)=>errors.push(args)},matchMedia:()=>({matches:coarse}),localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,String(v))},ResizeObserver:class{constructor(callback){this.callback=callback;resizeObservers.push(this);}observe(element){this.element=element;}},requestAnimationFrame:fn=>{const id=++seq;raf.set(id,fn);return id;},cancelAnimationFrame:id=>raf.delete(id),setTimeout:()=>++seq,clearTimeout:()=>{},Date,Math,Set,Map});
+  // The entrypoint seeds deliveries from Date.now(); keep live-ball outcomes reproducible.
+  class FixedDate extends Date {static now(){return 1700000000000;}}
+  const context=vm.createContext({document,window,console:{...console,error:(...args)=>errors.push(args)},matchMedia:()=>({matches:coarse}),localStorage:{getItem:k=>store.get(k)??null,setItem:(k,v)=>store.set(k,String(v))},ResizeObserver:class{constructor(callback){this.callback=callback;resizeObservers.push(this);}observe(element){this.element=element;}},requestAnimationFrame:fn=>{const id=++seq;raf.set(id,fn);return id;},cancelAnimationFrame:id=>raf.delete(id),setTimeout:()=>++seq,clearTimeout:()=>{},Date:FixedDate,Math,Set,Map});
   const modules=new Map();
   async function dependency(specifier){
     if(modules.has(specifier))return modules.get(specifier);
@@ -138,11 +141,15 @@ flow.hand({x:900,y:300},{x:900,y:0},.1,{buttons:2});assert.equal(flow.stats.bat.
 flow.pointer('pointerup',{button:2,clientX:900,clientY:0});flow.pump(2);assert.equal(flow.stats.bat.defending,false);assert.equal(flow.stats.bat.pose.active,false);
 flow.hand({x:900,y:0},{x:900,y:0},.3);assert.equal(flow.stats.bat.committed,false,'releasing a block after a fast hand does not swing');
 const touchFlow=await boot('eco',null,{coarse:true});touchFlow.get('start-button').click();touchFlow.pump();
-touchFlow.pointer('pointerdown',{pointerType:'touch'});touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});touchFlow.pump(30);
+touchFlow.pointer('pointerdown',{pointerType:'touch'});assert.equal(touchFlow.get('game').hasPointerCapture(1),true,'Flow captures a touch even though touching does not start an attack');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});touchFlow.pump(30);
 assert.equal(touchFlow.stats.bat.attempted,false,'a tap does not swing in Flow');
 touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:640,clientY:400});touchFlow.hand({x:640,y:400},{x:640,y:400},.2,{pointerType:'touch',buttons:1});
-touchFlow.hand({x:640,y:400},{x:640,y:60},.12,{pointerType:'touch',buttons:1});
-assert.equal(touchFlow.stats.bat.committed,true,'a touch swipe from a rest swings');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});touchFlow.pump(240);
+touchFlow.hand({x:640,y:400},{x:640,y:325},.05,{pointerType:'touch',buttons:1});
+assert.equal(touchFlow.stats.bat.committed,true,'a touch swipe from a rest swings');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0,clientY:325});
+assert.equal(touchFlow.get('game').hasPointerCapture(1),false);assert.equal(touchFlow.stats.bat.cancelled,false,'normal touch release and its lostpointercapture event preserve the committed swing');
+let touchCrossings=0,touchZ=touchFlow.stats.bat.pose.z,touchActive=false;
+for(let i=0;i<240;i++){touchFlow.pump();const p=touchFlow.stats.bat.pose;if(touchZ>-.22&&p.z<=-.22)touchCrossings++;touchZ=p.z;touchActive||=p.active;}
+assert.equal(touchCrossings,1,'a committed swipe crosses the contact plane once after the finger lifts');assert.equal(touchActive,true,'the released touch stroke remains able to hit');
 assert.equal(touchFlow.stats.bat.phase,'guard');
 // A finger put down somewhere new, above where the last one lifted, is not a push; nor is a swipe that starts without resting.
 touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:640,clientY:20});touchFlow.hand({x:640,y:20},{x:640,y:20},.05,{pointerType:'touch',buttons:1});
@@ -150,6 +157,64 @@ assert.ok(!['load','swing','follow'].includes(touchFlow.stats.bat.phase)&&touchF
 touchFlow.pointer('pointerdown',{pointerType:'touch',clientX:640,clientY:400});touchFlow.hand({x:640,y:400},{x:640,y:60},.12,{pointerType:'touch',buttons:1});
 assert.ok(!['load','swing','follow'].includes(touchFlow.stats.bat.phase),'a swipe straight from the touch, without resting, does not swing');touchFlow.pointer('pointerup',{pointerType:'touch',buttons:0});
 passed('Flow: blocks stay held, taps do nothing, a touch swipe swings, and a new touch never reads as a push');
+
+// Prepare with a real, short upward hand movement: 0.07 screen units at about
+// 2.8 units/s, short of the normal commitment distance. The next render is
+// still inside the settle timeout, so the visible state must match the blade.
+function prepareFlow(runtime,pointerType='mouse'){
+  const start={x:640,y:400},end={x:640,y:368.5},extra={pointerType,buttons:pointerType==='touch'?1:0};
+  const previousAttempt={attempted:runtime.stats.bat.attempted,committed:runtime.stats.bat.committed,cancelled:runtime.stats.bat.cancelled};
+  if(pointerType==='touch')runtime.pointer('pointerdown',{...extra,clientX:start.x,clientY:start.y});
+  runtime.hand(start,start,.2,extra);const target={...runtime.stats.bat.target};
+  runtime.hand(start,end,.025,extra);runtime.pump(1,1000/60);
+  assert.equal(runtime.stats.bat.preparing,true,'the short push prepares without committing');
+  assert.deepEqual({attempted:runtime.stats.bat.attempted,committed:runtime.stats.bat.committed,cancelled:runtime.stats.bat.cancelled},previousAttempt,'preparation neither commits a new attack nor erases an earlier attempt');assert.equal(runtime.stats.bat.pose.active,false);
+  assert.deepEqual(runtime.stats.bat.target,target,'preparation preserves the chosen contact point');
+  return end;
+}
+const preparation=await boot('high');preparation.get('start-button').click();preparation.pump();
+const preparedAt=prepareFlow(preparation);
+assert.equal(preparation.get('reticle').classList.contains('is-preparing'),true);assert.equal(preparation.get('bat-guide').classList.contains('is-preparing'),true);
+assert.equal(preparation.get('reticle').classList.contains('is-held'),false,'preparation is visibly distinct from commitment');
+assert.match(preparation.get('swing-state').textContent,/Preparing/);
+const exposedPreparation=preparation.window.cricsim.stroke;
+assert.equal(exposedPreparation.preparing,true);assert.ok(exposedPreparation.preparation>0&&exposedPreparation.preparation<1);assert.ok(Number(preparation.get('reticle').style['--preparation'])>0);
+preparation.hand(preparedAt,{x:640,y:390},.025);preparation.pump(1,1000/60);
+assert.equal(preparation.stats.bat.preparing,false);assert.equal(preparation.stats.bat.attempted,false);assert.equal(preparation.stats.bat.pose.active,false);
+assert.equal(preparation.get('reticle').classList.contains('is-preparing'),false);assert.equal(preparation.get('bat-guide').classList.contains('is-preparing'),false);assert.equal(preparation.get('reticle').classList.contains('is-leaving'),true);
+assert.equal(preparation.get('swing-state').textContent,'Left · aim freely');assert.equal(preparation.get('reticle').style['--preparation'],'0');
+preparation.pump(120);assert.equal(preparation.stats.bat.phase,'guard');assert.equal(preparation.get('reticle').classList.contains('is-leaving'),false);
+passed('Flow: preparation keeps aim fixed and collisions off; reversing the hand shows a leave and safely returns to guard');
+
+for(const end of ['pointerup','pointercancel','lostpointercapture']){
+  const touchPreparation=await boot('high',null,{coarse:true});touchPreparation.get('start-button').click();touchPreparation.pump();
+  prepareFlow(touchPreparation,'touch');
+  touchPreparation.pointer('pointerup',{pointerType:'touch',pointerId:2,isPrimary:false,buttons:0});
+  assert.equal(touchPreparation.stats.bat.preparing,true,'another finger cannot abandon the primary preparation');
+  if(end==='lostpointercapture')touchPreparation.get('game').releasePointerCapture(1);
+  else touchPreparation.pointer(end,{pointerType:'touch',buttons:0});
+  assert.equal(touchPreparation.get('game').hasPointerCapture(1),false,`${end} releases the captured touch`);
+  assert.equal(touchPreparation.stats.bat.preparing,false,`${end} immediately abandons preparation`);
+  for(let i=0;i<180;i++){touchPreparation.pump();assert.equal(touchPreparation.stats.bat.pose.active,false,`${end} cannot produce a delayed hit`);assert.equal(touchPreparation.stats.bat.attempted,false);}
+  assert.equal(touchPreparation.stats.bat.committed,false);assert.equal(touchPreparation.get('reticle').classList.contains('is-preparing'),false);
+}
+passed('Flow: lifting or cancelling a captured touch abandons preparation, secondary touches do not interfere, and no ghost stroke follows');
+
+const leaving=await boot('eco');leaving.get('start-button').click();leaving.setting('line','wide');leaving.pump();leaving.get('next-button').click();leaving.pump(330);
+assert.equal(leaving.window.cricsim.phase,'flight');const leaveFrom=prepareFlow(leaving);leaving.hand(leaveFrom,{x:640,y:390},.025);leaving.pump(500);
+assert.equal(leaving.window.cricsim.phase,'result');assert.equal(leaving.window.cricsim.ball.hit,false);assert.equal(leaving.get('feedback-title').textContent,'Left alone');assert.equal(leaving.get('feedback-shot').textContent,'Leave');assert.equal(leaving.get('feedback-exit').textContent,'Safe leave');
+passed('Flow: an aborted preparation on a live delivery is scored and described as a safe leave');
+
+const leaveHistory=await boot('high');leaveHistory.get('start-button').click();leaveHistory.setting('line','wide');leaveHistory.pump();leaveHistory.get('next-button').click();
+leaveHistory.pointer('pointerdown');leaveHistory.pointer('pointerup');leaveHistory.pump(240);
+assert.equal(leaveHistory.stats.bat.attempted,true);assert.equal(leaveHistory.stats.bat.committed,true);assert.equal(leaveHistory.stats.bat.cancelled,false);
+const afterAttack=prepareFlow(leaveHistory);leaveHistory.hand(afterAttack,{x:640,y:390},.025);leaveHistory.pump(1,1000/60);
+assert.equal(leaveHistory.stats.bat.preparing,false);assert.equal(leaveHistory.get('reticle').classList.contains('is-leaving'),false,'pulling out of a second preparation cannot relabel an earlier shot on this delivery as a leave');assert.notEqual(leaveHistory.get('swing-state').textContent,'Left · aim freely');
+leaveHistory.pump(400);assert.equal(leaveHistory.window.cricsim.phase,'result');assert.equal(leaveHistory.get('feedback-title').textContent,'Played & missed');
+leaveHistory.get('next-button').click();assert.equal(leaveHistory.stats.bat.attempted,false);assert.equal(leaveHistory.stats.bat.committed,true,'the previous stroke commitment survives the new-delivery reset');
+const onNextBall=prepareFlow(leaveHistory);leaveHistory.hand(onNextBall,{x:640,y:390},.025);leaveHistory.pump(1,1000/60);
+assert.equal(leaveHistory.stats.bat.preparing,false);assert.equal(leaveHistory.stats.bat.attempted,false);assert.equal(leaveHistory.get('reticle').classList.contains('is-leaving'),true,'an old commitment cannot suppress the leave cue on the next delivery');assert.equal(leaveHistory.get('swing-state').textContent,'Left · aim freely');
+passed('Flow: the leave cue respects a shot already played on this delivery and resets correctly for the next ball');
 
 standard.get('start-button').click();standard.pump();
 standard.pointer('pointerdown');standard.pointer('pointerup');

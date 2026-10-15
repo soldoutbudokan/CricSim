@@ -158,6 +158,13 @@ body.paused .live-dot{background:var(--fg-3)}
 .reticle.is-held::before{opacity:1}
 .reticle.is-defend{border-radius:5px;border-color:var(--warn)}
 .reticle.is-clipped{opacity:.55;border-style:dashed}
+/* Preparation is distinct from a committed stroke; the physical contact guide stays put. */
+.bat-guide.is-preparing{color:#f2c94cd9}
+.reticle.is-preparing{border-color:var(--warn)}
+.reticle.is-preparing::before{opacity:1;background:conic-gradient(var(--warn) calc(var(--preparation,0)*1turn),transparent 0);transition:none}
+.reticle.is-preparing::after,.reticle.is-leaving::after{position:absolute;left:50%;top:39px;transform:translateX(-50%);font-size:9px;letter-spacing:.09em;font-weight:600;white-space:nowrap;color:var(--warn);text-shadow:0 1px 3px #000}
+.reticle.is-preparing::after{content:'PREPARE'}
+.reticle.is-leaving::after{content:'LEAVE';color:var(--paper)}
 .reticle.is-contact{border-color:var(--good);box-shadow:0 0 0 8px #8fe38a30,0 0 20px #8fe38a80}
 
 /* ---------------------------------------------------------------- result strap */

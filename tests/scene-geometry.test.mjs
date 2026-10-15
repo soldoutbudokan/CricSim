@@ -174,6 +174,37 @@ test('authored blade preserves the collision footprint and has an outward-facing
   geometry.dispose(); mesh.material.dispose();
 });
 
+test('windbreaks cast shadows and the leafy hedge has a closed, outward-facing silhouette', async () => {
+  const { view } = await bootScene();
+  const skirt = view.scene.getObjectByName('Draped windbreaks');
+  assert.ok(skirt?.castShadow && skirt.receiveShadow, 'opaque windbreak fabric participates in directional shadows');
+  const contact = view.scene.getObjectByName('Windbreak contact shade');
+  view.setQuality(qualityProfile('eco'));
+  assert.ok(contact?.visible && !contact.material.depthWrite, 'soft contact shade remains in Eco without obscuring the ground');
+
+  const hedge = view.scene.getObjectByName('Clipped leafy hedge');
+  assert.ok(hedge?.isMesh, 'foliage is a single mesh');
+  checkGeometry(hedge.geometry, 'hedge');
+  assert.ok(signedVolume(hedge.geometry) > 0, 'hedge triangles enclose an outward-facing volume');
+  const p = hedge.geometry.attributes.position, indices = hedge.geometry.index;
+  const vertexKeys = Array.from({ length: p.count }, (_, i) => [p.getX(i), p.getY(i), p.getZ(i)].map(v => Math.round(v * 1e6)).join(','));
+  const edges = new Map();
+  // UV seams duplicate positions. Weld only for this topological check, then
+  // require every surface edge to meet exactly one oppositely wound neighbour.
+  for (let i = 0; i < indices.count; i += 3) {
+    const triangle = [0, 1, 2].map(j => vertexKeys[indices.getX(i + j)]);
+    for (let j = 0; j < 3; j++) {
+      const a = triangle[j], b = triangle[(j + 1) % 3], forward = a < b, key = forward ? `${a}|${b}` : `${b}|${a}`;
+      const edge = edges.get(key) || { count: 0, direction: 0 };
+      edge.count++; edge.direction += forward ? 1 : -1; edges.set(key, edge);
+    }
+  }
+  for (const edge of edges.values()) {
+    assert.equal(edge.count, 2, 'hedge has no open seam or non-manifold edge');
+    assert.equal(edge.direction, 0, 'neighbouring hedge faces agree on winding');
+  }
+});
+
 test('real scene builds finite geometry and preserves mirrored glove winding within a practical mesh budget', async t => {
   const { view } = await bootScene();
   const geometries = checkScene(view.scene);

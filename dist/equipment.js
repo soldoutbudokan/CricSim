@@ -211,14 +211,25 @@ export function gloveGeometry(thumbUp, mirror) {
   const cream = '#e6e2d4', pad = '#f4f1e8', leather = '#c9b793', seam = '#a39d8c', green = '#30473b', shield = '#3b5a49';
   const add = (g, m = matrix(), c = pad, roughness = .73, grain = .04) => parts.push({ g, m: new THREE.Matrix4().multiplyMatrices(mirrorMatrix, m), c, roughness, grain });
   const thread = (points, radius = .0004, color = seam, closed = false) => add(cord(points, radius, closed), matrix(), color, .92, .015);
-  const panel = (w, h, d, r, m, color = pad, sewn = true) => {
-    add(paddedPanel(w, h, d, r), m, color);
+  const panel = (w, h, d, r, m, color = pad, sewn = true, fitted = false) => {
+    // Back-of-hand protectors taper into the wrist and wrap the hand. Apply
+    // the same bend to their seams so these read as sewn leather, not flat tiles.
+    const fit = g => {
+      if (!fitted) return g;
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), y = p.getY(i), z = p.getZ(i), wrist = smooth(.5 - x / w);
+        p.setXYZ(i, x, y * (1 - .18 * wrist), z - .0038 * (y / (h * .5)) ** 2 + .0018 * Math.sin(Math.PI * (.5 + x / w)));
+      }
+      g.computeVertexNormals(); return g;
+    };
+    add(fit(paddedPanel(w, h, d, r)), m, color);
     if (!sewn) return;
     const outline = roundedOutline(w * .92, h * .92, r * .9, 3);
-    add(cord(outline.map(([x, y]) => [x, y, d * .35]), .00036, true), m, seam, .90, .012);
+    add(fit(cord(outline.map(([x, y]) => [x, y, d * .35]), .00036, true)), m, seam, .90, .012);
     // Short stitches along the long sides remain visible in the first-person view.
     for (const x of [-w * .39, w * .39]) for (let y = -h * .28; y < h * .29; y += .0055) {
-      add(cord([[x, y, d * .435], [x, y + .0022, d * .435]], .00020), m, '#f8f5e9', .94, .01);
+      add(fit(cord([[x, y, d * .435], [x, y + .0022, d * .435]], .00020)), m, '#f8f5e9', .94, .01);
     }
   };
 
@@ -232,17 +243,18 @@ export function gloveGeometry(thumbUp, mirror) {
   palm.computeVertexNormals(); add(palm, matrix(), leather, .87, .055);
   add(new THREE.SphereGeometry(1, 18, 12), matrix(.047, 0, .037, 0, 0, 0, .013, .047, .031), cream, .81, .04);
 
-  // Split back-of-hand shields: tapered toward the cuff with sewn perimeter
-  // welts, then four independently raised knuckle blocks.
+  // Long, fitted back-of-hand protectors follow the metacarpals into the wrist.
+  // The flex channel between them remains open; a slim club-colour insert
+  // replaces the broad, rigid-looking dark tiles of the old glove.
   for (const side of [-1, 1]) {
-    panel(.037, .040, .013, .008, matrix(.060, side * .0215, .038, 0, Math.PI / 2, side * -.035), shield);
-    panel(.024, .033, .010, .006, matrix(.058, side * .018, .065, 0, Math.PI / 2, side * .055), cream);
+    panel(.060, .040, .0105, .009, matrix(.057, side * .021, .042, 0, Math.PI / 2, side * -.07), pad, true, true);
+    panel(.042, .005, .002, .002, matrix(.063, side * .032, .043, 0, Math.PI / 2, side * -.07), shield, false, true);
   }
   const reach = [2.45, 2.62, 2.53, 2.19], widths = [.0092, .0098, .0093, .0082], split = [0, .40, .73, 1];
   for (let k = 0; k < 4; k++) {
     const y = (k - 1.5) * .0221, start = -.36, end = reach[k], w = widths[k];
     const knuckleX = k === 1 || k === 2 ? .057 : .053;
-    panel(.022, w * 1.95, .012, .0055, matrix(knuckleX, y, .005, 0, Math.PI / 2 + .13), k === 3 ? cream : shield);
+    panel(.022, w * 1.95, .010, .0055, matrix(knuckleX, y, .005, 0, Math.PI / 2 + .13), k === 3 ? cream : pad);
     add(fingerSection(start - .06, end + .025, y, .028, w * .84, .0064, 14), matrix(), leather, .88, .06);
     for (let segment = 0; segment < 3; segment++) {
       const t0 = start + (end - start) * split[segment] + .06, t1 = start + (end - start) * split[segment + 1] - .065;

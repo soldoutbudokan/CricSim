@@ -76,6 +76,30 @@ test('planted shoe tread meets the raised pitch surface', () => {
   }
 });
 
+test('shoe upper, midsole and outsole remain joined across their width', () => {
+  // Cast through the solid layers, including their outer edges where a stack
+  // of elliptical sections used to leave centimetre-wide gaps. Count entries
+  // and exits so harmless overlapping shells remain valid.
+  const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+  const shoe = new THREE.Mesh(rig.legs[0].foot.geometry, material);
+  shoe.updateMatrixWorld(true);
+  const ray = new THREE.Raycaster(), direction = new THREE.Vector3(0, 1, 0);
+  for (const x of [-.05, -.04, -.02, 0, .02, .04, .05]) for (const z of [-.06, 0, .1]) {
+    ray.set(new THREE.Vector3(x, -1, z), direction);
+    let depth = 0, previous;
+    for (const hit of ray.intersectObject(shoe)) {
+      // The lower 65 mm includes the joined sole/upper, below the laces and
+      // separately applied toe cap. A gap here is visible daylight, not trim.
+      if (previous !== undefined && hit.point.y < -.07 && depth === 0) {
+        assert.ok(hit.point.y - previous < .0002, `shoe gap at (${x}, ${z}): ${previous} to ${hit.point.y}`);
+      }
+      depth += hit.face.normal.y < 0 ? 1 : -1;
+      previous = hit.point.y;
+    }
+  }
+  material.dispose();
+});
+
 test('the articulated model stays within its small draw-call and geometry budget', () => {
   let meshes = 0, triangles = 0;
   rig.group.traverse(o => { if (o.isMesh) { meshes++; triangles += o.geometry.index.count / 3; } });

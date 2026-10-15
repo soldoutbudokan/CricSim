@@ -21,7 +21,7 @@ test('a decisive push starts one complete stroke without any press, then returns
   assert.equal(c.phase, 'guard'); assert.equal(c.pose.active, false); assert.equal(c.armed, true);
 });
 
-test('a vertical push plays the Standard stroke: same motion, same power', () => {
+test('a vertical push blends out of its backlift into the Standard contact path and power', () => {
   const flow = createBatControl('right', 'flow'), standard = createBatControl('right', 'standard');
   const h = hand(flow, { x: .1, y: .8 }); moveBatTarget(standard, .1, .8);
   h.rest(1.5); for (let i = 0; i < 360; i++) stepBat(standard, DT);
@@ -33,11 +33,13 @@ test('a vertical push plays the Standard stroke: same motion, same power', () =>
   const compare = () => {
     // Once the stroke is over, free aiming resumes from where the hand is, so only the stroke itself is compared.
     if (!synced || flow.phase === 'recover') return; stepBat(standard, DT); steps++;
-    for (const axis of ['x', 'y', 'z', 'yaw', 'loft', 'roll', 'weight', 'turn']) assert.ok(Math.abs(flow.pose[axis] - standard.pose[axis]) < 1e-6, `${axis} at step ${steps}`);
+    // The initial Flow blend starts from the visible preparation. By the
+    // contact phase it has converged to the same physical stroke as Standard.
+    if (flow.strokeTime >= .08) for (const axis of ['x', 'y', 'z', 'yaw', 'loft', 'roll', 'weight', 'turn']) assert.ok(Math.abs(flow.pose[axis] - standard.pose[axis]) < .003, `${axis} at step ${steps}`);
     assert.equal(flow.pose.active, standard.pose.active); assert.equal(flow.progress, standard.progress);
   };
-  h.push(UP, 6, .12, compare, sync); h.rest(.5, undefined, compare, sync);
-  assert.ok(synced && steps >= 70, `compared ${steps} steps`); assert.deepEqual(flow.direction, UP);
+  h.push(UP, 6, .20, compare, sync); h.rest(.5, undefined, compare, sync);
+  assert.ok(synced && steps >= 65, `compared ${steps} steps`); assert.deepEqual(flow.direction, UP);
   for (const intent of ['grounded', 'lofted']) {
     const { d, clean } = play({ intent });
     assert.ok(clean, intent); assert.ok(d.exitSpeed > 90, `${intent}: an ordinary push has useful attacking power (${d.exitSpeed})`);
@@ -53,7 +55,7 @@ test('slow aiming and quick small corrections never swing', () => {
   // Quick height corrections shorter than the trigger distance, at the trigger speed.
   for (let i = 0; i < 6; i++) { const dir = i % 2 ? -1 : 1; h.push({ x: 0, y: dir }, 3, .05); h.rest(.15); }
   // A brisk but not decisive upward move, and a fast crease-wide one.
-  h.push(UP, 2, .4); h.rest(.3); h.push({ x: 1, y: 0 }, 7, .6); h.rest(.3);
+  h.push(UP, 1.7, .4); h.rest(.3); h.push({ x: 1, y: 0 }, 7, .6); h.rest(.3);
   assert.equal(c.attempted, false); assert.equal(c.phase, 'guard');
 });
 
@@ -146,7 +148,7 @@ test('a still mouse sends nothing: the hand rests through a silence and the push
   // A hand that arrives after a silence and keeps moving fast is a push, not a teleport.
   const d = createBatControl('right', 'flow'), hd = hand(d, { x: 0, y: .8 }), countD = strokes(d);
   hd.rest(.3, undefined, countD.step); hd.still(.5, countD.step);
-  const t0 = hd.time; hd.move(.03, t => ({ x: 0, y: 6 * (t - t0) }), countD.step);
+  const t0 = hd.time; hd.move(.04, t => ({ x: 0, y: 6 * (t - t0) }), countD.step);
   assert.equal(countD.count(), 1);
 });
 
@@ -236,8 +238,8 @@ test('an upward move that is not quite a push leaves a hint, which a real push c
 
 test('the swing trigger setting orders how decisive a push must be', () => {
   const swings = (trigger, speed, length) => { const c = createBatControl('right', 'flow'); setSwingTrigger(c, trigger); const h = hand(c); h.rest(.3); h.push({ x: 0, y: 1 }, speed, length); return c.committed; };
-  assert.equal(swings('light', 2.3, .3), true); assert.equal(swings('normal', 2.3, .3), false); assert.equal(swings('firm', 2.3, .3), false);
-  assert.equal(swings('normal', 3, .3), true); assert.equal(swings('firm', 3, .3), false); assert.equal(swings('firm', 4.5, .3), true);
+  assert.equal(swings('light', 1.6, .3), true); assert.equal(swings('normal', 1.6, .3), false); assert.equal(swings('firm', 1.6, .3), false);
+  assert.equal(swings('normal', 2.2, .3), true); assert.equal(swings('firm', 2.2, .3), false); assert.equal(swings('firm', 3.2, .3), true);
   assert.equal(swings('normal', 6, .05), false, 'a fast but tiny move is not a push');
   const c = createBatControl('right', 'flow'); setSwingTrigger(c, 'nonsense'); assert.equal(c.trigger, 'normal');
   setSwingTrigger(c, 'firm'); resetBatControl(c, 'left'); assert.equal(c.trigger, 'firm'); assert.equal(c.mode, 'flow');
@@ -314,7 +316,7 @@ test('Flow poses mirror with stance, respect the motion bounds and keep the blad
     const right = createBatControl('right', 'flow'), left = createBatControl('left', 'flow');
     const hands = [hand(right, { x: .4, y: .8 }), hand(left, { x: -.4, y: .8 })];
     for (const h of hands) h.rest(.5);
-    hands[0].push(direction, 6, .1); hands[1].push({ x: -direction.x, y: direction.y }, 6, .1);
+    hands[0].push(direction, 6, .2); hands[1].push({ x: -direction.x, y: direction.y }, 6, .2);
     assert.ok(right.committed && left.committed);
     for (let i = 0; i < 120; i++) {
       for (const c of [right, left]) {
@@ -344,4 +346,131 @@ test('feedback treats a Flow push like a Standard click', () => {
   assert.equal(describeShot({ ...s, elapsed: .02 }).timing, 'Late'); assert.match(describeShot({ ...s, elapsed: .02 }).detail, /Start the push a little sooner/);
   assert.equal(describeShot({ ...s, elapsed: .1 }, { quality: .9, edge: false }).timing, 'Well timed');
   const standard = describeShot({ ...s, mode: 'standard' }); assert.match(standard.detail, /Click or tap/);
+});
+
+test('a short push visibly prepares at a fixed aim; a diagonal pull-back leaves without playing', () => {
+  const c = createBatControl('right', 'flow'), h = hand(c, { x: .2, y: .75 });
+  h.rest(.4);
+  const aim = { ...c.target }, before = { ...c.pose };
+  h.push(UP, 3, .07, () => {
+    assert.deepEqual(c.target, aim, 'the outline never moves up with the trigger gesture');
+    assert.equal(c.pose.active, false, 'preparation cannot collide with a ball');
+    assert.equal(c.attempted, false);
+  });
+  assert.equal(c.phase, 'prepare'); assert.equal(c.preparing, true);
+  assert.ok(c.preparation > .3 && c.preparation < 1);
+  assert.ok(c.pose.z > before.z + .01, 'the blade already follows the hand into its backlift');
+  h.push({ x: .6, y: -.8 }, 3, .045);
+  assert.equal(c.preparing, false); assert.equal(c.preparation, 0);
+  assert.ok(Number.isFinite(c.leaveAt)); assert.equal(c.pose.active, false);
+  assert.equal(isPlayingShot(strokeSnapshot(c)), false);
+  assert.equal(missTitle({ stroke: strokeSnapshot(c) }, 'Missed'), 'Left alone');
+});
+
+test('sideways tracking flows straight into a locally anchored push without a pause', () => {
+  const c = createBatControl('right', 'flow'), h = hand(c);
+  // Start with a freshly arriving hand. Sideways motion itself establishes that
+  // it is aiming: it does not have to stop or make a slow sample first.
+  restartFlow(c);
+  h.move(.2, t => ({ x: 2 * t, y: 0 }));
+  const aim = { ...c.target };
+  assert.equal(c.armed, true); assert.equal(c.attempted, false);
+  h.push(UP, 3, .3);
+  assert.equal(c.committed, true); assert.deepEqual(c.target, aim);
+});
+
+test('quiet or continuously slow movement abandons preparation and restores free aim', () => {
+  for (const silent of [true, false]) {
+    const c = createBatControl('right', 'flow'), h = hand(c);
+    h.rest(.4); h.push(UP, 3, .07);
+    assert.equal(c.preparing, true);
+    if (silent) h.still(.12);
+    else { const start = h.time, at = h.at; h.move(.15, t => ({ x: at.x, y: at.y + .5 * (t - start) })); }
+    assert.equal(c.preparing, false); assert.equal(c.attempted, false); assert.equal(c.pose.active, false);
+    assert.ok(Math.abs(c.target.y - (.8 + h.at.y * 1.5)) < 1e-9, 'the pointer is aiming again');
+  }
+});
+
+test('a cancelled preparation preserves any shot already attempted on this delivery', () => {
+  const c = createBatControl('right', 'flow'), h = hand(c);
+  h.rest(.4); h.push(UP, 3, .3); h.rest(.8);
+  assert.equal(isPlayingShot(strokeSnapshot(c)), true);
+  h.push(UP, 3, .07);
+  assert.equal(c.phase, 'prepare'); assert.equal(c.pose.active, false);
+  h.push({ x: 0, y: -1 }, 3, .04);
+  assert.equal(c.preparing, false); assert.equal(c.pose.active, false);
+  assert.equal(isPlayingShot(strokeSnapshot(c)), true, 'pulling out of a later backlift cannot erase an earlier swing');
+  assert.equal(missTitle({ stroke: strokeSnapshot(c) }, 'Missed'), 'Played & missed');
+});
+
+test('restart, touch release and a held block all abandon preparation immediately', () => {
+  for (const action of [restartFlow, c => releaseStroke(c), c => startStroke(c, true)]) {
+    const c = createBatControl('right', 'flow'), h = hand(c);
+    h.rest(.4); h.push(UP, 3, .07);
+    assert.equal(c.preparing, true); action(c); stepBat(c, DT);
+    assert.equal(c.preparing, false); assert.equal(c.flowCandidate, null);
+    assert.equal(c.pose.active, c.defending);
+    if (c.defending) assert.equal(c.phase, 'defend');
+  }
+});
+
+test('30 to 1000 Hz hands preserve aim, one stroke and bounded onset latency', () => {
+  const starts = [];
+  for (const sampleRate of [30, 60, 120, 240, 1000]) {
+    const c = createBatControl('right', 'flow'), h = hand(c, { x: .2, y: .75 }, { sampleRate }), count = strokes(c);
+    h.rest(.4); h.still(.2);
+    const onset = h.time; let started = null;
+    h.push(UP, 3, .35, () => {
+      count.step();
+      if (c.committed && started === null) started = h.time - onset;
+      if (!c.committed) assert.equal(c.pose.active, false);
+    });
+    h.still(.5, count.step);
+    assert.equal(count.count(), 1, `${sampleRate} Hz: one stroke`);
+    assert.deepEqual(c.target, { x: .2, y: .75 }, `${sampleRate} Hz: stable point`);
+    assert.ok(started >= SWING_TRIGGERS.normal.distance / 3 - 1 / sampleRate);
+    assert.ok(started <= SWING_TRIGGERS.normal.distance / 3 + 1 / sampleRate + FRAME, `${sampleRate} Hz: ${started}s onset`);
+    starts.push(started);
+  }
+  assert.ok(Math.max(...starts) - Math.min(...starts) <= 2 * FRAME + 1e-9, 'sampling adds at most two rendered frames');
+});
+
+test('launch begins at the displayed pose and applies trim exactly once', () => {
+  const c = createBatControl('right', 'flow'), h = hand(c);
+  c.trim.yaw = .5; c.trim.loft = .3; c.trim.roll = .6;
+  h.rest(.5); h.push(UP, 3, .07);
+  let launch = null;
+  const t0 = h.time, at = h.at;
+  h.move(.08, t => ({ x: at.x, y: at.y + 3 * (t - t0) }), null, () => {
+    if (!launch && c.flowLaunch) {
+      launch = c.flowLaunch;
+      for (const axis of ['yaw', 'loft', 'roll']) assert.ok(Math.abs(launch.pose[axis] + c.trim[axis] - c.pose[axis]) < 1e-9, axis);
+    }
+  });
+  assert.ok(launch, 'the actual displayed pose seeds the launch');
+});
+
+test('one-pixel spikes from a 1000 Hz mouse cannot trap slow aiming in preparation', () => {
+  const c = createBatControl('right', 'flow'), h = hand(c, { x: .2, y: .75 }, { sampleRate: 1000 });
+  h.rest(.4);
+  const start = h.time, pixel = 1.6 / 720;
+  h.move(.8, t => ({ x: 0, y: Math.floor((t - start) * .2 / pixel) * pixel }));
+  assert.equal(c.preparing, false); assert.equal(c.attempted, false);
+  assert.ok(Math.abs(c.target.y - (.75 + h.at.y * 1.5)) < 1e-9, 'slow height aim follows each real pointer pixel');
+  h.push(UP, 3, .3);
+  assert.equal(c.committed, true, 'a genuine push still works immediately after the slow tracking');
+});
+
+test('quantized moderate aiming with only changed events cannot repeatedly freeze the outline', () => {
+  const c = createBatControl('right', 'flow'), pixel = 1.6 / 720;
+  let lastY = -1, maxLag = 0;
+  for (let ms = 0; ms <= 600; ms++) {
+    const t = ms / 1000, y = Math.floor(Math.max(0, t - .2) * 1.5 / pixel) * pixel;
+    if (y !== lastY) { moveBatTarget(c, .2, .75 + y * 1.5, { x: 0, y }, t); lastY = y; }
+    if (ms % 17 === 0) for (let i = 0; i < 4; i++) stepBat(c, DT);
+    maxLag = Math.max(maxLag, Math.min(BAT_LIMITS.maxY, .75 + y * 1.5) - c.target.y);
+    assert.equal(c.preparing, false); assert.equal(c.attempted, false);
+  }
+  assert.ok(maxLag < .045, `brief input confirmation does not become repeated aim freezes (${maxLag}m)`);
+  assert.equal(c.flowCandidate, null);
 });
