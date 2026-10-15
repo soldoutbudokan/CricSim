@@ -8,6 +8,7 @@ import { DEFAULTS, DT, createDelivery, stepDelivery } from '../dist/physics.js';
 import { createBatControl, moveBatTarget, startStroke, stepBat } from '../dist/bat-control.js';
 import { qualityProfile } from '../dist/render-policy.js';
 import { bladeGeometry } from '../dist/equipment.js';
+import { BATTER_RIG, DIRECT_BATTING_VIEW, batterMotion, directGripPoints } from '../dist/batter-motion.js';
 
 // Execute the shipped scene and its modelling code. Only browser/GPU boundaries
 // are replaced: all meshes, materials, matrices and geometry are real Three.js.
@@ -70,10 +71,12 @@ async function bootScene() {
       mod = new vm.SourceTextModule(await fs.readFile(fileURLToPath(url), 'utf8'), { context, identifier: url });
     }
     modules.set(url, mod);
-    await mod.link((specifier, parent) => load(new URL(specifier, parent.identifier).href));
     return mod;
   }
   const entry = await load(new URL('../dist/scene.js', import.meta.url).href);
+  // Link the graph once. The direct controller and scene share the rig module;
+  // recursively starting separate link jobs races on that common dependency.
+  await entry.link((specifier, parent) => load(new URL(specifier, parent.identifier).href));
   await entry.evaluate();
   const messages = [];
   const view = await entry.namespace.createScene(canvas, message => messages.push(message), qualityProfile('balanced'));
@@ -295,4 +298,65 @@ test('real scene handles all environments, handed batting, delivery effects, res
   }
   checkScene(scene, new Set());
   assert.deepEqual(errors, []);
+});
+
+test('direct bat rendering keeps both glove cuffs on the solved fixed-length arms', async () => {
+  const { view } = await bootScene();
+  for (const hand of ['right', 'left']) {
+    const sign = hand === 'left' ? -1 : 1;
+    view.setEnvironment({ ...DEFAULTS, hand });
+    const pose = { x: .12 * sign, y: .86, z: -.16, yaw: .15 * sign, loft: .42, roll: -.10 * sign, direct: true };
+    view.updateBat(pose); view.scene.updateMatrixWorld(true);
+    const rig = directGripPoints(pose, sign);
+    assert.ok(rig.reachable);
+    assert.ok(view.camera.position.distanceTo(new THREE.Vector3().copy(batterMotion(pose, sign).eye)) < 1e-8, 'visible eye moves with the body in the same frame');
+    for (const [i, name] of ['bottom', 'top'].entries()) {
+      const glove = view.scene.getObjectByName(`Batter ${name} glove`);
+      const arm = view.scene.getObjectByName(`Batter ${name} forearm`);
+      const cuff = new THREE.Vector3(BATTER_RIG.wrist.x * sign, 0, BATTER_RIG.wrist.z).applyMatrix4(glove.matrixWorld);
+      assert.ok(cuff.distanceTo(arm.position) < 1e-8, 'rendered cuff and forearm coincide');
+      const elbow = new THREE.Vector3(0, .36, 0).applyMatrix4(arm.matrixWorld);
+      assert.ok(elbow.distanceTo(new THREE.Vector3().copy(rig.elbows[i])) < 1e-8, 'visible forearm uses the shared elbow');
+      assert.ok(Math.abs(elbow.distanceTo(cuff) - BATTER_RIG.forearm) < 1e-8);
+    }
+    const legacy = createBatControl(hand, 'standard');
+    view.updateBat(legacy.pose);
+    assert.equal(view.scene.getObjectByName('Batter bottom forearm').scale.y, 1, 'legacy rig scale restored');
+  }
+});
+
+test('direct pointer mapping is stable through head motion and following a struck ball', async () => {
+  const { view } = await bootScene();
+  const { eye, look } = DIRECT_BATTING_VIEW;
+  const ratio = (-.22 - eye.z) / (look.z - eye.z);
+  const neutralAim = new THREE.Vector3(eye.x + (look.x - eye.x) * ratio, eye.y + (look.y - eye.y) * ratio, -.22);
+  assert.ok(view.pointerWorld(0, 0, 'flow').distanceTo(neutralAim) < 1e-10, 'Flow rays use the same neutral eye as the target surface');
+  const before = view.pointerWorld(.32, -.20, 'flow').clone();
+  const legacyBefore = view.pointerWorld(.32, -.20, 'standard').clone();
+  view.updateGaze({ time: .1, hit: false, resolved: false }, 1 / 60, false);
+  for (let i = 0; i < 55; i++) {
+    view.updateBat({ x: .15, y: .80, z: -.13, yaw: .1, loft: .4, roll: -.1, direct: true });
+    view.updateGaze({ time: .2 + i / 60, hit: true, resolved: false, p: { x: 12, y: 3, z: 4 } }, 1 / 60, false);
+  }
+  assert.ok(before.distanceTo(view.pointerWorld(.32, -.20, 'flow')) < 1e-10, 'fixed input frame ignores gaze and body');
+  const legacyAfter = view.pointerWorld(.32, -.20, 'standard');
+  assert.ok(!legacyAfter || legacyBefore.distanceTo(legacyAfter) > .05, 'test exercised real camera movement');
+});
+
+test('Flow framing shows a low checked blade and the distant release together', async () => {
+  const { view } = await bootScene();
+  // A real stopped downswing previously put a third of the blade below frame
+  // after the eye was brought back within anatomical distance of the shoulders.
+  const pose = { x: .0982, y: .5679, z: -.1467, yaw: -.2288, loft: .3341, roll: .6174, direct: true };
+  for (let i = 0; i < 360; i++) { view.updateGaze(null, 1 / 120, false); view.updateBat(pose); }
+  view.scene.updateMatrixWorld(true); view.camera.updateMatrixWorld(true);
+  const blade = view.scene.getObjectByName('Batter bat').children[0];
+  const vertices = blade.geometry.attributes.position;
+  for (let i = 0; i < vertices.count; i++) {
+    const projected = new THREE.Vector3().fromBufferAttribute(vertices, i).applyMatrix4(blade.matrixWorld).project(view.camera);
+    assert.ok(Math.abs(projected.x) < 1 && Math.abs(projected.y) < 1, 'low checked blade is inside the frame');
+  }
+  view.animateBowler('runup', 2.2, DEFAULTS);
+  const release = new THREE.Vector3().copy(view.getReleasePosition()).project(view.camera);
+  assert.ok(Math.abs(release.x) < 1 && Math.abs(release.y) < .95, 'release hand remains visible above the low bat');
 });

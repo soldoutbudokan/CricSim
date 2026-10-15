@@ -1,19 +1,51 @@
 // Feedback describes the stroke at contact / at the crease, never the current
-// mouse button after the ball has gone. Timing is relative to the stroke's middle.
+// mouse button after the ball has gone. Flow describes the physical blade;
+// Standard and Manual retain their stroke timing feedback.
 
 import { BALL, batBasis, clamp } from './physics.js';
 
-// Standard clicks and Flow pushes commit a full shot, including after release
-// and recovery. Manual mode retains its existing held/released leave convention.
-const isTimed = stroke => stroke?.mode === 'standard' || stroke?.mode === 'flow';
-export const isSwing = stroke => Boolean(stroke?.attempted && !stroke.defending && stroke.committed &&
-  (isTimed(stroke) ? !stroke.cancelled : stroke.held));
+// A Flow bat can block without a click and leave by moving out of the corridor.
+// Read only the recorded physical state, never a past gesture or commitment.
+const isDirect = stroke => stroke?.mode === 'flow';
+const directPlaying = stroke => Boolean(stroke?.engaged && !stroke.acquiring && stroke.active && stroke.exposed);
+// Standard clicks commit a full shot, including after release and recovery.
+// Manual mode retains its existing held/released leave convention.
+const isTimed = stroke => stroke?.mode === 'standard';
+export const isSwing = stroke => isDirect(stroke)
+  ? directPlaying(stroke) && Boolean(stroke.moving && !stroke.defending)
+  : Boolean(stroke?.attempted && !stroke.defending && stroke.committed &&
+    (isTimed(stroke) ? !stroke.cancelled : stroke.held));
 // Defence has its own held state: it does not use swipe commitment or `held`.
 // A block kept up as the ball passes is still a shot attempt.
-export const isPlayingShot = stroke => Boolean(stroke?.attempted && stroke.defending) || isSwing(stroke);
+export const isPlayingShot = stroke => isDirect(stroke) ? directPlaying(stroke)
+  : Boolean(stroke?.attempted && stroke.defending) || isSwing(stroke);
 const isDismissal = result => result === 'Bowled' || result === 'LBW';
 
+function describeDirectShot(stroke, contact, bowled, miss) {
+  if (contact) {
+    if (contact.edge) return { timing: 'Edge', detail: 'The ball caught the edge. Bring the blade closer to the ball\u2019s line.' };
+    if (stroke.defending) return { timing: 'Soft hands', detail: 'The ball met the blade with a soft grip.' };
+    if (!stroke.moving) return { timing: 'Held bat', detail: 'The ball met the held blade. Move through contact for more pace.' };
+    return contact.quality > .7
+      ? { timing: 'Middle of the bat', detail: 'Through the middle of the moving blade.' }
+      : { timing: 'Bat contact', detail: 'Move the middle of the blade onto the ball\u2019s line for cleaner contact.' };
+  }
+  if (!directPlaying(stroke)) return bowled
+    ? { timing: 'Left', detail: 'That one was straight. Bring the blade onto its line or cover the stumps.' }
+    : { timing: 'Left', detail: 'The bat was clear of the ball. Well left.' };
+  if (stroke.defending || !stroke.moving) return { timing: 'Beaten', detail: 'The held blade missed the ball. Move it onto the ball\u2019s line.' };
+  const line = miss && Math.abs(miss.x) > .054 + BALL.radius;
+  const height = miss && Math.abs(miss.y) > .31 + BALL.radius;
+  if (height) return {
+    timing: line ? 'Wrong line & height' : 'Wrong height',
+    detail: line ? 'The moving blade missed the line and height. Meet the ball with the middle of the bat.' : 'Move the blade to the ball\u2019s arrival height.',
+  };
+  if (line) return { timing: 'Wrong line', detail: 'Move the blade across onto the ball\u2019s line.' };
+  return { timing: 'Missed', detail: 'The blade missed the ball. Move through its line as it reaches you.' };
+}
+
 export function describeShot(stroke, contact = null, bowled = false, miss = null) {
+  if (isDirect(stroke)) return describeDirectShot(stroke, contact, bowled, miss);
   if (!stroke?.attempted) {
     return bowled
       ? { timing: 'Left', detail: 'That one was straight. Cover the stumps or play it.' }
@@ -26,7 +58,7 @@ export function describeShot(stroke, contact = null, bowled = false, miss = null
   if (isTimed(stroke) && stroke.committed && !stroke.cancelled) {
     // Sampled at contact or at the crease. A released button and a recovered
     // animation cannot erase the intent or rewrite the stroke's timing.
-    const offset = (stroke.elapsed - stroke.idealContactTime) * 1000, act = stroke.mode === 'flow' ? 'Start the push' : 'Click or tap';
+    const offset = (stroke.elapsed - stroke.idealContactTime) * 1000, act = 'Click or tap';
     if (Number.isFinite(offset) && offset >= 35) return {
       timing: 'Early', detail: contact ? `You made contact, but started early. ${act} a little later for the strongest stroke.` : `The stroke arrived before the ball. ${act} a little later.`,
     };

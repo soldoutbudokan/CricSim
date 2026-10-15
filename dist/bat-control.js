@@ -1,8 +1,9 @@
 import { batBasis, clamp } from './physics.js';
+import { createDirectBat, disengageDirectBat, targetDirectBat, stepDirectBat } from './direct-bat.js';
 
 export const BAT_LIMITS = { x: 1.18, minY: 0.35, maxY: 1.65, travel: 0.52, speed: 20, angularSpeed: 28, rate: 9 };
 export const CONTACT_Z = -0.22;
-// The downswing commits at this point of the stroke. Before it the backlift
+// The Manual downswing commits at this point of the stroke. Before it the backlift
 // follows the hand and can be pulled out of; after it the blade carries its own
 // momentum through contact, the way a real bat does once the hands go.
 export const COMMIT = 0.25;
@@ -10,27 +11,6 @@ export const SWIPE_LENGTHS = { short: 0.7, standard: 1, long: 1.35 };
 // Standard input separates the player's decisions (aim, timing and intent)
 // from the physical motion. These times never depend on pointer speed or a ball.
 export const STANDARD_STROKE = Object.freeze({ contactTime: 0.10, aimLockTime: 0.065, duration: 0.32, activeFrom: 0.045, activeUntil: 0.22 });
-// Flow input needs no click. The pointer aims while it moves slowly; a decisive
-// push up the screen starts the same complete, repeatable stroke as a Standard
-// click. Speeds are screen units per real second (the shorter window side is
-// 1.6 units), so slow-motion practice does not change what counts as a push.
-export const SWING_TRIGGERS = Object.freeze({
-  light: Object.freeze({ speed: 1.4, distance: 0.09 }),
-  normal: Object.freeze({ speed: 1.9, distance: 0.13 }),
-  firm: Object.freeze({ speed: 2.7, distance: 0.17 }),
-});
-export const FLOW = Object.freeze({
-  restSpeed: 0.9, window: 0.024, memory: 0.25, anchorMemory: 0.15, onsetMemory: 0.06, gap: 0.08,
-  // A push must point within 60 degrees of straight up; sideways and downward moves only aim.
-  cone: 0.5, backdate: 0.03, jumpSpeed: 30,
-  // The hand leads a reversible backlift before it commits a stroke. These are
-  // real seconds / screen units, independent of the simulation speed.
-  settle: 0.06, gapWait: 0.05, confirmTime: 0.006, reversal: 0.018, launchBlend: 0.02,
-  // A pointer that reappears this far away after a silence is a new hand, not a push.
-  jumpDistance: 0.3,
-  // An upward move this fast and far that stays short of the trigger earns a "push harder" hint.
-  hintSpeed: 1.2, hintDistance: 0.04, hintTime: 1.0,
-});
 const LOCK_DISTANCE = 0.06, TRACK_TIME = 0.025, ACCEL = 360, CARRY_DECAY = 0.11, COMPLETE_RATE = 2.5, FOLLOW_RATE = 3.5, LIFT_TIME = 0.09;
 const MODES = ['flow', 'standard', 'manual'];
 const mix = (a, b, t) => a + (b - a) * t;
@@ -39,8 +19,8 @@ const curve = (a, b, start, end, t) => (2*t*t*t-3*t*t+1)*a+(t*t*t-2*t*t+t)*start
 
 export function createBatControl(hand = 'right', mode = 'manual') {
   const sign = hand === 'left' ? -1 : 1, x = sign * 0.25;
-  return {
-    hand: sign, intent: 'grounded', phase: 'guard', swipe: 1, mode: MODES.includes(mode) ? mode : 'manual', trigger: 'normal', timeScale: 1,
+  const control = {
+    hand: sign, intent: 'grounded', phase: 'guard', swipe: 1, mode: MODES.includes(mode) ? mode : 'manual', timeScale: 1,
     pose: { x, y: 0.48, z: 0.06, yaw: 0, loft: -0.24, roll: -sign * 0.18,
       defending: false, active: false, progress: 0, strokeTime: 0, weight: 0, turn: 0 },
     target: { x, y: 0.48 }, pointer: { x, y: 0.48 }, origin: { x, y: 0.48 },
@@ -49,18 +29,18 @@ export function createBatControl(hand = 'right', mode = 'manual') {
     held: false, defending: false, attempted: false, committed: false, cancelled: false,
     travel: 0, progress: 0, velocity: 0, carry: 0, lift: 0,
     speed: 0, releaseTime: 0, strokeTime: 0, aimLocked: false,
-    // Flow: recent pointer samples, the last one that was at rest, and whether
-    // the next push may swing. The clock is the controller's own simulated time.
-    clock: 0, samples: [], rest: null, armed: false, pointerSpeed: 0, softPushAt: -Infinity, restartClock: 0,
-    preparing: false, preparation: 0, leaveAt: -Infinity, flowCandidate: null, flowLaunch: null, flowSuppressed: false,
   };
+  control.direct = createDirectBat(control.pose, sign, control.mode === 'flow'); control.engaged = false; control.acquiring = true;
+  control.backlift = 0; control.exposed = false; control.moving = false;
+  if (control.mode === 'flow') control.pose.direct = true;
+  return control;
 }
 
 // Keep pose/target references stable for the renderer and game loop.
 export function resetBatControl(control, hand = control.hand < 0 ? 'left' : 'right') {
-  const fresh = createBatControl(hand, control.mode), { pose, target, intent, swipe, trigger, timeScale } = control;
+  const fresh = createBatControl(hand, control.mode), { pose, target, intent, swipe, timeScale } = control;
   Object.assign(pose, fresh.pose); Object.assign(target, fresh.target);
-  Object.assign(control, fresh, { pose, target, intent, swipe, trigger, timeScale });
+  Object.assign(control, fresh, { pose, target, intent, swipe, timeScale });
 }
 
 export function resetBatTrim(control) { control.trim.yaw = control.trim.loft = control.trim.roll = 0; }
@@ -70,31 +50,16 @@ export function setSwipeLength(control, factor) {
   if (Number.isFinite(factor)) control.swipe = clamp(factor, 0.4, 2.5);
 }
 
-// A new touch, a pointer coming back onto the canvas or a resize starts a fresh
-// hand: the distance from wherever it last was is not a push, and the hand must
-// be seen resting (a slow sample, or a silence) before it may swing.
+// End direct input at the current physical pose. A returning pointer reacquires
+// the bat with collisions off until the physical joint has settled.
 export function restartFlow(control) {
-  abandonPreparation(control);
-  control.samples.length = 0; control.restartClock = control.clock;
-  disarmFlow(control);
+  disengageDirectBat(control.direct); control.engaged = false; control.acquiring = true;
+  control.pose.active = false; control.exposed = control.moving = false; control.speed = 0;
+  control.held = control.defending = false; control.phase = 'guard';
 }
 
-// A cancelled stroke (the next ball, a pause, a change of intent) forgets
-// nothing about where the hand is: the last sample stays as the place a still
-// mouse is resting, so the silence before the next push still counts.
-function disarmFlow(control) {
-  abandonPreparation(control);
-  control.samples.splice(0, Math.max(0, control.samples.length - 1));
-  control.rest = null; control.armed = false; control.pointerSpeed = 0; control.softPushAt = -Infinity;
-  control.flowSuppressed = false;
-}
-
-// How decisive a push must be before Flow swings.
-export function setSwingTrigger(control, trigger) {
-  if (Object.hasOwn(SWING_TRIGGERS, trigger)) control.trigger = trigger;
-}
-
-// Simulation seconds per real second, so a push can be dated in stroke time.
+// Simulation seconds per real second. Flow advances its physical joint in
+// real time even when the ball simulation runs at a slower practice speed.
 export function setBatTimeScale(control, scale) {
   if (Number.isFinite(scale) && scale > 0) control.timeScale = scale;
 }
@@ -103,32 +68,20 @@ export function setBatMode(control, mode) {
   if (!MODES.includes(mode) || mode === control.mode) return;
   releaseStroke(control, true);
   control.mode = mode;
+  control.pose.direct = mode === 'flow';
+  if (mode === 'flow') control.direct = createDirectBat(control.pose, control.hand, true);
 }
 
 export function setBatIntent(control, intent) {
   if (!['grounded', 'lofted', 'defend'].includes(intent)) return;
-  releaseStroke(control, true);
+  if (control.mode !== 'flow') releaseStroke(control, true);
   control.intent = intent;
 }
 
 export function startStroke(control, defend = control.intent === 'defend') {
+  if (control.mode === 'flow') { control.defending = defend; control.held = defend; return; }
   // A held button or repeated pointer-down cannot restart an automatic attack.
   if (timed(control) && (control.held || timedSwinging(control))) return;
-  // Flow does not need a click, but one still plays the same stroke. A click
-  // that lands in the middle of a push swings at the point the hand rested on;
-  // a click during a sideways correction swings where the outline is.
-  if (control.mode === 'flow' && !defend) {
-    const preparing = control.flowCandidate;
-    const { rest } = control, last = control.samples.at(-1);
-    if (preparing) { control.target.x = preparing.anchor.wx; control.target.y = preparing.anchor.wy; }
-    else if (rest && last && last.t - rest.t <= FLOW.anchorMemory && control.pointerSpeed >= FLOW.restSpeed) {
-      const dx = last.x - rest.x, dy = last.y - rest.y;
-      if (dy >= FLOW.cone * Math.hypot(dx, dy)) { control.target.x = rest.wx; control.target.y = rest.wy; }
-    }
-    control.armed = false; control.rest = null;
-    control.preparing = false; control.preparation = 0; control.flowCandidate = null; control.flowLaunch = null;
-  }
-  if (control.mode === 'flow' && defend) abandonPreparation(control);
   control.held = !defend; control.defending = defend; control.attempted = true;
   control.cancelled = false; control.strokeTime = 0; control.aimLocked = false;
   control.phase = defend ? 'defend' : 'load';
@@ -137,14 +90,16 @@ export function startStroke(control, defend = control.intent === 'defend') {
   control.travel = control.progress = control.velocity = control.carry = control.lift = control.releaseTime = 0;
 }
 
-// World coordinates aim the shot. A separate screen-space point makes swipe length
-// independent of camera motion, aim height, clamping, and device aspect ratio.
-// `time` is the pointer event's real timestamp in seconds. Flow reads pointer
-// speed from it; the other modes ignore it.
+// World coordinates position Flow's physical target or aim the other modes.
+// Manual's separate screen-space point keeps swipe length independent of the
+// camera, aim height and aspect ratio. Flow also records the event's real timestamp.
 export function moveBatTarget(control, x, y, pointer = { x, y }, time = NaN) {
   if (![x, y, pointer.x, pointer.y].every(Number.isFinite)) return;
   control.pointer = { ...pointer };
-  if (control.mode === 'flow') { moveFlow(control, x, y, pointer, time); return; }
+  if (control.mode === 'flow') {
+    targetDirectBat(control.direct, x, y, time); control.target.x = x; control.target.y = y;
+    control.engaged = true; control.phase = 'direct'; return;
+  }
   if (control.mode === 'standard') {
     // Releasing a tap does not turn an in-flight swing back into free aiming.
     if (timedSwinging(control) && control.aimLocked) return;
@@ -170,15 +125,17 @@ export function moveBatTarget(control, x, y, pointer = { x, y }, time = NaN) {
 }
 
 export function releaseStroke(control, cancel = false) {
+  if (control.mode === 'flow') {
+    control.held = control.defending = false;
+    if (cancel) { restartFlow(control); control.cancelled = true; }
+    return;
+  }
   if (timed(control)) {
     const swinging = timedSwinging(control), wasDefending = control.defending;
-    if (control.mode === 'flow' && control.flowCandidate) abandonPreparation(control, undefined, true);
     control.held = control.defending = false;
     if (cancel) {
       control.cancelled = true; control.phase = 'recover'; control.releaseTime = 0;
       control.pose.active = false; control.velocity = control.carry = 0;
-      // A pause, blur, panel or the next ball: the stroke is off, the hand stays where it is.
-      disarmFlow(control);
     } else if (swinging) control.phase = 'follow';
     else if (wasDefending) { control.phase = 'recover'; control.releaseTime = 0; control.pose.active = false; }
     control.pose.defending = false;
@@ -204,6 +161,7 @@ export function releaseStroke(control, cancel = false) {
 }
 
 export function shotName(control) {
+  if (control.mode === 'flow') return control.defending || control.intent === 'defend' ? 'Soft hands' : control.intent === 'lofted' ? 'Open face' : 'Direct bat';
   if (control.defending || control.intent === 'defend') return 'Soft defence';
   const across = Math.abs(control.direction.x) > 0.7;
   const name = across ? control.target.y < 0.65 ? 'Sweep' : control.direction.x * control.hand > 0 ? 'Cut' : 'Pull'
@@ -212,166 +170,24 @@ export function shotName(control) {
 }
 
 export function strokeSnapshot(control) {
+  if (control.mode === 'flow') return { name: shotName(control), mode: 'flow', phase: control.phase,
+    engaged: control.engaged, acquiring: control.acquiring, active: control.pose.active, exposed: control.exposed,
+    moving: control.moving, batSpeed: control.speed, backlift: control.backlift,
+    defending: control.pose.defending, held: control.held, attempted: control.attempted, committed: false, cancelled: !control.engaged,
+    progress: control.backlift, elapsed: 0, idealContactTime: null };
   return { name: shotName(control), progress: control.pose.progress, phase: control.phase,
     attempted: control.attempted, held: control.held, defending: control.defending, committed: control.committed, active: control.pose.active,
     mode: control.mode, cancelled: control.cancelled, elapsed: control.pose.strokeTime, idealContactTime: STANDARD_STROKE.contactTime };
 }
 
-// Standard and Flow play the same fixed-timing stroke; only what starts it differs.
-const timed = control => control.mode === 'standard' || control.mode === 'flow';
+// Only Standard uses a fixed-timing stroke.
+const timed = control => control.mode === 'standard';
 const timedSwinging = control => timed(control) && control.committed && !control.cancelled && ['load', 'swing', 'follow'].includes(control.phase);
-
-// Flow gives the hand a short, reversible backlift before a stroke commits.
-// Direction and speed separate a push from aiming; net displacement supplies
-// commitment. Nothing in this controller knows where the ball is.
-function abandonPreparation(control, sample = control.samples.at(-1), leaving = false) {
-  if (!control.flowCandidate) return;
-  if (sample) { control.target.x = sample.wx; control.target.y = sample.wy; }
-  if (leaving && control.preparing) control.leaveAt = control.clock;
-  control.preparing = false; control.preparation = 0; control.flowCandidate = null;
-  if (control.phase === 'prepare') control.phase = 'guard';
-}
-
-function prepareFlow(control, anchor, sample, observed) {
-  control.flowCandidate = { anchor, sample, observed, peak: Math.max(0, sample.y - anchor.y), confirmed: false, lastDriven: control.clock };
-  control.preparing = false;
-  // Freeze BEFORE applying the first push sample. The outline never climbs
-  // with a trigger gesture and then snaps back to an older resting point.
-  control.target.x = anchor.wx; control.target.y = anchor.wy;
-}
-
-function confirmPreparation(control, sample, trigger, speed) {
-  const candidate = control.flowCandidate, observed = candidate.observed;
-  const duration = sample.t - observed.t, dx = sample.x - observed.x, dy = sample.y - observed.y, distance = Math.hypot(dx, dy);
-  // A fast one-pixel event is not necessarily fast hand movement. Confirm over
-  // several real milliseconds so a quantized 1000 Hz mouse can still aim slowly.
-  if (!candidate.confirmed && duration >= FLOW.confirmTime && dy >= FLOW.cone * distance && distance / duration >= trigger.speed) {
-    candidate.confirmed = true; control.preparing = true; control.phase = 'prepare';
-  }
-  if (candidate.confirmed && speed >= trigger.speed) candidate.lastDriven = control.clock;
-  if (!candidate.confirmed && duration >= FLOW.confirmTime * 2 && distance / duration < trigger.speed * .9) {
-    abandonPreparation(control, sample); control.flowSuppressed = true; return false;
-  }
-  return true;
-}
-
-function moveFlow(control, x, y, pointer, time) {
-  const { samples } = control;
-  let last = samples.at(-1);
-  let t = Number.isFinite(time) ? time : control.clock;
-  if (last && t < last.t) t = last.t;
-  // A still mouse sends nothing. An event after a silence means the hand rested
-  // where the last sample was, and only then began to move. That first event
-  // cannot be a push by itself: the samples after it, with real intervals, decide.
-  const afterGap = Boolean(last) && t - last.t >= FLOW.gap;
-  if (afterGap) {
-    control.flowSuppressed = false;
-    abandonPreparation(control, last, true);
-    if (Math.hypot(pointer.x - last.x, pointer.y - last.y) > FLOW.jumpDistance) { restartFlow(control); control.restartClock = -Infinity; last = null; }
-    else { last = { ...last, t: t - FLOW.window, s: control.clock }; samples.length = 0; samples.push(last); control.rest = last; control.armed = true; }
-  }
-  const sample = { x: pointer.x, y: pointer.y, wx: clamp(x, -BAT_LIMITS.x, BAT_LIMITS.x), wy: clamp(y, BAT_LIMITS.minY, BAT_LIMITS.maxY), t, s: control.clock };
-  samples.push(sample);
-  while (samples.length > 1 && samples[0].t < t - FLOW.memory) samples.shift();
-  // Speed over the newest samples spanning at least the measuring window, so a
-  // 60 Hz pointer and a 1 kHz coalesced stream read the same push.
-  let ref = null;
-  for (let i = samples.length - 2; i >= 0; i--) { ref = samples[i]; if (t - ref.t >= FLOW.window) break; }
-  let speed = ref && t > ref.t && !afterGap ? Math.hypot(sample.x - ref.x, sample.y - ref.y) / (t - ref.t) : 0;
-  // A teleport (a finger put down elsewhere, a pointer back from off-canvas) is
-  // not a hand movement: forget the history and wait to see the hand resting.
-  const interval = last ? t - last.t : 0;
-  const sx = last ? sample.x - last.x : 0, sy = last ? sample.y - last.y : 0;
-  const segmentDistance = Math.hypot(sx, sy), segmentSpeed = interval > 0 ? segmentDistance / interval : 0;
-  const upwards = segmentDistance > 0 && sy >= FLOW.cone * segmentDistance;
-  const jump = speed > FLOW.jumpSpeed || segmentSpeed > FLOW.jumpSpeed;
-  if (jump) { abandonPreparation(control, sample); samples.splice(0, samples.length - 1); ref = null; speed = 0; control.armed = false; }
-  control.pointerSpeed = speed;
-  // A measured slow movement is a rest and arms the next push. A lone first
-  // sample says nothing about the hand, unless it comes after a silence that
-  // followed a restart: then the hand has been still since.
-  if (speed < FLOW.restSpeed && !afterGap && !jump) {
-    control.rest = sample;
-    if (ref || (!last && control.clock - control.restartClock >= FLOW.gap)) control.armed = true;
-  }
-  // A stroke in flight keeps its contact point; a block follows the hand onto the line.
-  if (timedSwinging(control)) { control.armed = false; return; }
-  // Moving across the crease or pulling back is an unambiguous neutral action:
-  // a player can track sideways, then play, without inserting an artificial rest.
-  if (!jump && !afterGap && interval > 0 && segmentDistance > 0 && !upwards) { control.armed = true; control.flowSuppressed = false; }
-  if (control.defending || control.intent === 'defend') {
-    abandonPreparation(control, sample); control.target.x = sample.wx; control.target.y = sample.wy; return;
-  }
-  const trigger = SWING_TRIGGERS[control.trigger] || SWING_TRIGGERS.normal;
-  if (speed >= trigger.speed) control.flowSuppressed = false;
-  let candidate = control.flowCandidate;
-  if (candidate) {
-    const dx = sample.x - candidate.anchor.x, dy = sample.y - candidate.anchor.y, distance = Math.hypot(dx, dy);
-    candidate.peak = Math.max(candidate.peak, dy);
-    // A diagonal pull-back counts too. Require actual reverse travel, not one
-    // noisy sample; neither scribbling nor total path length charges a stroke.
-    if (dy < candidate.peak - FLOW.reversal || dy < -FLOW.reversal || distance > FLOW.reversal && dy < FLOW.cone * distance) {
-      abandonPreparation(control, sample, true); control.armed = true; return;
-    }
-    if (segmentDistance > 0) candidate.sample = sample;
-    if (!confirmPreparation(control, sample, trigger, speed)) return;
-    control.preparation = candidate.confirmed ? clamp(distance / trigger.distance, 0, 1) : 0;
-    // The measuring window verifies that this is sustained movement. A lone
-    // event after a silence can prepare an anchor but can never play a stroke.
-    if (candidate.confirmed && !afterGap && speed >= trigger.speed && distance >= trigger.distance) {
-      const anchor = candidate.anchor;
-      control.armed = false; control.rest = null; control.softPushAt = -Infinity;
-      beginFlowStroke(control, anchor, clamp(t - anchor.t, 0, FLOW.backdate) * control.timeScale);
-    }
-    return;
-  }
-  // A single event after a silence has no trustworthy speed. Hold its old
-  // contact point briefly while waiting for a second event, without moving the
-  // bat or showing a preparation. Sparse slow events simply resume aiming.
-  if (control.armed && !control.flowSuppressed && !jump && last && upwards && (afterGap && segmentDistance >= 1e-6 || !afterGap && segmentSpeed >= trigger.speed)) {
-    prepareFlow(control, last, sample, afterGap ? sample : last);
-    candidate = control.flowCandidate;
-    confirmPreparation(control, sample, trigger, speed);
-    const distance = Math.hypot(sample.x - last.x, sample.y - last.y);
-    control.preparation = candidate.confirmed ? clamp(distance / trigger.distance, 0, 1) : 0;
-    // At low sampling rates one honest interval may contain the whole push.
-    if (candidate.confirmed && !afterGap && speed >= trigger.speed && distance >= trigger.distance) {
-      control.armed = false; control.rest = null; control.softPushAt = -Infinity;
-      beginFlowStroke(control, last, Math.min(interval, FLOW.backdate) * control.timeScale);
-    }
-    return;
-  }
-  control.target.x = sample.wx; control.target.y = sample.wy;
-  // With Defend chosen a push only aims: a block is held, never pushed.
-  if (!control.armed || afterGap || speed < FLOW.hintSpeed) return;
-  // The aim is where the hand rested before it pushed, not where the push was
-  // noticed. A hand that never rested (tracking the ball) anchors a moment back.
-  const anchor = control.rest && t - control.rest.t <= FLOW.anchorMemory ? control.rest
-    : samples.find(s => t - s.t <= FLOW.onsetMemory) || samples[0];
-  const dx = sample.x - anchor.x, dy = sample.y - anchor.y, distance = Math.hypot(dx, dy);
-  if (dy < FLOW.cone * distance) return;
-  if (distance >= FLOW.hintDistance) control.softPushAt = control.clock;
-}
-
-function beginFlowStroke(control, anchor, backdate) {
-  // Continue out of the pose already shown. A fast or coalesced input batch
-  // must not teleport the blade to a backdated animation frame.
-  control.flowLaunch = { pose: { ...control.pose }, time: backdate };
-  for (const axis of ['yaw', 'loft', 'roll']) control.flowLaunch.pose[axis] -= control.trim[axis];
-  control.preparing = false; control.preparation = 0; control.flowCandidate = null;
-  control.held = control.defending = false; control.attempted = true; control.cancelled = false;
-  // The stroke is dated from the push, not from its detection, so the bat is
-  // where the hand expects it. Nothing else about the motion depends on the hand.
-  control.strokeTime = backdate; control.aimLocked = true; control.phase = 'swing';
-  control.origin = { x: anchor.x, y: anchor.y };
-  control.target.x = anchor.wx; control.target.y = anchor.wy;
-  control.direction = { x: 0, y: 1 }; control.directionLocked = true; control.committed = true;
-  control.travel = control.progress = control.velocity = control.carry = control.lift = control.releaseTime = 0;
-}
 
 // The preview uses the same finite blade, orientation and floor constraint as
 // the stroke. It receives no trajectory information and never seeks the ball.
 export function contactPreview(control) {
+  if (control.mode === 'flow') return { ...control.pose };
   const defending = control.defending || control.intent === 'defend';
   const pose = defending ? { ...guardPose(control), z: CONTACT_Z, loft: -0.04, roll: -control.hand * 0.04 }
     : timed(control) ? standardPose(control, STANDARD_STROKE.contactTime) : strokePose(control, 0.5);
@@ -405,14 +221,12 @@ function advanceStandardStroke(control, dt) {
   if (control.attempted && control.committed && !control.cancelled) control.strokeTime += dt;
   if (!timedSwinging(control)) return;
   const time = Math.min(STANDARD_STROKE.duration, control.strokeTime);
-  const flow = control.mode === 'flow';
-  control.aimLocked = flow || time >= STANDARD_STROKE.aimLockTime;
+  control.aimLocked = time >= STANDARD_STROKE.aimLockTime;
   control.directionLocked = control.aimLocked;
   control.progress = time <= STANDARD_STROKE.contactTime ? time / STANDARD_STROKE.contactTime * 0.5
     : 0.5 + (time - STANDARD_STROKE.contactTime) / (STANDARD_STROKE.duration - STANDARD_STROKE.contactTime) * 0.5;
   control.lift = 1;
-  control.phase = flow ? time < STANDARD_STROKE.activeUntil ? 'swing' : 'follow'
-    : control.held ? time < STANDARD_STROKE.aimLockTime ? 'load' : 'swing' : 'follow';
+  control.phase = control.held ? time < STANDARD_STROKE.aimLockTime ? 'load' : 'swing' : 'follow';
   if (time >= STANDARD_STROKE.duration) {
     control.phase = 'recover'; control.releaseTime = 0; control.pose.active = false;
     control.velocity = control.carry = 0;
@@ -454,7 +268,7 @@ function strokePose(control, progress) {
   };
 }
 
-// The stroke's progress is the one smooth state everything else reads: the blade,
+// Standard and Manual stroke progress is the state everything else reads: the blade,
 // the stroke meter, timing feedback and the collision model all agree on where
 // the swing is. Its velocity is bounded and its acceleration is bounded, so a
 // staircase of pointer events can never show up as a stutter in the bat.
@@ -485,12 +299,21 @@ function advanceStroke(control, dt) {
 export function stepBat(control, dt, keys = new Set()) {
   const p = control.pose, before = { ...p };
   if (!Number.isFinite(dt) || dt <= 0) return before;
-  control.clock += dt;
-  const candidate = control.flowCandidate;
-  if (candidate && (control.clock - candidate.lastDriven) / control.timeScale > (candidate.confirmed ? FLOW.settle : FLOW.gapWait)) {
-    if (candidate.confirmed) control.softPushAt = control.clock;
-    else control.flowSuppressed = true;
-    abandonPreparation(control, candidate.sample, true);
+  if (control.mode === 'flow') {
+    const realDt = dt / control.timeScale, direction = (a, b) => Number(keys.has(a)) - Number(keys.has(b));
+    control.trim.yaw = clamp(control.trim.yaw + direction('d', 'a') * realDt * .95, -.95, .95);
+    control.trim.loft = clamp(control.trim.loft + direction('w', 's') * realDt * .7, -.45, .75);
+    control.trim.roll = clamp(control.trim.roll + direction('e', 'q') * realDt * 1.5, -1.5, 1.5);
+    const substeps = Math.max(1, Math.ceil(realDt / (1 / 240))), h = realDt / substeps;
+    for (let i = 0; i < substeps; i++) stepDirectBat(control.direct, p, h, control.hand, control.trim, control.intent, control.defending);
+    p.motionTimeScale = control.timeScale;
+    control.engaged = control.direct.engaged; control.acquiring = control.direct.acquiring;
+    control.speed = control.direct.speed; control.backlift = control.direct.backlift;
+    control.exposed = control.direct.exposed; control.moving = control.direct.moving;
+    control.phase = control.engaged ? 'direct' : 'guard';
+    control.progress = control.backlift;
+    control.attempted ||= p.active && control.moving && control.exposed;
+    return before;
   }
   const direction = (a, b) => Number(keys.has(a)) - Number(keys.has(b));
   const trim = control.trim;
@@ -500,18 +323,10 @@ export function stepBat(control, dt, keys = new Set()) {
   advanceStroke(control, dt);
   const swinging = timed(control) ? timedSwinging(control) : control.held || control.phase === 'follow';
   let goal;
-  if (control.mode === 'flow' && control.preparing) {
-    const guard = guardPose(control), prepared = standardPose(control, .025), amount = smooth(control.preparation);
-    goal = {}; for (const key of Object.keys(prepared)) goal[key] = mix(guard[key], prepared[key], amount);
-  } else if (swinging) {
+  if (swinging) {
     // The backlift rises over a few frames after the press rather than snapping.
     const guard = guardPose(control), stroke = timed(control) ? standardPose(control, control.strokeTime) : strokePose(control, control.progress), lift = smooth(control.lift);
     goal = {}; for (const key of Object.keys(stroke)) goal[key] = mix(guard[key], stroke[key], lift);
-    if (control.mode === 'flow' && control.flowLaunch) {
-      const launch = control.flowLaunch, amount = smooth((control.strokeTime - launch.time) / (FLOW.launchBlend * control.timeScale));
-      for (const key of Object.keys(goal)) goal[key] = mix(launch.pose[key], goal[key], amount);
-      if (amount >= 1) control.flowLaunch = null;
-    }
   } else {
     goal = guardPose(control);
     if (control.phase === 'recover') {
@@ -519,7 +334,7 @@ export function stepBat(control, dt, keys = new Set()) {
       if (control.releaseTime > 0.65) { control.phase = 'guard'; control.progress = 0; }
     }
   }
-  const blend = 1 - Math.exp(-(control.phase === 'recover' ? 10 : swinging || control.preparing ? 90 : 30) * dt);
+  const blend = 1 - Math.exp(-(control.phase === 'recover' ? 10 : swinging ? 90 : 30) * dt);
   for (const axis of ['yaw', 'loft', 'roll']) {
     const value = clamp(goal[axis] + trim[axis], axis === 'roll' ? -2 : -1.2, axis === 'roll' ? 2 : 1.2);
     p[axis] += clamp((value - p[axis]) * blend, -BAT_LIMITS.angularSpeed * dt, BAT_LIMITS.angularSpeed * dt);

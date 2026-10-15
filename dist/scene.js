@@ -7,7 +7,7 @@ import { createBowler, runupPosition } from './bowler.js';
 import { bladeGeometry, gloveGeometry, paddedPanel, createGloveMaterial } from './equipment.js';
 import { batBasis, random } from './physics.js';
 import { CONTACT_Z } from './bat-control.js';
-import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js';
+import { BATTING_VIEW, DIRECT_BATTING_VIEW, BATTER_RIG, batterMotion, battingFov } from './batter-motion.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
@@ -99,6 +99,10 @@ export async function createScene(canvas, onProgress = () => {}, initialQuality 
   scene.fog = new THREE.Fog('#b9c7b4', 60, 420);
   const camera = new THREE.PerspectiveCamera(BATTING_VIEW.fov, 1, 0.035, 400);
   const cameraBase = new THREE.Vector3().copy(BATTING_VIEW.eye); camera.position.copy(cameraBase); camera.lookAt(BATTING_VIEW.look.x, BATTING_VIEW.look.y, BATTING_VIEW.look.z);
+  // Direct bat input stays in its neutral batting frame. Head dip and looking
+  // after a struck ball must never turn a stationary pointer into another shot.
+  const inputCamera = camera.clone();
+  inputCamera.position.copy(DIRECT_BATTING_VIEW.eye); inputCamera.lookAt(DIRECT_BATTING_VIEW.look.x, DIRECT_BATTING_VIEW.look.y, DIRECT_BATTING_VIEW.look.z);
   const ambient = new THREE.HemisphereLight('#d7e6f5', '#4f5d36', .9); scene.add(ambient);
   // Clear sun sits front-left, behind the batter's shoulder, so the bowler and sight screen are front-lit.
   const sun = new THREE.DirectionalLight('#fff4de', 4.2); sun.position.set(-22, 30, 12); sun.castShadow = true;
@@ -733,7 +737,7 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   }
 
   // ---------------------------------------------------------------- bat, gloves, arms, body
-  const batGroup = new THREE.Group(); scene.add(batGroup);
+  const batGroup = new THREE.Group(); batGroup.name = 'Batter bat'; scene.add(batGroup);
   const willow = willowTextures();
   const wood = new THREE.MeshPhysicalMaterial({ map: willow.map, bumpMap: willow.bump, bumpScale: .00035, roughness: .58, clearcoat: .2, clearcoatRoughness: .5 });
   const blade = new THREE.Mesh(bladeGeometry(), wood); blade.castShadow = true; blade.receiveShadow = true; batGroup.add(blade);
@@ -751,9 +755,10 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
   const gloveMat = createGloveMaterial();
   const gloveGeos = { right: gloveGeometry(true, false), rightTop: gloveGeometry(false, false), left: gloveGeometry(true, true), leftTop: gloveGeometry(false, true) };
   const gloves = [new THREE.Mesh(gloveGeos.right, gloveMat), new THREE.Mesh(gloveGeos.rightTop, gloveMat)];
-  for (const g of gloves) { g.castShadow = true; g.receiveShadow = true; scene.add(g); }
-  // The physics grip sits a metre in front of the eye, beyond any real reach, so full arms would fill the
-  // frame. Draw gloves plus forearm sleeves that fade out toward the elbow instead (local y: wrist 0, elbow .36).
+  for (const [i, g] of gloves.entries()) { g.name = `Batter ${i ? 'top' : 'bottom'} glove`; g.castShadow = true; g.receiveShadow = true; scene.add(g); }
+  // First-person sleeves fade toward the elbow to keep the playing area clear.
+  // Legacy modes retain their .36 m forearm mesh; direct Flow scales it to the
+  // shared anatomical length and uses the same wrist solve as the controller.
   const fadeArm = (sh, cut) => {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vArmY;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvArmY = position.y;');
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vArmY;').replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\n' + cut);
@@ -771,7 +776,7 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     { g: new THREE.SphereGeometry(.045, 24, 8, 0, TAU, 0, Math.PI / 2), m: mat4(0, .07, 0, 0, 0, 0, 1, 2, 1), c: SWEATER }, // solid end seen down the sleeve, shaded like its walls
   ]);
   const arms = [0, 1].map(() => ({ fore: new THREE.Mesh(forearmGeo, armMat) }));
-  for (const a of arms) { a.fore.castShadow = true; a.fore.receiveShadow = true; a.fore.customDepthMaterial = armDepth; scene.add(a.fore); }
+  for (const [i, a] of arms.entries()) { a.fore.name = `Batter ${i ? 'top' : 'bottom'} forearm`; a.fore.castShadow = true; a.fore.receiveShadow = true; a.fore.customDepthMaterial = armDepth; scene.add(a.fore); }
   const padMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .84, bumpMap: quiltBump(), bumpScale: .00055 });
   // Pads: a cream shell twice as wide as it is deep, seven tapered bolsters that follow its
   // curve from the instep to the knee, three knee rolls bent round the shin, a top flap,
@@ -821,16 +826,35 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     return E;
   }
   function updateBat(b) {
+    restPoint.copy(b.direct ? DIRECT_BATTING_VIEW.look : BATTING_VIEW.look);
     const { n, w, u } = batBasis(b);
     _m1.makeBasis(_v[0].set(w.x, w.y, w.z), _v[1].set(u.x, u.y, u.z), _v[2].set(-n.x, -n.y, -n.z));
     batGroup.quaternion.setFromRotationMatrix(_m1); batGroup.position.set(b.x, b.y, b.z); batGroup.updateMatrixWorld(true);
     const blend = 1 - Math.exp(-frameDt * 18);
     batSpeed += (Math.hypot(b.x - lastBatX, b.y - lastBatY, b.z - lastBatZ) / Math.max(1e-3, frameDt) - batSpeed) * blend; lastBatX = b.x; lastBatY = b.y; lastBatZ = b.z;
     const motion = batterMotion(b, handSign);
-    cameraBase.lerp(_v[9].copy(motion.eye), 1 - Math.exp(-frameDt * 10));
+    if (b.direct) {
+      // Bat integration already smooths the body. Apply its eye translation in
+      // the same frame as the arms, retaining the gaze/head offsets computed
+      // earlier this frame instead of letting the head lag far behind a crouch.
+      camera.position.add(_v[9].copy(motion.eye).sub(cameraBase));
+      cameraBase.copy(motion.eye);
+    } else cameraBase.lerp(_v[9].copy(motion.eye), 1 - Math.exp(-frameDt * 10));
     const handleAxis = _v[8].set(u.x, u.y, u.z);
     for (let i = 0; i < 2; i++) {
       const glove = gloves[i], shoulder = _v[9].copy(motion.shoulders[i]);
+      if (b.direct) {
+        // The physical controller and the rendered glove consume the same
+        // cuff/arm solve. No hidden shoulder translation or display-only reach.
+        const axes = motion.axes[i], forearm = arms[i].fore;
+        glove.quaternion.setFromRotationMatrix(_m2.makeBasis(_v[10].copy(axes.x), _v[11].copy(axes.y), _v[12].copy(axes.z)));
+        glove.position.copy(motion.centres[i]); glove.updateMatrixWorld(true);
+        forearm.position.copy(motion.wrists[i]);
+        forearm.quaternion.setFromUnitVectors(UP, _v[13].copy(motion.elbows[i]).sub(forearm.position).normalize());
+        forearm.scale.y = BATTER_RIG.forearm / L_FORE;
+        continue;
+      }
+      arms[i].fore.scale.y = 1;
       const centre = _v[10].set(0, gloveY[i], 0).applyMatrix4(batGroup.matrixWorld);
       // Provisional cuff direction toward the shoulder, then refine toward the solved elbow.
       let toward = _v[11].subVectors(shoulder, centre);
@@ -853,6 +877,7 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     const ratio = Math.min(window.devicePixelRatio || 1, quality.maxPixelRatio, Math.sqrt(quality.maxPixels / (width * height)));
     renderer.setPixelRatio(ratio); renderer.setSize(width, height, false);
     camera.aspect = width / height; camera.fov = battingFov(camera.aspect); camera.updateProjectionMatrix();
+    inputCamera.aspect = camera.aspect; inputCamera.fov = camera.fov; inputCamera.updateProjectionMatrix();
   }
   new ResizeObserver(resize).observe(canvas.parentElement); resize();
   const gazeCamera = camera.clone(), gazePoint = new THREE.Vector3().copy(BATTING_VIEW.look), restPoint = gazePoint.clone(), gazeTarget = new THREE.Vector3(), viewQuat = new THREE.Quaternion().copy(camera.quaternion);
@@ -940,10 +965,14 @@ diffuseColor.rgb = lawn * texture2D(mottleMap, vMottle).r * 1.08;`);
     camera.quaternion.copy(viewQuat).multiply(_q1.setFromAxisAngle(_v[3].set(0, 0, 1), headRoll));
     if (flash > 0) { wood.emissive.setRGB(.5 * flash, .42 * flash, .25 * flash); flash = Math.max(0, flash - dt * 7); } else wood.emissive.setRGB(0, 0, 0);
   }
-  // Ray-plane aiming puts the contact ring under the pointer. During a stroke
-  // the controller anchors this world point and reads only screen-space travel.
+  // Flow reads a fixed neutral ray so physical head movement cannot feed back
+  // into the bat. Legacy modes retain their camera-relative contact-plane aim.
   const pointer = new THREE.Vector3(), pointerRay = new THREE.Raycaster(), contactPlane = new THREE.Plane(new THREE.Vector3(0,0,1), -CONTACT_Z), projected = new THREE.Vector3(), projectedOut = { x: 0, y: 0 };
-  function pointerWorld(x, y) { camera.updateMatrixWorld(); pointerRay.setFromCamera({x,y}, camera); return pointerRay.ray.intersectPlane(contactPlane, pointer); }
+  function pointerWorld(x, y, mode = 'standard') {
+    const frame = mode === 'flow' ? inputCamera : camera;
+    frame.updateMatrixWorld(); pointerRay.setFromCamera({x,y}, frame);
+    return pointerRay.ray.intersectPlane(contactPlane, pointer);
+  }
   function project(p) { projected.set(p.x, p.y, p.z).project(camera); projectedOut.x = (projected.x + 1) * .5 * canvas.clientWidth; projectedOut.y = (1 - projected.y) * .5 * canvas.clientHeight; return projectedOut; }
   const releaseOut = { x: 0, y: 0, z: 0 };
   function getReleasePosition() { bowler.updateMatrixWorld(true); heldBall.getWorldPosition(_v[0]); releaseOut.x = _v[0].x; releaseOut.y = _v[0].y; releaseOut.z = _v[0].z; return releaseOut; }
