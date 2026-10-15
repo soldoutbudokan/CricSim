@@ -1,6 +1,6 @@
 // Close-up equipment is built once, in metres, and drawn as one mesh per hand.
 // The handle is local +y; the blade's striking plane stays at z = -.012.
-import * as THREE from './vendor/three.module.js?v=a91f862afd0c6acc';
+import * as THREE from './vendor/three.module.js?v=5d5b789255b28f6b';
 
 const TAU = Math.PI * 2, UP = new THREE.Vector3(0, 1, 0);
 const smooth = t => { t = THREE.MathUtils.clamp(t, 0, 1); return t * t * (3 - 2 * t); };
