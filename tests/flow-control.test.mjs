@@ -249,9 +249,8 @@ test('Flow keeps the Standard timing window and still rewards the middle', () =>
     for (let ms = -150; ms <= 150; ms += 5) samples.push({ ms, ...play({ intent, error: ms / 1000 }) });
     const clean = samples.filter(s => s.clean);
     assert.ok(clean.length >= 20, `${intent}: at least 95ms of clean contact in a 5ms sweep (${clean.length})`);
-    // The best moment sits a few frames after the ideal: a push is read a sample
-    // late, and a ball angling in from over the wicket meets the blade a touch
-    // later than one angling across. Quality falls away either side of it, and
+    // The best moment sits a few frames after the ideal: a ball angling in from
+    // over the wicket meets the blade a touch later than one angling across. Quality falls away either side of it, and
     // a push on the ideal moment is still clean.
     const quality = s => s.d.contact?.quality ?? 0, best = samples.reduce((a, b) => quality(b) > quality(a) ? b : a);
     assert.ok(best.ms >= -30 && best.ms <= 80, `${intent}: best push at ${best.ms} ms`);
@@ -344,4 +343,62 @@ test('feedback treats a Flow push like a Standard click', () => {
   assert.equal(describeShot({ ...s, elapsed: .02 }).timing, 'Late'); assert.match(describeShot({ ...s, elapsed: .02 }).detail, /Start the push a little sooner/);
   assert.equal(describeShot({ ...s, elapsed: .1 }, { quality: .9, edge: false }).timing, 'Well timed');
   const standard = describeShot({ ...s, mode: 'standard' }); assert.match(standard.detail, /Click or tap/);
+});
+
+test('the stroke is dated from the moment the hand set off, so gentle and hard pushes time alike', () => {
+  // Pushes that accelerate like a hand, from a gentle 0.25 units in 150 ms to a hard 1 unit in 250 ms.
+  // A hard push is noticed about 45 ms after it sets off and a gentle one about 70 ms; all of them,
+  // started at the ideal moment, meet the ball at the middle of the stroke with full power.
+  const reaches = [{ length: .25, seconds: .15 }, { length: .4, seconds: .12 }, { length: .4, seconds: .18 }, { length: .7, seconds: .2 }, { length: 1, seconds: .25 }];
+  const met = reaches.map(reach => {
+    const { d, clean, contactPose, c } = play({ reach });
+    assert.ok(clean, `${reach.length}/${reach.seconds}: clean`); assert.ok(d.exitSpeed > 95, `${reach.length}/${reach.seconds}: full power (${d.exitSpeed})`);
+    assert.ok(Math.abs(contactPose.strokeTime - STANDARD_STROKE.contactTime) < .012, `${reach.length}/${reach.seconds}: met at ${contactPose.strokeTime}`);
+    assert.ok(Math.abs(c.origin.y) < .004 && c.origin.x === 0, `${reach.length}/${reach.seconds}: aimed where the hand rested (${c.origin.y})`);
+    return contactPose.strokeTime;
+  });
+  assert.ok(Math.max(...met) - Math.min(...met) < .012, `the push's vigour moves the timing by ${Math.max(...met) - Math.min(...met)} s`);
+  // The same at a 60 Hz and a 1 kHz pointer, and from a mouse that was silent before the push.
+  for (const rate of [60, 1000]) for (const silent of [false, true]) for (const reach of [reaches[0], reaches[3]]) {
+    const c = createBatControl('right', 'flow'), h = hand(c, { x: .1, y: .8 }, { rate }); h.rest(.5); if (silent) h.still(.3);
+    const t0 = h.time; let start = null;
+    h.drive(UP, reach.length, reach.seconds, null, () => { if (c.committed && start === null) start = h.time - c.strokeTime - t0; });
+    // Read at the next frame, so up to 1/60 s of the figure is the frame, not the controller.
+    assert.ok(start !== null && start > -.015 && start < .03, `${rate} Hz, silent ${silent}, ${reach.length}: stroke dated ${start} s after the hand set off`);
+    assert.ok(Math.abs(c.target.y - .8) < .006, `aim ${c.target.y}`);
+  }
+  // A push that takes too long to become decisive is dated as far back as the stroke allows, no further.
+  const c = createBatControl('right', 'flow'), h = hand(c); h.rest(.5);
+  let dated = null; h.drive(UP, .7, .35, null, () => { if (c.committed && dated === null) dated = c.strokeTime; });
+  assert.ok(dated !== null && dated <= FLOW.backdate + 1e-9 && dated > FLOW.backdate - .001, `dated ${dated}`);
+});
+
+test('the lean of a push steers the ball; a push near straight up plays straight', () => {
+  const lean = degrees => ({ x: Math.sin(degrees * Math.PI / 180), y: Math.cos(degrees * Math.PI / 180) });
+  const line = result => Math.atan2(result.exit.x, -result.exit.z) * 180 / Math.PI;
+  const straight = play(), near = play({ direction: lean(8) });
+  assert.ok(Math.abs(near.contactPose.yaw - straight.contactPose.yaw) < 1e-9, 'eight degrees off straight is still a straight stroke');
+  const results = [-55, -30, 0, 30, 55].map(degrees => play({ direction: lean(degrees) }));
+  for (const [i, r] of results.entries()) {
+    assert.ok(r.clean, `lean ${i}: the turned face still meets the ball cleanly`);
+    assert.ok(Math.abs(r.d.exitSpeed - straight.d.exitSpeed) < 5, `lean ${i}: same power (${r.d.exitSpeed})`);
+    if (i) assert.ok(line(r) > line(results[i - 1]) + 8, `the ball's line follows the push: ${line(results[i - 1])} then ${line(r)}`);
+  }
+  assert.ok(line(results[0]) < -25 && line(results[4]) > 25 && Math.abs(line(results[2])) < 5, `${line(results[0])}, ${line(results[2])}, ${line(results[4])}`);
+  for (const intent of ['grounded', 'lofted']) for (const stance of ['left', 'right']) for (const degrees of [-50, 50]) {
+    const r = play({ intent, hand: stance, direction: lean(degrees) });
+    assert.ok(r.d.hit && !r.d.contact.edge, `${intent}/${stance}/${degrees}`); assert.ok(line(r) * degrees > 0, `${intent}/${stance}/${degrees}: ${line(r)}`);
+  }
+  // The stroke is named for its line while it plays, and the outline is straight again afterwards.
+  const c = createBatControl('right', 'flow'), h = hand(c); h.rest(.3);
+  const before = contactPreview(c).yaw;
+  h.push(lean(50), 6, .3);
+  assert.ok(c.committed && c.steer > .4 && c.steer <= FLOW.steerMax); assert.equal(shotName(c), 'Angled drive');
+  assert.ok(contactPreview(c).yaw > before + .15, 'the outline shows the turned face during the stroke');
+  h.rest(1.2); assert.equal(c.steer, 0); assert.deepEqual(c.direction, UP); assert.equal(contactPreview(c).yaw, before);
+  // A push at the edge of the cone steers no further than the limit; a click never steers.
+  const d = createBatControl('right', 'flow'), hd = hand(d); hd.rest(.3); hd.push(lean(-59), 6, .3);
+  assert.ok(d.committed && d.steer < 0 && d.steer >= -FLOW.steerMax); assert.ok(Math.abs(d.direction.x) < .7, 'a steered drive is never named a cut or a pull');
+  releaseStroke(d, true); assert.equal(d.steer, 0);
+  hd.rest(1); hd.push(lean(40), 2, .06); startStroke(d); assert.ok(d.committed); assert.equal(d.steer, 0); assert.deepEqual(d.direction, UP);
 });

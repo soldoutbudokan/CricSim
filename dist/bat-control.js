@@ -22,7 +22,12 @@ export const SWING_TRIGGERS = Object.freeze({
 export const FLOW = Object.freeze({
   restSpeed: 0.9, window: 0.024, memory: 0.25, anchorMemory: 0.15, onsetMemory: 0.06, gap: 0.08,
   // A push must point within 60 degrees of straight up; sideways and downward moves only aim.
-  cone: 0.5, backdate: 0.03, jumpSpeed: 30,
+  // The stroke is dated from the moment the hand set off, at most `backdate` before it was noticed.
+  cone: 0.5, backdate: 0.06, jumpSpeed: 30,
+  // The push steers the stroke. Within `steerDead` of straight up it plays straight; from
+  // there to the edge of the cone the ball's line swings out to `steerMax` (radians each).
+  // `steerFace` is the face angle that sends the ball along a given line.
+  steerDead: 0.175, steerMax: 0.7, steerFace: 0.45,
   // A pointer that reappears this far away after a silence is a new hand, not a push.
   jumpDistance: 0.3,
   // An upward move this fast and far that stays short of the trigger earns a "push harder" hint.
@@ -45,7 +50,7 @@ export function createBatControl(hand = 'right', mode = 'manual') {
     direction: { x: 0, y: 1 }, directionLocked: false,
     held: false, defending: false, attempted: false, committed: false, cancelled: false,
     travel: 0, progress: 0, velocity: 0, carry: 0, lift: 0,
-    speed: 0, releaseTime: 0, strokeTime: 0, aimLocked: false,
+    speed: 0, releaseTime: 0, strokeTime: 0, aimLocked: false, steer: 0,
     // Flow: recent pointer samples, the last one that was at rest, and whether
     // the next push may swing. The clock is the controller's own simulated time.
     clock: 0, samples: [], rest: null, armed: false, pointerSpeed: 0, softPushAt: -Infinity, restartClock: 0,
@@ -122,7 +127,7 @@ export function startStroke(control, defend = control.intent === 'defend') {
   control.cancelled = false; control.strokeTime = 0; control.aimLocked = false;
   control.phase = defend ? 'defend' : 'load';
   control.origin = { ...control.pointer };
-  control.direction = { x: 0, y: 1 }; control.directionLocked = false; control.committed = timed(control) && !defend;
+  control.direction = { x: 0, y: 1 }; control.directionLocked = false; control.committed = timed(control) && !defend; control.steer = 0;
   control.travel = control.progress = control.velocity = control.carry = control.lift = control.releaseTime = 0;
 }
 
@@ -164,7 +169,7 @@ export function releaseStroke(control, cancel = false) {
     control.held = control.defending = false;
     if (cancel) {
       control.cancelled = true; control.phase = 'recover'; control.releaseTime = 0;
-      control.pose.active = false; control.velocity = control.carry = 0;
+      control.pose.active = false; control.velocity = control.carry = 0; control.steer = 0;
       // A pause, blur, panel or the next ball: the stroke is off, the hand stays where it is.
       disarmFlow(control);
     } else if (swinging) control.phase = 'follow';
@@ -223,9 +228,10 @@ function moveFlow(control, x, y, pointer, time) {
   const afterGap = Boolean(last) && t - last.t >= FLOW.gap;
   if (afterGap) {
     if (Math.hypot(pointer.x - last.x, pointer.y - last.y) > FLOW.jumpDistance) { restartFlow(control); control.restartClock = -Infinity; }
-    else { const still = { ...last, t: t - FLOW.window, s: control.clock }; samples.length = 0; samples.push(still); control.rest = still; control.armed = true; }
+    else { const still = { ...last, t: t - FLOW.window, s: control.clock, v: 0, m: t - FLOW.window }; samples.length = 0; samples.push(still); control.rest = still; control.armed = true; }
   }
-  const sample = { x: pointer.x, y: pointer.y, wx: clamp(x, -BAT_LIMITS.x, BAT_LIMITS.x), wy: clamp(y, BAT_LIMITS.minY, BAT_LIMITS.maxY), t, s: control.clock };
+  // `v` is the hand's speed at this sample and `m` the moment that reading belongs to (the middle of its window).
+  const sample = { x: pointer.x, y: pointer.y, wx: clamp(x, -BAT_LIMITS.x, BAT_LIMITS.x), wy: clamp(y, BAT_LIMITS.minY, BAT_LIMITS.maxY), t, s: control.clock, v: 0, m: t };
   samples.push(sample);
   while (samples.length > 1 && samples[0].t < t - FLOW.memory) samples.shift();
   // Speed over the newest samples spanning at least the measuring window, so a
@@ -236,7 +242,8 @@ function moveFlow(control, x, y, pointer, time) {
   // A teleport (a finger put down elsewhere, a pointer back from off-canvas) is
   // not a hand movement: forget the history and wait to see the hand resting.
   if (speed > FLOW.jumpSpeed) { samples.splice(0, samples.length - 1); ref = null; speed = 0; control.armed = false; }
-  control.pointerSpeed = speed;
+  control.pointerSpeed = sample.v = speed;
+  if (ref && speed) sample.m = (t + ref.t) / 2;
   // A measured slow movement is a rest and arms the next push. A lone first
   // sample says nothing about the hand, unless it comes after a silence that
   // followed a restart: then the hand has been still since.
@@ -262,17 +269,28 @@ function moveFlow(control, x, y, pointer, time) {
     return;
   }
   control.armed = false; control.rest = null; control.softPushAt = -Infinity;
-  beginFlowStroke(control, anchor, clamp((t - anchor.t) * control.timeScale, 0, FLOW.backdate));
+  // A hard push is noticed sooner after it sets off than a gentle one. Dating
+  // the stroke from the setting-off, not from the noticing, gives both the same
+  // timing. The hand's speed rose from the rest reading to this one; the line
+  // through the two readings meets zero where the push began.
+  const onset = anchor.v < sample.v ? Math.max(anchor.m - anchor.v * (sample.m - anchor.m) / (sample.v - anchor.v), t - FLOW.memory) : anchor.t;
+  // The aim is where the hand was at that moment, before the push carried it off.
+  const from = samples.findLast(s => s.t <= onset) || samples[0];
+  // The push's lean off straight up, past a dead band, turns the face and the ball's line with it.
+  const lean = Math.atan2(sample.x - from.x, sample.y - from.y), spare = Math.PI / 3 - FLOW.steerDead;
+  const turn = clamp((Math.abs(lean) - FLOW.steerDead) / spare, 0, 1) * FLOW.steerMax, steer = turn ? Math.sign(lean) * turn : 0;
+  beginFlowStroke(control, from, clamp((t - onset) * control.timeScale, 0, FLOW.backdate), steer);
 }
 
-function beginFlowStroke(control, anchor, backdate) {
+function beginFlowStroke(control, anchor, backdate, steer) {
   control.held = control.defending = false; control.attempted = true; control.cancelled = false;
   // The stroke is dated from the push, not from its detection, so the bat is
   // where the hand expects it. Nothing else about the motion depends on the hand.
   control.strokeTime = backdate; control.aimLocked = true; control.phase = 'swing';
   control.origin = { x: anchor.x, y: anchor.y };
   control.target.x = anchor.wx; control.target.y = anchor.wy;
-  control.direction = { x: 0, y: 1 }; control.directionLocked = true; control.committed = true;
+  // `steer` is the line the ball should take, in radians off straight; it names the shot too.
+  control.steer = steer; control.direction = { x: Math.sin(steer), y: Math.cos(steer) }; control.directionLocked = true; control.committed = true;
   control.travel = control.progress = control.velocity = control.carry = control.lift = control.releaseTime = 0;
 }
 
@@ -301,7 +319,8 @@ function standardPose(control, time) {
     x: target.x - hand * 0.09 * (1 - load) + hand * 0.19 * finish,
     y: target.y + 0.16 * (1 - load) + 0.48 * finish,
     z,
-    yaw: mix(-hand * 0.1, 0, load) + hand * 0.20 * finish,
+    // Flow can turn the face to steer the ball; `steer` is always zero in Standard.
+    yaw: mix(-hand * 0.1, control.steer * FLOW.steerFace, load) + hand * 0.20 * finish,
     loft: mix(-0.80, contactLoft, load) + (0.95 - contactLoft) * finish,
     roll: mix(-hand * 0.30, -hand * 0.04, load) + hand * 0.50 * finish,
     weight: load * (target.y < 0.9 ? 1 : -0.45), turn: 0,
@@ -323,6 +342,8 @@ function advanceStandardStroke(control, dt) {
   if (time >= STANDARD_STROKE.duration) {
     control.phase = 'recover'; control.releaseTime = 0; control.pose.active = false;
     control.velocity = control.carry = 0;
+    // The outline goes back to a straight face for the next aim.
+    if (flow) { control.steer = 0; control.direction = { x: 0, y: 1 }; }
   }
 }
 
