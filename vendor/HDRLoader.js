@@ -5,7 +5,7 @@ import {
 	HalfFloatType,
 	LinearFilter,
 	LinearSRGBColorSpace
-} from './three.module.js?v=5037f0b96f78b8cf';
+} from './three.module.js?v=be11e74ab743e42e';
 
 /**
  * A loader for the RGBE HDR texture format.

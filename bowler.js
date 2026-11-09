@@ -3,7 +3,7 @@
 // per-frame geometry updates, material switches, or separate buttons / shoelaces.
 // Roughness travels with the vertices too, so skin, eyes, cloth and rubber shade
 // differently inside the same draw call.
-import * as THREE from './vendor/three.module.js?v=5037f0b96f78b8cf';
+import * as THREE from './vendor/three.module.js?v=be11e74ab743e42e';
 
 const DOWN = new THREE.Vector3(0, -1, 0), UP = new THREE.Vector3(0, 1, 0);
 const TAU = Math.PI * 2, UPPER_LEG = .455, LOWER_LEG = .445, ANKLE = .165;

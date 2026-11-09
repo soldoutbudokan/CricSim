@@ -1,13 +1,13 @@
 // CricSim scene: procedural textures, merged/instanced geometry, first-person batter rig.
 // Every texture in here is generated on a canvas at load time; the only files loaded are
 // the CC0 Poly Haven ground maps and HDR skies. No per-frame allocations in hot paths.
-import * as THREE from './vendor/three.module.js?v=5037f0b96f78b8cf';
-import { HDRLoader } from './vendor/HDRLoader.js?v=5037f0b96f78b8cf';
-import { createBowler, runupPosition } from './bowler.js?v=5037f0b96f78b8cf';
-import { bladeGeometry, gloveGeometry, paddedPanel, createGloveMaterial } from './equipment.js?v=5037f0b96f78b8cf';
-import { batBasis, random } from './physics.js?v=5037f0b96f78b8cf';
-import { CONTACT_Z } from './bat-control.js?v=5037f0b96f78b8cf';
-import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js?v=5037f0b96f78b8cf';
+import * as THREE from './vendor/three.module.js?v=be11e74ab743e42e';
+import { HDRLoader } from './vendor/HDRLoader.js?v=be11e74ab743e42e';
+import { createBowler, runupPosition } from './bowler.js?v=be11e74ab743e42e';
+import { bladeGeometry, gloveGeometry, paddedPanel, createGloveMaterial } from './equipment.js?v=be11e74ab743e42e';
+import { batBasis, random } from './physics.js?v=be11e74ab743e42e';
+import { CONTACT_Z } from './bat-control.js?v=be11e74ab743e42e';
+import { BATTING_VIEW, batterMotion, battingFov } from './batter-motion.js?v=be11e74ab743e42e';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const lerp = THREE.MathUtils.lerp, clamp = THREE.MathUtils.clamp;
